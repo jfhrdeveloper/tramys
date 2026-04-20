@@ -93,6 +93,11 @@
   }
   .btn-ghost:hover { background:var(--hover); }
 
+  /* ====== Botón Menú Móvil ====== */
+  .mobile-menu-btn {
+    display: none !important; /* Oculto en PC por defecto */
+  }
+
   /* ====== Input ====== */
   .input-base {
     width:100%; padding:9px 12px; border-radius:8px;
@@ -186,9 +191,10 @@
   /* Ocultar sidebar en mobile */
   .sidebar-desktop  { display:none !important; }
 
-  /* Mostrar bottom nav */
+  /* Mostrar bottom nav y botón hamburguesa */
   .bottom-nav   { display:flex; }
   .sidebar-overlay.open { display:block; }
+  .mobile-menu-btn { display: flex !important; }
 
   /* Topbar ajustes */
   .hide-mobile  { display:none !important; }
