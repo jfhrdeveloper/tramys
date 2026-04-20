@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /* ================= MIDDLEWARE — PROTECCIÓN DE RUTAS ================= */
@@ -11,8 +11,11 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll()         { return request.cookies.getAll(); },
-        setAll(toSet)    {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        // CORRECCIÓN: Tipado explícito para 'toSet'
+        setAll(toSet: { name: string; value: string; options: CookieOptions }[]) {
           toSet.forEach(({ name, value }) => request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
           toSet.forEach(({ name, value, options }) =>
