@@ -5,9 +5,9 @@ import { useTheme } from "@/components/providers/ThemeProvider";
 import { ModalAsistencia } from "@/components/worker/ModalAsistencia";
 import { Icon } from "@/components/ui/Icons"; // <-- Importamos los íconos
 
-interface Props { title:string; subtitle?:string; onMenuToggle:()=>void; }
+interface Props { title:string; subtitle?:string; onMenuToggle?:()=>void; }
 
-export function TopbarWorker({ title, subtitle, onMenuToggle }: Props) {
+export function TopbarWorker({ title, subtitle }: Props) {
   const { hora } = useClock();
   const { theme, toggleTheme } = useTheme();
   const [showAsist, setShowAsist] = useState(true);
@@ -16,9 +16,6 @@ export function TopbarWorker({ title, subtitle, onMenuToggle }: Props) {
     <>
       <header style={{ height:60,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"var(--card)",borderBottom:"1px solid var(--border)",flexShrink:0,position:"sticky",top:0,zIndex:10 }}>
         <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-          <button onClick={onMenuToggle} style={{ background:"transparent",border:"1px solid var(--border)",borderRadius:8,width:32,height:32,cursor:"pointer",color:"var(--text-muted)",display:"flex",alignItems:"center",justifyContent:"center", padding:0 }}>
-            <Icon name="menu" size={16} />
-          </button>
           <div>
             <div style={{ fontWeight:700,fontSize:15 }}>{title}</div>
             {subtitle && <div style={{ fontSize:10,color:"var(--text-muted)",fontFamily:"'DM Mono',monospace" }}>{subtitle}</div>}

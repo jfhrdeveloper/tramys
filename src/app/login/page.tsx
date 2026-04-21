@@ -2,18 +2,23 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { Icon } from "@/components/ui/Icons";
 
 /* ================= PÁGINA DE LOGIN ================= */
 export default function LoginPage() {
+
+  /* ====== Estados y hooks ====== */
   const [email,    setEmail]    = useState("");
   const [pass,     setPass]     = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
   const [dark,     setDark]     = useState(true);
-  const router = useRouter();
+
+  const router   = useRouter();
   const supabase = createClient();
 
+  /* ==== Paleta dinámica por tema ==== */
   const t = dark
     ? { bg:"#0e1117", card:"#161b22", text:"#e8eaf0", muted:"#8b8fa8", border:"#21262d" }
     : { bg:"#f8f7f4", card:"#ffffff", text:"#1a1917", muted:"#6b6966", border:"#e5e2dc" };
@@ -42,84 +47,183 @@ export default function LoginPage() {
     setLoading(false);
   }
 
-  /* ====== Demo rápido ====== */
+  /* ====== Demo rápido por rol ====== */
   const DEMOS = [
-    { rol:"Owner",      nombre:"Dueña del negocio",  sede:"Ambas sedes",   email:"owner@tramys.pe",   color:"#f59e0b", avatar:"DU", acceso:"Acceso total al sistema"         },
-    { rol:"Encargado",  nombre:"Ricardo Palma",       sede:"Santa Anita",   email:"enc@tramys.pe",     color:"#6366f1", avatar:"RP", acceso:"Gestión de su sede únicamente"   },
-    { rol:"Trabajador", nombre:"Ana Torres",          sede:"Santa Anita",   email:"trab@tramys.pe",    color:"#16a34a", avatar:"AT", acceso:"Solo su información personal"    },
+    { rol:"Owner",      nombre:"Dueña del negocio", sede:"Ambas sedes",  email:"owner@tramys.pe", color:"#f59e0b", avatar:"DU", acceso:"Acceso total al sistema"        },
+    { rol:"Encargado",  nombre:"Ricardo Palma",      sede:"Santa Anita",  email:"enc@tramys.pe",   color:"#6366f1", avatar:"RP", acceso:"Gestión de su sede únicamente"  },
+    { rol:"Trabajador", nombre:"Ana Torres",         sede:"Santa Anita",  email:"trab@tramys.pe",  color:"#16a34a", avatar:"AT", acceso:"Solo su información personal"   },
   ];
 
   return (
-    <div style={{ fontFamily:"'Bricolage Grotesque',sans-serif", background:t.bg, color:t.text, minHeight:"100vh", display:"flex", transition:"background 0.3s" }}>
+    <div
+      className="min-h-screen flex flex-col md:flex-row"
+      style={{ fontFamily:"'Bricolage Grotesque',sans-serif", background:t.bg, color:t.text, transition:"background 0.3s" }}
+    >
 
-      {/* ================= PANEL IZQUIERDO — MARCA ================= */}
-      <div style={{
-        width:"45%", flexShrink:0,
-        background:`linear-gradient(145deg,${RED.dark} 0%,${RED.main} 50%,${RED.light} 100%)`,
-        display:"flex", flexDirection:"column", justifyContent:"space-between",
-        padding:"48px 52px", position:"relative", overflow:"hidden",
-      }}>
+      {/* ================= HEADER MÓVIL — MARCA (solo < md) ================= */}
+      <div
+        className="flex md:hidden items-center justify-between px-5 py-4 flex-shrink-0"
+        style={{ background:`linear-gradient(135deg,${RED.dark} 0%,${RED.main} 60%,${RED.light} 100%)` }}
+      >
+        {/* Logo + nombre */}
+        <div className="flex items-center gap-3">
+          <div
+            className="flex items-center justify-center rounded-xl font-extrabold text-white text-lg"
+            style={{ width:40, height:40, background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.3)", flexShrink:0 }}
+          >T</div>
+          <div>
+            <div className="font-extrabold text-white text-base leading-none tracking-tight">TRAMYS</div>
+            <div className="text-white/60 text-[9px] mt-0.5" style={{ fontFamily:"'DM Mono',monospace", letterSpacing:1 }}>
+              PANEL DE GESTIÓN
+            </div>
+          </div>
+        </div>
+
+        {/* Stats compactos en móvil */}
+        <div className="flex gap-2">
+          {[["24","Trabajadores"],["2","Sedes"]].map(([val,lbl])=>(
+            <div
+              key={lbl}
+              className="rounded-lg px-3 py-1.5 text-center"
+              style={{ background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.2)" }}
+            >
+              <div className="font-extrabold text-white text-sm leading-none">{val}</div>
+              <div className="text-white/60 text-[9px] mt-0.5">{lbl}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ================= PANEL IZQUIERDO — MARCA (solo ≥ md) ================= */}
+      <div
+        className="hidden md:flex flex-col justify-between md:w-[42%] lg:w-[45%] flex-shrink-0 relative overflow-hidden"
+        style={{
+          background:`linear-gradient(145deg,${RED.dark} 0%,${RED.main} 50%,${RED.light} 100%)`,
+          padding:"clamp(32px,4vw,52px) clamp(28px,4vw,52px)",
+        }}
+      >
         {/* ==== Círculos decorativos ==== */}
-        {[{t:-80,r:-80,s:320},{b:-60,l:-60,s:260},{t:"40%",l:"60%",s:120}].map((c,i)=>(
-          <div key={i} style={{ position:"absolute", top:c.t, right:c.r, bottom:c.b, left:c.l, width:c.s, height:c.s, borderRadius:"50%", background:"rgba(255,255,255,0.05)" }} />
+        {[
+          { top:-80,  right:-80, size:320 },
+          { bottom:-60, left:-60, size:260 },
+          { top:"40%", left:"60%", size:120 },
+        ].map((c,i)=>(
+          <div
+            key={i}
+            style={{
+              position:"absolute",
+              top: "top" in c ? c.top : undefined,
+              right:"right" in c ? c.right : undefined,
+              bottom:"bottom" in c ? c.bottom : undefined,
+              left: "left" in c ? c.left : undefined,
+              width:c.size, height:c.size,
+              borderRadius:"50%", background:"rgba(255,255,255,0.05)",
+            }}
+          />
         ))}
 
         {/* Logo */}
-        <div style={{ display:"flex", alignItems:"center", gap:14, position:"relative" }}>
-          <div style={{ width:44,height:44,borderRadius:12,background:"rgba(255,255,255,0.2)",border:"1px solid rgba(255,255,255,0.3)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:20,color:"#fff" }}>T</div>
+        <div className="flex items-center gap-3.5 relative">
+          <div
+            className="flex items-center justify-center rounded-xl font-extrabold text-white text-xl"
+            style={{ width:44, height:44, background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.3)" }}
+          >T</div>
           <div>
-            <div style={{ fontWeight:800,fontSize:20,color:"#fff",letterSpacing:-0.5 }}>TRAMYS</div>
-            <div style={{ fontSize:10,color:"rgba(255,255,255,0.65)",fontFamily:"'DM Mono',monospace",letterSpacing:1 }}>PANEL DE GESTIÓN</div>
+            <div className="font-extrabold text-white text-xl tracking-tight">TRAMYS</div>
+            <div className="text-white/65 text-[10px]" style={{ fontFamily:"'DM Mono',monospace", letterSpacing:1 }}>
+              PANEL DE GESTIÓN
+            </div>
           </div>
         </div>
 
         {/* Texto central */}
-        <div style={{ position:"relative" }}>
-          <div style={{ fontSize:36,fontWeight:800,color:"#fff",lineHeight:1.15,marginBottom:16,letterSpacing:-1 }}>
+        <div className="relative">
+          <div
+            className="font-extrabold text-white leading-tight mb-4"
+            style={{ fontSize:"clamp(26px,2.5vw,36px)", letterSpacing:-1 }}
+          >
             Gestión operativa<br />en un solo lugar.
           </div>
-          <div style={{ fontSize:14,color:"rgba(255,255,255,0.7)",lineHeight:1.7,maxWidth:340 }}>
+          <div className="text-white/70 text-sm leading-relaxed" style={{ maxWidth:340 }}>
             Controla asistencia, planilla, jaladores y adelantos de tus dos sedes desde un panel unificado.
           </div>
-          <div style={{ display:"flex",gap:12,marginTop:36 }}>
+          <div className="flex gap-3 mt-9">
             {[["24","Trabajadores"],["2","Sedes"],["5","Jaladores"]].map(([val,lbl])=>(
-              <div key={lbl} style={{ background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"12px 16px",flex:1 }}>
-                <div style={{ fontWeight:800,fontSize:22,color:"#fff",lineHeight:1 }}>{val}</div>
-                <div style={{ fontSize:11,color:"rgba(255,255,255,0.65)",marginTop:3 }}>{lbl}</div>
+              <div
+                key={lbl}
+                className="flex-1 rounded-xl"
+                style={{ background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.2)", padding:"12px 16px" }}
+              >
+                <div className="font-extrabold text-white text-[22px] leading-none">{val}</div>
+                <div className="text-white/65 text-[11px] mt-1">{lbl}</div>
               </div>
             ))}
           </div>
         </div>
 
-        <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",fontFamily:"'DM Mono',monospace",position:"relative" }}>
-          © 2026 TRAMYS · Santa Anita & Puente Piedra
+        <div className="relative text-[11px] text-white/45" style={{ fontFamily:"'DM Mono',monospace" }}>
+          © 2026 TRAMYS · Santa Anita &amp; Puente Piedra
         </div>
       </div>
 
       {/* ================= PANEL DERECHO — FORMULARIO ================= */}
-      <div style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"48px 40px",position:"relative" }}>
+      <div
+        className="flex-1 flex flex-col items-center justify-center relative
+                   px-5 py-8
+                   sm:px-10 sm:py-10
+                   md:px-10 md:py-12
+                   lg:px-14"
+      >
 
         {/* Toggle tema */}
-        <div style={{ position:"absolute",top:24,right:24 }}>
-          <div onClick={()=>setDark(!dark)} style={{ width:48,height:26,borderRadius:99,cursor:"pointer",background:dark?RED.main:t.border,position:"relative",transition:"background 0.3s" }}>
-            <div style={{ position:"absolute",top:3,left:dark?25:3,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 0.3s",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10 }}>{dark?"🌙":"☀️"}</div>
+        <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
+          <div
+            onClick={()=>setDark(!dark)}
+            className="relative cursor-pointer rounded-full transition-all"
+            style={{ width:48, height:26, background:dark?RED.main:t.border }}
+          >
+            <div
+              className="absolute top-[3px] w-5 h-5 rounded-full bg-white flex items-center justify-center text-[10px] transition-all duration-300"
+              style={{ left: dark ? 25 : 3 }}
+            >
+              {dark ? "🌙" : "☀️"}
+            </div>
           </div>
         </div>
 
-        <div style={{ width:"100%",maxWidth:400 }}>
-          <div style={{ marginBottom:32 }}>
-            <div style={{ fontWeight:800,fontSize:26,letterSpacing:-0.5,marginBottom:6 }}>Bienvenido de vuelta</div>
-            <div style={{ fontSize:13,color:t.muted }}>Ingresa tus credenciales para acceder al panel</div>
+        {/* ==== Contenedor del formulario ==== */}
+        <div className="w-full max-w-sm sm:max-w-md">
+
+          {/* Encabezado del form */}
+          <div className="mb-7 sm:mb-8">
+            <div className="font-extrabold text-2xl sm:text-[26px] tracking-tight mb-1.5">
+              Bienvenido de vuelta
+            </div>
+            <div className="text-[13px]" style={{ color:t.muted }}>
+              Ingresa tus credenciales para acceder al panel
+            </div>
           </div>
 
-          <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
+          <div className="flex flex-col gap-4">
+
             {/* Email */}
             <div>
-              <label style={{ fontSize:12,fontWeight:600,color:t.muted,display:"block",marginBottom:7,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:0.5 }}>Correo electrónico</label>
-              <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+              <label
+                className="block text-xs font-semibold uppercase mb-1.5 tracking-wide"
+                style={{ color:t.muted, fontFamily:"'DM Mono',monospace", letterSpacing:"0.05em" }}
+              >
+                Correo electrónico
+              </label>
+              <input
+                type="email" value={email} onChange={e=>setEmail(e.target.value)}
                 placeholder="tu@tramys.pe"
                 onKeyDown={e=>e.key==="Enter"&&handleLogin()}
-                style={{ width:"100%",padding:"11px 14px",borderRadius:10,border:`1.5px solid ${t.border}`,background:t.bg,color:t.text,fontSize:14,fontFamily:"'Bricolage Grotesque',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s" }}
+                className="w-full rounded-xl text-sm outline-none transition-all"
+                style={{
+                  padding:"11px 14px", border:`1.5px solid ${t.border}`,
+                  background:t.bg, color:t.text,
+                  fontFamily:"'Bricolage Grotesque',sans-serif", boxSizing:"border-box",
+                }}
                 onFocus={e=>e.target.style.borderColor=RED.main}
                 onBlur={e=>e.target.style.borderColor=t.border}
               />
@@ -127,77 +231,132 @@ export default function LoginPage() {
 
             {/* Contraseña */}
             <div>
-              <div style={{ display:"flex",justifyContent:"space-between",marginBottom:7 }}>
-                <label style={{ fontSize:12,fontWeight:600,color:t.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:0.5 }}>Contraseña</label>
-                <button style={{ background:"transparent",border:"none",cursor:"pointer",fontSize:12,color:RED.main,fontFamily:"'Bricolage Grotesque',sans-serif",fontWeight:600 }}>¿Olvidaste tu contraseña?</button>
+              <div className="flex justify-between mb-1.5">
+                <label
+                  className="text-xs font-semibold uppercase tracking-wide"
+                  style={{ color:t.muted, fontFamily:"'DM Mono',monospace", letterSpacing:"0.05em" }}
+                >
+                  Contraseña
+                </label>
+                <button
+                  className="text-xs font-semibold bg-transparent border-none cursor-pointer"
+                  style={{ color:RED.main, fontFamily:"'Bricolage Grotesque',sans-serif" }}
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
               </div>
-              <div style={{ position:"relative" }}>
-                <input type={showPass?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)}
+              <div className="relative">
+                <input
+                  type={showPass?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)}
                   placeholder="••••••••"
                   onKeyDown={e=>e.key==="Enter"&&handleLogin()}
-                  style={{ width:"100%",padding:"11px 44px 11px 14px",borderRadius:10,border:`1.5px solid ${t.border}`,background:t.bg,color:t.text,fontSize:14,fontFamily:"'Bricolage Grotesque',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s" }}
+                  className="w-full rounded-xl text-sm outline-none transition-all"
+                  style={{
+                    padding:"11px 44px 11px 14px", border:`1.5px solid ${t.border}`,
+                    background:t.bg, color:t.text,
+                    fontFamily:"'Bricolage Grotesque',sans-serif", boxSizing:"border-box",
+                  }}
                   onFocus={e=>e.target.style.borderColor=RED.main}
                   onBlur={e=>e.target.style.borderColor=t.border}
                 />
-                <button onClick={()=>setShowPass(!showPass)} style={{ position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",cursor:"pointer",color:t.muted,fontSize:14 }}>
-                  {showPass?"🙈":"👁️"}
+                <button
+                  onClick={()=>setShowPass(!showPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer text-sm"
+                  style={{ color:t.muted }}
+                >
+                  <Icon name={showPass ? "eye_off" : "eye"} size={16} color={t.muted} />
                 </button>
               </div>
             </div>
 
             {/* Error */}
             {error && (
-              <div style={{ background:"rgba(196,26,58,0.08)",border:"1px solid rgba(196,26,58,0.25)",borderRadius:8,padding:"10px 14px",fontSize:12,color:RED.main,fontWeight:500 }}>
+              <div
+                className="rounded-lg text-xs font-medium"
+                style={{
+                  padding:"10px 14px",
+                  background:"rgba(196,26,58,0.08)", border:"1px solid rgba(196,26,58,0.25)",
+                  color:RED.main,
+                }}
+              >
                 ⚠️ {error}
               </div>
             )}
 
             {/* Botón login */}
-            <button onClick={handleLogin} disabled={loading} style={{
-              width:"100%",padding:"13px 0",borderRadius:10,
-              background:loading?t.border:RED.main,color:loading?t.muted:"#fff",
-              border:"none",cursor:loading?"not-allowed":"pointer",
-              fontWeight:700,fontSize:15,fontFamily:"'Bricolage Grotesque',sans-serif",
-              transition:"all 0.2s",marginTop:4,
-              display:"flex",alignItems:"center",justifyContent:"center",gap:8,
-            }}>
+            <button
+              onClick={handleLogin} disabled={loading}
+              className="w-full rounded-xl font-bold text-[15px] flex items-center justify-center gap-2 mt-1 transition-all"
+              style={{
+                padding:"13px 0",
+                background:loading?t.border:RED.main,
+                color:loading?t.muted:"#fff",
+                border:"none", cursor:loading?"not-allowed":"pointer",
+                fontFamily:"'Bricolage Grotesque',sans-serif",
+              }}
+            >
               {loading ? (
-                <><div style={{ width:14,height:14,border:`2px solid ${t.muted}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite" }} />Verificando...</>
+                <>
+                  <div
+                    className="rounded-full border-2 border-t-transparent"
+                    style={{ width:14, height:14, borderColor:`${t.muted} transparent transparent transparent`, animation:"spin 0.8s linear infinite" }}
+                  />
+                  Verificando...
+                </>
               ) : "Ingresar al panel"}
             </button>
           </div>
 
-          {/* ==== Demo roles ==== */}
-          <div style={{ marginTop:28,paddingTop:22,borderTop:`1px solid ${t.border}` }}>
-            <div style={{ fontSize:11,color:t.muted,fontFamily:"'DM Mono',monospace",textAlign:"center",marginBottom:12,letterSpacing:0.5 }}>ACCESO RÁPIDO — DEMO</div>
-            <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+          {/* ====== Demo roles ====== */}
+          <div className="mt-6 sm:mt-7 pt-5 sm:pt-6" style={{ borderTop:`1px solid ${t.border}` }}>
+            <div
+              className="text-[11px] text-center mb-3 tracking-wider"
+              style={{ color:t.muted, fontFamily:"'DM Mono',monospace" }}
+            >
+              ACCESO RÁPIDO — DEMO
+            </div>
+            <div className="flex flex-col gap-3">
               {DEMOS.map(r=>(
-                <button key={r.rol} onClick={()=>{ setEmail(r.email); setPass("demo1234"); }} style={{
-                  width:"100%",padding:"10px 14px",borderRadius:10,cursor:"pointer",
-                  background:`${r.color}08`,border:`1px solid ${r.color}25`,
-                  fontFamily:"'Bricolage Grotesque',sans-serif",transition:"all 0.15s",
-                  display:"flex",alignItems:"center",gap:12,textAlign:"left",
-                }}
+                <button
+                  key={r.rol}
+                  onClick={()=>{ setEmail(r.email); setPass("demo1234"); }}
+                  className="w-full rounded-xl cursor-pointer transition-all flex items-center gap-4 text-left"
+                  style={{
+                    padding:"12px 16px",
+                    background:`${r.color}08`, border:`1px solid ${r.color}25`,
+                    fontFamily:"'Bricolage Grotesque',sans-serif",
+                  }}
                   onMouseEnter={e=>{ (e.currentTarget as HTMLElement).style.background=`${r.color}16`; (e.currentTarget as HTMLElement).style.borderColor=`${r.color}50`; }}
                   onMouseLeave={e=>{ (e.currentTarget as HTMLElement).style.background=`${r.color}08`; (e.currentTarget as HTMLElement).style.borderColor=`${r.color}25`; }}
                 >
-                  <div style={{ width:34,height:34,borderRadius:"50%",background:`${r.color}20`,border:`1px solid ${r.color}40`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,color:r.color,flexShrink:0 }}>{r.avatar}</div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:2 }}>
-                      <span style={{ fontWeight:700,fontSize:13,color:r.color }}>{r.rol}</span>
-                      <span style={{ fontSize:10,color:t.muted }}>·</span>
-                      <span style={{ fontSize:12,fontWeight:600,color:t.text }}>{r.nombre}</span>
-                    </div>
-                    <div style={{ fontSize:10,color:t.muted }}>{r.sede} · {r.acceso}</div>
+                  {/* Avatar */}
+                  <div
+                    className="rounded-full flex items-center justify-center font-extrabold text-[12px] flex-shrink-0"
+                    style={{ width:40, height:40, background:`${r.color}20`, border:`1.5px solid ${r.color}40`, color:r.color }}
+                  >
+                    {r.avatar}
                   </div>
-                  <span style={{ fontSize:12,color:r.color,opacity:0.7 }}>→</span>
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold text-[13px]" style={{ color:r.color }}>{r.rol}</span>
+                      <span className="text-[11px]" style={{ color:t.muted }}>·</span>
+                      <span className="font-semibold text-[13px] truncate" style={{ color:t.text }}>{r.nombre}</span>
+                    </div>
+                    <div className="text-[11px] truncate" style={{ color:t.muted }}>{r.sede} · {r.acceso}</div>
+                  </div>
+                  <span className="text-sm opacity-70 flex-shrink-0" style={{ color:r.color }}>→</span>
                 </button>
               ))}
             </div>
           </div>
         </div>
       </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Mono&display=swap');
+      `}</style>
     </div>
   );
 }

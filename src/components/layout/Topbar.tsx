@@ -5,9 +5,9 @@ import { useTheme } from "@/components/providers/ThemeProvider";
 import { Icon } from "@/components/ui/Icons"; // <-- Importamos los íconos
 
 interface TopbarProps {
-  title: string; 
+  title: string;
   subtitle?: string;
-  onMenuToggle: () => void;
+  onMenuToggle?: () => void;
 }
 
 const NOTIFS = [
@@ -16,7 +16,7 @@ const NOTIFS = [
   { text:"Miguel T. superó su meta mensual",     color:"#16a34a", leido:true  },
 ];
 
-export function Topbar({ title, subtitle, onMenuToggle }: TopbarProps) {
+export function Topbar({ title, subtitle }: TopbarProps) {
   const { hora } = useClock();
   const { theme, toggleTheme } = useTheme();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -26,9 +26,6 @@ export function Topbar({ title, subtitle, onMenuToggle }: TopbarProps) {
     <header style={{ height:60,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",background:"var(--card)",borderBottom:"1px solid var(--border)",flexShrink:0,position:"sticky",top:0,zIndex:10 }}>
       {/* Izquierda */}
       <div style={{ display:"flex",alignItems:"center",gap:12 }}>
-        <button onClick={onMenuToggle} style={{ background:"transparent",border:"1px solid var(--border)",borderRadius:8,width:32,height:32,cursor:"pointer",color:"var(--text-muted)",display:"flex",alignItems:"center",justifyContent:"center", padding:0 }}>
-          <Icon name="menu" size={16} />
-        </button>
         <div>
           <div className="topbar-title" style={{ fontWeight:700,fontSize:16 }}>{title}</div>
           {subtitle && <div style={{ fontSize:10,color:"var(--text-muted)",fontFamily:"'DM Mono',monospace" }}>{subtitle}</div>}
