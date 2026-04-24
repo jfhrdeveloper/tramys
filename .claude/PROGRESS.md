@@ -100,11 +100,11 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
   - [ ] **ELIMINAR** concepto de "Captación", cambiar a "Comisiones". 
   - [ ] Perfil: Dashboard dinámico de rendimiento por ingresos.
   - [ ] **ELIMINAR** KPIs superiores (total jaladores, captación de hoy, comisiones totales).
-- [ ] **5. Asistencia:** 
-  - [ ] Mejorar contraste (actualmente fondo y letras muy blancas).
-  - [ ] Mostrar **Apodo** (prioridad) o Nombre. NO mostrar cantidad de asistentes.
-  - [ ] Agregar Dropdown Mes/Año (manteniendo vista actual).
-  - [ ] **ELIMINAR** KPIs superiores (Presencias, Tardanzas, Ausencias).
+- [x] **5. Asistencia:** 
+  - [x] Mejorar contraste (actualmente fondo y letras muy blancas).
+  - [x] Mostrar **Apodo** (prioridad) o Nombre. NO mostrar cantidad de asistentes.
+  - [x] Agregar Dropdown Mes/Año (manteniendo vista actual).
+  - [x] **ELIMINAR** KPIs superiores (Presencias, Tardanzas, Ausencias).
 - [ ] **6. Planilla:** 
   - [ ] Añadir cálculo: `Total Bruto - Neto = Ganancia Compañía`.
   - [ ] Mostrar días trabajados separados por tipo (normal, tardanza, fds, feriado).
@@ -132,4 +132,4 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 - [ ] **Sidebar/Menú:** Debajo del correo del Owner debe haber una línea divisora y botón SVG "Cerrar sesión".
 - [x] **Preloader:** Bienvenida al iniciar sesión con Nombre o Apodo.
 - [ ] **Funcionalidad:** Todos los botones deben ser funcionales y afectar vistas de trabajador/encargado según sus permisos.
-- [ ] **Transiciones y Skeletons:** Agregar efecto suave (fade-in) al cambiar de vistas y usar skeleton loaders al cargar datos para evitar cambios bruscos en la UI.
+- [ ] **Transiciones y Skeletons:** [x] Efecto suave (fade-in) implementado en layouts / [ ] Skeleton loaders pendientes.
