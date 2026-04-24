@@ -124,7 +124,7 @@ export default function AsistenciaPage() {
   return (
     <>
       <Topbar title="Asistencia" subtitle={`${MESES[month]} ${year}`} />
-      <main className="page-main">
+      <main className="page-main animate-fade-in">
 
         {/* ====== Filtros de sede + dropdown mes/año ====== */}
         <div className="card" style={{ padding: 14, marginBottom: 14, display:"flex", gap: 10, flexWrap:"wrap", alignItems:"center" }}>
@@ -134,7 +134,7 @@ export default function AsistenciaPage() {
           ].map(s => (
             <button key={s.id} onClick={()=>setFiltroSede(s.id)}
               style={{
-                padding:"8px 14px", borderRadius: 8, border:"none", cursor:"pointer",
+                padding:"8px 14px", borderRadius: 8, cursor:"pointer",
                 background: filtroSede===s.id ? s.color : "var(--bg)",
                 color:      filtroSede===s.id ? "#fff" : "var(--text)",
                 border: filtroSede===s.id ? "none" : "1px solid var(--border)",
