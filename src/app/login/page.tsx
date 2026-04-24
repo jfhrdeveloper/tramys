@@ -3,6 +3,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui/Icons";
+import { Preloader } from "@/components/ui/Preloader";
 
 /* ================= PÁGINA DE LOGIN ================= */
 export default function LoginPage() {
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
   const [dark,     setDark]     = useState(true);
+  const [welcome,  setWelcome]  = useState<{ nombre:string; apodo?:string; rol:string } | null>(null);
 
   const router   = useRouter();
   const supabase = createClient();
@@ -37,12 +39,19 @@ export default function LoginPage() {
       return;
     }
 
-    /* ==== Obtener rol para redirigir ==== */
+    /* ==== Obtener rol y nombre para saludar + redirigir ==== */
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const { data: profile } = await supabase
-        .from("profiles").select("rol").eq("id", user.id).single();
-      router.push(profile?.rol === "trabajador" ? "/mi-panel" : "/dashboard");
+        .from("profiles").select("rol, nombre").eq("id", user.id).single();
+      const nombre = (profile?.nombre as string | undefined) ?? (user.email?.split("@")[0] ?? "Usuario");
+      const rol    = (profile?.rol    as string | undefined) ?? "trabajador";
+      setLoading(false);
+      setWelcome({ nombre, rol });
+      setTimeout(() => {
+        router.push(rol === "trabajador" ? "/mi-panel" : "/dashboard");
+      }, 1700);
+      return;
     }
     setLoading(false);
   }
@@ -53,6 +62,8 @@ export default function LoginPage() {
     { rol:"Encargado",  nombre:"Ricardo Palma",      sede:"Santa Anita",  email:"enc@tramys.pe",   color:"#6366f1", avatar:"RP", acceso:"Gestión de su sede únicamente"  },
     { rol:"Trabajador", nombre:"Ana Torres",         sede:"Santa Anita",  email:"trab@tramys.pe",  color:"#16a34a", avatar:"AT", acceso:"Solo su información personal"   },
   ];
+
+  if (welcome) return <Preloader nombre={welcome.nombre} apodo={welcome.apodo} durationMs={1800} />;
 
   return (
     <div
@@ -183,10 +194,10 @@ export default function LoginPage() {
             style={{ width:48, height:26, background:dark?RED.main:t.border }}
           >
             <div
-              className="absolute top-[3px] w-5 h-5 rounded-full bg-white flex items-center justify-center text-[10px] transition-all duration-300"
+              className="absolute top-[3px] w-5 h-5 rounded-full bg-white flex items-center justify-center transition-all duration-300"
               style={{ left: dark ? 25 : 3 }}
             >
-              {dark ? "🌙" : "☀️"}
+              <Icon name={dark ? "moon" : "sun"} size={12} color={dark ? RED.main : "#f59e0b"} />
             </div>
           </div>
         </div>
@@ -269,17 +280,18 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Error */}
+            {/* ==== Mensaje de error ==== */}
             {error && (
               <div
-                className="rounded-lg text-xs font-medium"
+                className="rounded-lg text-xs font-medium flex items-center gap-2"
                 style={{
                   padding:"10px 14px",
                   background:"rgba(196,26,58,0.08)", border:"1px solid rgba(196,26,58,0.25)",
                   color:RED.main,
                 }}
               >
-                ⚠️ {error}
+                <Icon name="alert_circle" size={14} color={RED.main} />
+                <span style={{ flex:1, minWidth:0 }}>{error}</span>
               </div>
             )}
 
@@ -345,7 +357,9 @@ export default function LoginPage() {
                     </div>
                     <div className="text-[11px] truncate" style={{ color:t.muted }}>{r.sede} · {r.acceso}</div>
                   </div>
-                  <span className="text-sm opacity-70 flex-shrink-0" style={{ color:r.color }}>→</span>
+                  <span className="flex-shrink-0 flex items-center" style={{ color:r.color }}>
+                    <Icon name="chevron_right" size={16} color={r.color} />
+                  </span>
                 </button>
               ))}
             </div>

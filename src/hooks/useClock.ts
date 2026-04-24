@@ -23,8 +23,17 @@ export function useClock() {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 
+  /* ==== Fecha compacta para el reloj del topbar (ej: "Dom 19 Abr") ==== */
+  const fechaCorta = (() => {
+    const dia = time.toLocaleDateString("es-PE", { weekday: "short" }).replace(".", "");
+    const num = time.getDate();
+    const mes = time.toLocaleDateString("es-PE", { month: "short" }).replace(".", "");
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    return `${cap(dia)} ${num} ${cap(mes)}`;
+  })();
+
   const esTardanza =
     time.getHours() > 8 || (time.getHours() === 8 && time.getMinutes() > 15);
 
-  return { time, hora, horaCorta, fecha, esTardanza };
+  return { time, hora, horaCorta, fecha, fechaCorta, esTardanza };
 }

@@ -4,6 +4,7 @@ import { Topbar } from "@/components/layout/Topbar";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
+import { StatCardHidden, HideableAmount } from "@/components/ui/HideableAmount";
 import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icons";
 import { money, iniciales, colorSede } from "@/lib/utils/formatters";
@@ -40,7 +41,7 @@ function ModalDecision({ open, onClose, adelanto, tipo }: {
             Motivo: <span style={{ fontWeight:500 }}>{adelanto.motivo}</span>
           </div>
         </div>
-        <div style={{ fontWeight:800, fontSize:20, color:"var(--brand)" }}>{money(adelanto.monto)}</div>
+        <HideableAmount value={money(adelanto.monto)} size={20} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
       </div>
 
       <div style={{ marginBottom:20 }}>
@@ -49,16 +50,21 @@ function ModalDecision({ open, onClose, adelanto, tipo }: {
       </div>
 
       {tipo==="aprobar" && (
-        <div style={{ background:"rgba(34,197,94,0.08)", border:"1px solid rgba(34,197,94,0.2)", borderRadius:8, padding:"10px 14px", marginBottom:16, fontSize:12, color:"#16a34a" }}>
-          ✓ Se descontará automáticamente de la planilla de {adelanto.nombre.split(" ")[0]}
+        <div style={{ background:"rgba(34,197,94,0.08)", border:"1px solid rgba(34,197,94,0.2)", borderRadius:8, padding:"10px 14px", marginBottom:16, fontSize:12, color:"#16a34a", display:"flex", alignItems:"center", gap:6 }}>
+          <Icon name="check" size={14} color="#16a34a" />
+          Se descontará automáticamente de la planilla de {adelanto.nombre.split(" ")[0]}
         </div>
       )}
 
       <div style={{ display:"flex", gap:10 }}>
         <button className="btn-outline" style={{ flex:1 }} onClick={onClose}>Cancelar</button>
         {tipo==="rechazar"
-          ? <button style={{ flex:1, padding:"10px 0", borderRadius:8, background:"rgba(139,139,168,0.15)", border:"1px solid var(--border)", color:"#8b8fa8", cursor:"pointer", fontWeight:600, fontSize:13, fontFamily:"'Bricolage Grotesque',sans-serif" }}>✕ Rechazar</button>
-          : <button style={{ flex:1, padding:"10px 0", borderRadius:8, background:"#16a34a", color:"#fff", border:"none", cursor:"pointer", fontWeight:700, fontSize:13, fontFamily:"'Bricolage Grotesque',sans-serif" }}>✓ Aprobar</button>
+          ? <button style={{ flex:1, padding:"10px 0", borderRadius:8, background:"rgba(139,139,168,0.15)", border:"1px solid var(--border)", color:"#8b8fa8", cursor:"pointer", fontWeight:600, fontSize:13, fontFamily:"'Bricolage Grotesque',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+              <Icon name="x" size={13} color="#8b8fa8" /> Rechazar
+            </button>
+          : <button style={{ flex:1, padding:"10px 0", borderRadius:8, background:"#16a34a", color:"#fff", border:"none", cursor:"pointer", fontWeight:700, fontSize:13, fontFamily:"'Bricolage Grotesque',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+              <Icon name="check" size={13} color="#fff" /> Aprobar
+            </button>
         }
       </div>
     </Modal>
@@ -127,20 +133,22 @@ export default function AdelantosPage() {
       />
       <main className="page-main">
 
-        {/* Stats */}
+        {/* ====== Estadísticas ====== */}
         <div className="grid-stats" style={{ marginBottom:16 }}>
-          <StatCard label="Pendientes"     value={pendientes.length} color="#d97706"       sub={`${money(totalPend)} por aprobar`} />
-          <StatCard label="Aprobados mes"  value={aprobados.length}  color="#16a34a"       sub={`${money(totalEmit)} emitido`}     />
-          <StatCard label="Rechazados"     value={rechazados.length} color="#8b8fa8"       sub="Este mes"                          />
-          <StatCard label="Total emitido"  value={money(totalEmit)}  color="var(--brand)"  sub="Se descuenta de planilla"          />
+          <StatCard       label="Pendientes"     value={pendientes.length} color="#d97706"       sub={`${money(totalPend)} por aprobar`} />
+          <StatCard       label="Aprobados mes"  value={aprobados.length}  color="#16a34a"       sub={`${money(totalEmit)} emitido`}     />
+          <StatCard       label="Rechazados"     value={rechazados.length} color="#8b8fa8"       sub="Este mes"                          />
+          <StatCardHidden label="Total emitido"  value={money(totalEmit)}  color="var(--brand)"  sub="Se descuenta de planilla"          />
         </div>
 
-        {/* Pendientes destacados */}
+        {/* ====== Pendientes destacados ====== */}
         {pendientes.length > 0 && (
           <div className="card" style={{ border:"1px solid rgba(245,158,11,0.3)", borderLeft:"4px solid #f59e0b", marginBottom:16 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
               <div>
-                <div style={{ fontWeight:700, fontSize:15 }}>⚠️ Requieren aprobación</div>
+                <div style={{ fontWeight:700, fontSize:15, display:"flex", alignItems:"center", gap:6 }}>
+                  <Icon name="alert_circle" size={16} color="#f59e0b" /> Requieren aprobación
+                </div>
                 <div style={{ fontSize:11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
                   {pendientes.length} solicitudes · {money(totalPend)} en total
                 </div>
@@ -158,10 +166,16 @@ export default function AdelantosPage() {
                       <div style={{ fontSize:12, marginTop:3 }}>Motivo: <span style={{ fontWeight:500 }}>{a.motivo}</span></div>
                     </div>
                     <div style={{ textAlign:"right" }}>
-                      <div style={{ fontWeight:800, fontSize:20, color:"var(--brand)", marginBottom:8 }}>{money(a.monto)}</div>
+                      <div style={{ marginBottom:8 }}>
+                        <HideableAmount value={money(a.monto)} size={20} color="var(--brand)" weight={800} align="right" fontFamily="'DM Mono',monospace" />
+                      </div>
                       <div style={{ display:"flex", gap:8 }}>
-                        <button className="btn-ghost" style={{ border:"1px solid var(--border)", fontSize:12 }} onClick={()=>setModalDecision({adelanto:a,tipo:"rechazar"})}>✕ Rechazar</button>
-                        <button style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:7, padding:"6px 14px", cursor:"pointer", fontSize:12, fontWeight:700, fontFamily:"'Bricolage Grotesque',sans-serif" }} onClick={()=>setModalDecision({adelanto:a,tipo:"aprobar"})}>✓ Aprobar</button>
+                        <button className="btn-ghost" style={{ border:"1px solid var(--border)", fontSize:12, display:"flex", alignItems:"center", gap:5, minHeight:32 }} onClick={()=>setModalDecision({adelanto:a,tipo:"rechazar"})}>
+                          <Icon name="x" size={12} color="currentColor" /> Rechazar
+                        </button>
+                        <button style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:7, padding:"6px 14px", cursor:"pointer", fontSize:12, fontWeight:700, fontFamily:"'Bricolage Grotesque',sans-serif", display:"flex", alignItems:"center", gap:5, minHeight:32 }} onClick={()=>setModalDecision({adelanto:a,tipo:"aprobar"})}>
+                          <Icon name="check" size={12} color="#fff" /> Aprobar
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -171,7 +185,7 @@ export default function AdelantosPage() {
           </div>
         )}
 
-        {/* Historial */}
+        {/* ====== Historial de solicitudes ====== */}
         <div className="card" style={{ padding:0, overflow:"hidden" }}>
           <div style={{ padding:"14px 20px", borderBottom:"1px solid var(--border)", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
             <span style={{ fontSize:12, fontWeight:600, color:"var(--text-muted)" }}>Historial:</span>
@@ -209,7 +223,7 @@ export default function AdelantosPage() {
                         </div>
                       </td>
                       <td><span style={{ fontSize:11, fontWeight:600, color:col }}>{a.sede}</span></td>
-                      <td style={{ fontWeight:800, color:"var(--brand)", fontFamily:"'DM Mono',monospace" }}>{money(a.monto)}</td>
+                      <td><HideableAmount value={money(a.monto)} size={14} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" /></td>
                       <td style={{ fontSize:12, color:"var(--text-muted)", maxWidth:140 }}>{a.motivo}</td>
                       <td style={{ fontSize:11, fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{a.fecha}</td>
                       <td><Badge variant={a.estado} small /></td>

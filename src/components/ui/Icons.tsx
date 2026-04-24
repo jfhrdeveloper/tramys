@@ -493,6 +493,53 @@ const ICONS: Record<string, (props: React.SVGProps<SVGSVGElement>) => React.Reac
         </svg>
     ),
 
+    /* ==== Cake / Cumpleaños (torta) ==== */
+    cake: (p) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...p}>
+            <path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8" strokeWidth={p.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M4 16c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1" strokeWidth={p.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M2 21h20" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+            <path d="M9 8V5a1 1 0 0 1 2 0v3" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+            <path d="M13 8V5a1 1 0 0 1 2 0v3" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+            <path d="M10 3c0-1 2-1 2 0M14 3c0-1 2-1 2 0" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+        </svg>
+    ),
+
+    /* ==== Money Bill / Billete ==== */
+    money_bill: (p) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...p}>
+            <rect x="2" y="6" width="20" height="12" rx="2" strokeWidth={p.strokeWidth} />
+            <circle cx="12" cy="12" r="2.5" strokeWidth={p.strokeWidth} />
+            <path d="M6 9h.01M18 15h.01" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+            <path d="M5 12h.5M19 12h-.5" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+        </svg>
+    ),
+
+    /* ==== Trash / Eliminar ==== */
+    trash: (p) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...p}>
+            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" strokeWidth={p.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M10 11v6M14 11v6" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+        </svg>
+    ),
+
+    /* ==== Calendar Events ==== */
+    calendar: (p) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...p}>
+            <rect x="3" y="4" width="18" height="18" rx="2" strokeWidth={p.strokeWidth} />
+            <path d="M16 2v4M8 2v4M3 10h18" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+        </svg>
+    ),
+
+    /* ==== Info ==== */
+    info: (p) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...p}>
+            <circle cx="12" cy="12" r="9" strokeWidth={p.strokeWidth} />
+            <path d="M12 16v-4M12 8h.01" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+        </svg>
+    ),
+
     /* ==== Collapse sidebar ==== */
     collapse: (p) => (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...p}>

@@ -1,355 +1,624 @@
 "use client";
 
-/* ================= IMPORTS ================= */
-import { useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { Topbar } from "@/components/layout/Topbar";
-import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
-import { StatCard } from "@/components/ui/StatCard";
-import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icons";
-import { createClient } from "@/lib/supabase/client";
-import { money, iniciales, colorSede, calcularNeto } from "@/lib/utils/formatters";
-import type { Profile, Asistencia, Adelanto, Permiso } from "@/types";
+import { PhotoUpload, PhotoAvatar } from "@/components/ui/PhotoUpload";
+import { MultiverseCalendar } from "@/components/ui/MultiverseCalendar";
+import { HideableAmount } from "@/components/ui/HideableAmount";
+import { money } from "@/lib/utils/formatters";
+import {
+  useData, ingresoDia, isWeekendISO, type Worker, type TarifasWorker, type Turno,
+} from "@/components/providers/DataProvider";
+import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 
-/* ================= TIPOS LOCALES ================= */
-type TabPerfil = "asistencia" | "sueldo" | "adelantos" | "permisos";
+type TabPerfil = "asistencia" | "sueldo" | "adelantos" | "permisos" | "perfil";
 
-// Tipo local para mock: reemplaza 'sede' del Profile original con versión reducida
-type WorkerWithSede = Omit<Profile, "sede"> & { sede: { nombre: string } };
+/* ================= MODAL NUEVO/EDITAR TRABAJADOR ================= */
+function ModalWorker({
+  open, onClose, worker,
+}: { open: boolean; onClose: () => void; worker: Worker | null }) {
+  const d = useData();
+  const esNuevo = !worker;
 
-/* ================= DATOS MOCK (reemplazar con Supabase) ================= */
-const MOCK_TRABAJADORES: WorkerWithSede[] = [
-  { id: "1", nombre: "Ana Torres", avatar_url: null, rol: "trabajador", sede_id: "sa", cargo: "Asistente", turno: "08:00–18:00", sueldo: 1400, fecha_ingreso: "2023-03-01", activo: true, sede: { nombre: "Santa Anita" } },
-  { id: "2", nombre: "Luis Vera", avatar_url: null, rol: "trabajador", sede_id: "sa", cargo: "Asistente", turno: "08:00–18:00", sueldo: 1400, fecha_ingreso: "2022-06-01", activo: true, sede: { nombre: "Santa Anita" } },
-  { id: "3", nombre: "Marco Díaz", avatar_url: null, rol: "trabajador", sede_id: "pp", cargo: "Asistente", turno: "08:00–18:00", sueldo: 1350, fecha_ingreso: "2024-01-01", activo: true, sede: { nombre: "Puente Piedra" } },
-  { id: "4", nombre: "Sofía Ríos", avatar_url: null, rol: "trabajador", sede_id: "sa", cargo: "Asistente", turno: "08:00–18:00", sueldo: 1400, fecha_ingreso: "2023-09-01", activo: true, sede: { nombre: "Santa Anita" } },
-  { id: "5", nombre: "Carmen Flores", avatar_url: null, rol: "trabajador", sede_id: "pp", cargo: "Operadora", turno: "08:00–18:00", sueldo: 1500, fecha_ingreso: "2022-02-01", activo: true, sede: { nombre: "Puente Piedra" } },
-  { id: "6", nombre: "Pedro Chávez", avatar_url: null, rol: "trabajador", sede_id: "sa", cargo: "Operador", turno: "08:00–18:00", sueldo: 1500, fecha_ingreso: "2023-11-01", activo: false, sede: { nombre: "Santa Anita" } },
-  { id: "7", nombre: "Rosa Huanca", avatar_url: null, rol: "trabajador", sede_id: "pp", cargo: "Operadora", turno: "08:00–18:00", sueldo: 1500, fecha_ingreso: "2021-04-01", activo: true, sede: { nombre: "Puente Piedra" } },
-  { id: "8", nombre: "Jorge Quispe", avatar_url: null, rol: "trabajador", sede_id: "pp", cargo: "Asistente", turno: "08:00–18:00", sueldo: 1350, fecha_ingreso: "2023-07-01", activo: true, sede: { nombre: "Puente Piedra" } },
-];
+  const [nombre, setNombre] = useState(worker?.nombre ?? "");
+  const [apodo, setApodo]   = useState(worker?.apodo ?? "");
+  const [foto, setFoto]     = useState<string | null>(worker?.avatarBase64 ?? null);
+  const [sedeId, setSedeId] = useState(worker?.sedeId ?? d.sedes[0]?.id ?? "sa");
+  const [cargo, setCargo]   = useState(worker?.cargo ?? "Asistente");
+  const [email, setEmail]   = useState(worker?.email ?? "");
+  const [dni, setDni]       = useState(worker?.dni ?? "");
+  const [tel, setTel]       = useState(worker?.telefono ?? "");
+  const [turno, setTurno]   = useState<Turno>(worker?.turno ?? { entrada:"08:00", salida:"18:00" });
+  const [tarifas, setTarifas] = useState<TarifasWorker>(worker?.tarifas ?? { diaNormal: 60, tardanza: 45, finSemana: 75, feriado: 90 });
+  const [activo, setActivo] = useState(worker?.activo ?? true);
 
-const MOCK_HISTORIAL = [
-  { fecha: "Lun 14 Abr", entrada: "08:02", salida: "18:05", horas: "10h 03m", estado: "presente" as const },
-  { fecha: "Mar 15 Abr", entrada: "08:15", salida: "18:00", horas: "9h 45m", estado: "tardanza" as const },
-  { fecha: "Mié 16 Abr", entrada: "07:58", salida: "18:10", horas: "10h 12m", estado: "presente" as const },
-  { fecha: "Jue 17 Abr", entrada: "08:01", salida: "18:00", horas: "9h 59m", estado: "presente" as const },
-  { fecha: "Vie 18 Abr", entrada: "—", salida: "—", horas: "—", estado: "permiso" as const },
-  { fecha: "Dom 19 Abr", entrada: "08:03", salida: "—", horas: "En curso", estado: "presente" as const },
-];
+  useMemo(() => {
+    if (worker) {
+      setNombre(worker.nombre);
+      setApodo(worker.apodo);
+      setFoto(worker.avatarBase64);
+      setSedeId(worker.sedeId);
+      setCargo(worker.cargo);
+      setEmail(worker.email);
+      setDni(worker.dni ?? "");
+      setTel(worker.telefono ?? "");
+      setTurno(worker.turno);
+      setTarifas(worker.tarifas);
+      setActivo(worker.activo);
+    } else {
+      setNombre(""); setApodo(""); setFoto(null);
+      setSedeId(d.sedes[0]?.id ?? "sa"); setCargo("Asistente");
+      setEmail(""); setDni(""); setTel("");
+      setTurno({ entrada:"08:00", salida:"18:00" });
+      setTarifas({ diaNormal: 60, tardanza: 45, finSemana: 75, feriado: 90 });
+      setActivo(true);
+    }
+  }, [worker?.id]); // eslint-disable-line
 
-/* ================= COMPONENTE PERFIL TRABAJADOR ================= */
-function PerfilTrabajador({
-  worker,
-  onBack,
-}: {
-  worker: WorkerWithSede; // ← tipo corregido
-  onBack: () => void;
-}) {
+  function guardar() {
+    if (!nombre.trim()) return;
+    const data = {
+      nombre: nombre.trim(),
+      apodo: apodo.trim() || nombre.trim().split(" ")[0],
+      avatarBase64: foto,
+      sedeId,
+      cargo: cargo.trim() || "Asistente",
+      email: email.trim(),
+      dni: dni.trim() || undefined,
+      telefono: tel.trim() || undefined,
+      turno,
+      tarifas,
+      activo,
+      rol: (worker?.rol ?? "trabajador") as Worker["rol"],
+      fechaIngreso: worker?.fechaIngreso ?? new Date().toISOString().slice(0,10),
+    };
+    if (worker) d.updateWorker(worker.id, data);
+    else d.addWorker(data);
+    onClose();
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={esNuevo ? "Nuevo trabajador" : "Editar trabajador"} width={560}>
+      <div style={{ display:"flex", gap: 18, marginBottom: 18, flexWrap:"wrap" }}>
+        <PhotoUpload
+          value={foto}
+          onChange={setFoto}
+          size={96}
+          initials={(apodo || nombre || "?")[0]?.toUpperCase() ?? "?"}
+          color={d.sedes.find(s=>s.id===sedeId)?.color ?? "#C41A3A"}
+        />
+        <div style={{ flex: 1, minWidth: 220, display:"flex", flexDirection:"column", gap: 12 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+            <div>
+              <div className="section-label">Nombre completo *</div>
+              <input className="input-base" value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Ana Torres" />
+            </div>
+            <div>
+              <div className="section-label">Apodo</div>
+              <input className="input-base" value={apodo} onChange={e=>setApodo(e.target.value)} placeholder="Ani" />
+            </div>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+            <div>
+              <div className="section-label">Sede</div>
+              <select className="select-base" style={{ width:"100%" }} value={sedeId} onChange={e=>setSedeId(e.target.value)}>
+                {d.sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="section-label">Cargo</div>
+              <input className="input-base" value={cargo} onChange={e=>setCargo(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+            <div>
+              <div className="section-label">Email</div>
+              <input className="input-base" value={email} onChange={e=>setEmail(e.target.value)} placeholder="usuario@tramys.pe" />
+            </div>
+            <div>
+              <div className="section-label">Teléfono</div>
+              <input className="input-base" value={tel} onChange={e=>setTel(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <div className="section-label">DNI</div>
+            <input className="input-base" value={dni} onChange={e=>setDni(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Turno */}
+      <div style={{ marginBottom: 14 }}>
+        <div className="section-label">Turno</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+          <input type="time" className="input-base input-mono" value={turno.entrada} onChange={e=>setTurno({...turno, entrada:e.target.value})} />
+          <input type="time" className="input-base input-mono" value={turno.salida}  onChange={e=>setTurno({...turno, salida:e.target.value})} />
+        </div>
+      </div>
+
+      {/* Tarifas */}
+      <div style={{ marginBottom: 14 }}>
+        <div className="section-label">Tarifas por día (S/)</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap: 10 }}>
+          {([
+            ["diaNormal", "Día normal", "#16a34a"],
+            ["tardanza",  "Tardanza",   "#f59e0b"],
+            ["finSemana", "Fin semana", "#6366f1"],
+            ["feriado",   "Feriado",    "var(--brand)"],
+          ] as const).map(([key, label]) => (
+            <div key={key}>
+              <div style={{ fontSize: 10, color:"var(--text-muted)", marginBottom: 4 }}>{label}</div>
+              <input
+                type="number"
+                className="input-base input-mono"
+                value={tarifas[key]}
+                onChange={e=>setTarifas({ ...tarifas, [key]: Number(e.target.value) })}
+                style={{ padding: "7px 10px", fontSize: 13 }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Activo */}
+      <div style={{ marginBottom: 18, display:"flex", alignItems:"center", gap: 10 }}>
+        <label style={{ display:"flex", alignItems:"center", gap: 8, cursor:"pointer" }}>
+          <input type="checkbox" checked={activo} onChange={e=>setActivo(e.target.checked)} />
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Activo</span>
+        </label>
+      </div>
+
+      <div style={{ display:"flex", gap: 10 }}>
+        {!esNuevo && (
+          <button
+            className="btn-ghost"
+            style={{ color:"var(--brand)", border:"1px solid rgba(196,26,58,0.25)", display:"flex", alignItems:"center", gap: 5 }}
+            onClick={() => {
+              if (worker && confirm("¿Eliminar este trabajador?")) {
+                d.deleteWorker(worker.id);
+                onClose();
+              }
+            }}
+          >
+            <Icon name="trash" size={12} /> Eliminar
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
+        <button className="btn-outline" onClick={onClose}>Cancelar</button>
+        <button className="btn-primary" onClick={guardar} disabled={!nombre.trim()}>
+          {esNuevo ? "Crear" : "Guardar"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ================= PERFIL TRABAJADOR ================= */
+function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => void }) {
+  const d = useData();
+  const sede = d.sedes.find(s => s.id === worker.sedeId);
   const [tab, setTab] = useState<TabPerfil>("asistencia");
-  const [modalAdel, setModalAdel] = useState(false);
-  const [modalPerm, setModalPerm] = useState(false);
-  const [montoAdel, setMontoAdel] = useState("");
-  const [motivoAdel, setMotivoAdel] = useState("");
-  const [tipoPerm, setTipoPerm] = useState("personal");
-  const [fechaPerm, setFechaPerm] = useState("");
-  const [motivoPerm, setMotivoPerm] = useState("");
 
-  /* ==== Cálculos ==== */
-  const diasTrab = 18;
-  const tardanzas = 1;
-  const adelantosM = 0;
-  const descTard = tardanzas * 22.5;
-  const neto = calcularNeto(worker.sueldo, diasTrab, tardanzas, adelantosM);
-  const pctMes = Math.round((diasTrab / 22) * 100);
-  const colorS = colorSede(worker.sede.nombre);
+  const now = new Date();
+  const [year, setYear]   = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+
+  /* Asistencia del mes */
+  function getDayData(day: number) {
+    const iso = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    const rec = d.getAsistencia(worker.id, iso);
+    return {
+      worked: rec ? (rec.estado === "presente" || rec.estado === "tardanza") : false,
+      late: rec?.estado === "tardanza",
+    };
+  }
+  function toggleWorked(day: number) {
+    const iso = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    const rec = d.getAsistencia(worker.id, iso);
+    const workedNow = rec ? (rec.estado === "presente" || rec.estado === "tardanza") : false;
+    if (workedNow) {
+      d.setAsistencia(worker.id, iso, { estado:"ausente", entrada:null, salida:null });
+    } else {
+      d.setAsistencia(worker.id, iso, { estado:"presente", entrada: worker.turno.entrada, salida: worker.turno.salida });
+    }
+  }
+  function toggleLate(day: number) {
+    const iso = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    const rec = d.getAsistencia(worker.id, iso);
+    if (!rec || (rec.estado !== "presente" && rec.estado !== "tardanza")) return;
+    d.setAsistencia(worker.id, iso, { estado: rec.estado === "tardanza" ? "presente" : "tardanza" });
+  }
+
+  /* Historial reciente */
+  const historial = useMemo(() => {
+    return d.asistencia
+      .filter(a => a.workerId === worker.id)
+      .sort((a,b) => b.fecha.localeCompare(a.fecha))
+      .slice(0, 10);
+  }, [d.asistencia, worker.id]);
+
+  /* Sueldo del mes calculado */
+  const sueldoMes = useMemo(() => {
+    const mesRecs = d.asistencia.filter(a => {
+      if (a.workerId !== worker.id) return false;
+      const [y, m] = a.fecha.split("-").map(Number);
+      return y === year && m-1 === month;
+    });
+    let totales = { normal: 0, tardanza: 0, finSem: 0, feriado: 0, override: 0 };
+    let total = 0;
+    for (const r of mesRecs) {
+      const feriado = esFeriadoOficial(r.fecha).es;
+      const ing = ingresoDia(r, worker.tarifas, isWeekendISO(r.fecha), feriado);
+      total += ing;
+      if (r.overrideIngreso !== null) totales.override += 1;
+      else if (r.estado === "feriado" || feriado) totales.feriado += 1;
+      else if (isWeekendISO(r.fecha)) totales.finSem += 1;
+      else if (r.estado === "tardanza") totales.tardanza += 1;
+      else if (r.estado === "presente") totales.normal += 1;
+    }
+    return { total, totales };
+  }, [d.asistencia, worker, year, month]);
+
+  /* Adelantos y permisos del trabajador */
+  const adelantos = d.adelantos.filter(a => a.workerId === worker.id);
+  const permisos  = d.permisos.filter(p => p.workerId === worker.id);
+
+  function cambiarMes(dir: -1 | 1) {
+    setMonth(m => {
+      const nx = m + dir;
+      if (nx < 0)  { setYear(y=>y-1); return 11; }
+      if (nx > 11) { setYear(y=>y+1); return 0; }
+      return nx;
+    });
+  }
+
+  const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
   const TABS: { id: TabPerfil; label: string; icon: string }[] = [
-    { id: "asistencia", label: "Asistencia", icon: "asistencia" },
-    { id: "sueldo", label: "Mi Sueldo", icon: "sueldo" },
-    { id: "adelantos", label: "Adelantos", icon: "adelantos" },
-    { id: "permisos", label: "Permisos", icon: "file_check" },
+    { id:"asistencia", label:"Asistencia", icon:"asistencia" },
+    { id:"sueldo",     label:"Mi Sueldo",  icon:"money_bill" },
+    { id:"adelantos",  label:"Adelantos",  icon:"adelantos" },
+    { id:"permisos",   label:"Permisos",   icon:"file_check" },
+    { id:"perfil",     label:"Perfil",     icon:"user" },
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-
-      {/* ====== Botón volver ====== */}
-      <button
-        onClick={onBack}
-        style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 12, color: "var(--text-muted)", fontFamily: "'Bricolage Grotesque',sans-serif", display: "inline-flex", alignItems: "center", gap: 6, alignSelf: "flex-start" }}
-      >
-        <Icon name="arrow_left" size={14} /> Volver a Trabajadores
+    <div style={{ display:"flex", flexDirection:"column", gap: 14 }}>
+      <button onClick={onBack} className="btn-outline" style={{ alignSelf:"flex-start", display:"flex", alignItems:"center", gap: 6 }}>
+        <Icon name="arrow_left" size={13} /> Volver a Trabajadores
       </button>
 
-      {/* ====== Header perfil ====== */}
-      <div className="card" style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <Avatar initials={iniciales(worker.nombre)} size={56} color={colorS} />
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+      {/* Header perfil */}
+      <div className="card" style={{ display:"flex", gap: 18, alignItems:"center", flexWrap:"wrap" }}>
+        <PhotoAvatar src={worker.avatarBase64} initials={(worker.apodo || worker.nombre)[0]} size={62} color={sede?.color ?? "#C41A3A"} />
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ display:"flex", alignItems:"center", gap: 10, marginBottom: 4, flexWrap:"wrap" }}>
             <div style={{ fontWeight: 800, fontSize: 20 }}>{worker.nombre}</div>
-            <Badge variant={worker.activo ? "activo" : "inactivo"} />
+            <span style={{ fontSize: 12, color: sede?.color, fontWeight: 700 }}>“{worker.apodo}”</span>
+            <Badge variant={worker.activo ? "activo" : "inactivo"} small />
           </div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-            {worker.cargo} ·{" "}
-            <span style={{ color: colorS, fontWeight: 600 }}>{worker.sede.nombre}</span>
-            {worker.fecha_ingreso && ` · Desde ${new Date(worker.fecha_ingreso).toLocaleDateString("es-PE", { month: "short", year: "numeric" })}`}
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {[
-              { icon: "clock", label: "Turno", value: worker.turno ?? "—" },
-              { icon: "sueldo", label: "Sueldo base", value: money(worker.sueldo) },
-              { icon: "asistencia", label: "Días trab.", value: `${diasTrab}/22` },
-              { icon: "alert_circle", label: "Tardanzas", value: String(tardanzas) },
-            ].map(({ icon, label, value }) => (
-              <div key={label} style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 9, padding: "8px 14px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
-                  <Icon name={icon} size={12} color="var(--text-muted)" />
-                  <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>
-                </div>
-                <div style={{ fontWeight: 700, fontSize: 13 }}>{value}</div>
-              </div>
-            ))}
+          <div style={{ fontSize: 12, color:"var(--text-muted)" }}>
+            {worker.cargo} · <span style={{ color: sede?.color, fontWeight: 600 }}>{sede?.nombre}</span>
+            {worker.fechaIngreso && ` · Desde ${new Date(worker.fechaIngreso).toLocaleDateString("es-PE", { month: "short", year: "numeric" })}`}
           </div>
         </div>
-
-        {/* Neto a pagar */}
-        <div style={{ background: "rgba(196,26,58,0.06)", border: "1px solid rgba(196,26,58,0.18)", borderRadius: 12, padding: "16px 20px", textAlign: "center", minWidth: 140 }}>
-          <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>NETO A PAGAR</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: "var(--brand)" }}>{money(neto)}</div>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-            {money(worker.sueldo)} − {money(descTard)}
-          </div>
+        <div style={{ textAlign:"right", background:"rgba(196,26,58,0.06)", border:"1px solid rgba(196,26,58,0.2)", borderRadius: 10, padding: "12px 16px" }}>
+          <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6, marginBottom: 4 }}>Sueldo mes</div>
+          <HideableAmount value={money(sueldoMes.total)} size={20} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
         </div>
       </div>
 
-      {/* ====== Progreso del mes ====== */}
-      <div className="card" style={{ padding: "14px 20px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-          <span style={{ fontWeight: 600, fontSize: 13 }}>Progreso del mes — Abril 2026</span>
-          <span style={{ fontWeight: 700, color: "var(--brand)", fontFamily: "'DM Mono',monospace" }}>{diasTrab}/22 días ({pctMes}%)</span>
-        </div>
-        <ProgressBar value={pctMes} showPct={false} height={8} />
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
-          <span>Días restantes: <strong style={{ color: "var(--text)" }}>4</strong></span>
-          <span>Feriados: <strong style={{ color: "#6366f1" }}>3</strong></span>
-          <span>Permisos: <strong style={{ color: "#f59e0b" }}>1</strong></span>
-        </div>
-      </div>
-
-      {/* ====== Tabs ====== */}
-      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-
-        {/* Tab nav */}
-        <div style={{ display: "flex", borderBottom: "1px solid var(--border)", padding: "0 20px", overflowX: "auto" }}>
+      {/* Tabs */}
+      <div className="card" style={{ padding: 0 }}>
+        <div style={{ display:"flex", borderBottom: "1px solid var(--border)", padding: "0 16px", overflowX:"auto" }}>
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{
-              background: "transparent", border: "none", cursor: "pointer",
-              padding: "13px 16px", fontSize: 13,
-              fontWeight: tab === t.id ? 700 : 500,
-              color: tab === t.id ? "var(--brand)" : "var(--text-muted)",
-              borderBottom: tab === t.id ? "2px solid var(--brand)" : "2px solid transparent",
-              fontFamily: "'Bricolage Grotesque',sans-serif",
-              display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
-              transition: "all 0.15s",
-            }}>
-              <Icon name={t.icon} size={14} color={tab === t.id ? "var(--brand)" : "var(--text-muted)"} />
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{
+                background:"transparent", border: "none", cursor:"pointer",
+                padding:"12px 14px", fontSize: 13,
+                fontWeight: tab===t.id ? 700 : 500,
+                color: tab===t.id ? "var(--brand)" : "var(--text-muted)",
+                borderBottom: tab===t.id ? "2px solid var(--brand)" : "2px solid transparent",
+                display:"inline-flex", alignItems:"center", gap: 6, whiteSpace:"nowrap",
+              }}>
+              <Icon name={t.icon} size={13} color={tab===t.id ? "var(--brand)" : "var(--text-muted)"} />
               {t.label}
             </button>
           ))}
         </div>
 
-        {/* ====== Tab: Asistencia ====== */}
+        {/* ==== Tab: Asistencia ==== */}
         {tab === "asistencia" && (
-          <div style={{ padding: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>Historial reciente</div>
-              <button className="btn-outline" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                <Icon name="edit" size={13} /> Editar registro
-              </button>
+          <div style={{ padding: 18 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>
+                {MESES[month]} {year}
+              </div>
+              <div style={{ display:"flex", gap: 6 }}>
+                <select className="select-base" value={month} onChange={e=>setMonth(Number(e.target.value))}>
+                  {MESES.map((m,i)=><option key={m} value={i}>{m}</option>)}
+                </select>
+                <select className="select-base" value={year} onChange={e=>setYear(Number(e.target.value))}>
+                  {[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}
+                </select>
+                <button className="btn-outline" onClick={()=>cambiarMes(-1)}><span style={{ transform:"rotate(180deg)", display:"inline-flex" }}><Icon name="chevron_right" size={12} /></span></button>
+                <button className="btn-outline" onClick={()=>cambiarMes(1)}><Icon name="chevron_right" size={12} /></button>
+              </div>
             </div>
-            <div className="table-wrap">
-              <table className="tramys-table">
-                <thead>
-                  <tr>
-                    {["Fecha", "Entrada", "Salida", "Horas", "Estado"].map(h => (
-                      <th key={h}>{h}</th>
+
+            <MultiverseCalendar
+              year={year}
+              month={month}
+              getDayData={getDayData}
+              onToggleWorked={toggleWorked}
+              onToggleLate={toggleLate}
+              isHoliday={(day) => esFeriadoOficial(`${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`).es}
+            />
+
+            {/* Historial reciente */}
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Historial reciente</div>
+              <div className="table-wrap">
+                <table className="tramys-table">
+                  <thead>
+                    <tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Estado</th><th>Editar</th></tr>
+                  </thead>
+                  <tbody>
+                    {historial.map((h, i) => (
+                      <tr key={i}>
+                        <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.fecha}</td>
+                        <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.entrada ?? "—"}</td>
+                        <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{h.salida ?? "—"}</td>
+                        <td><Badge variant={h.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small /></td>
+                        <td>
+                          <button className="btn-outline" style={{ fontSize: 11, padding: "3px 8px" }}
+                            onClick={()=>{
+                              const nuevaEntrada = prompt("Hora de entrada (HH:mm) o 'x' para vaciar:", h.entrada ?? "");
+                              if (nuevaEntrada === null) return;
+                              const nuevaSalida = prompt("Hora de salida (HH:mm) o 'x' para vaciar:", h.salida ?? "");
+                              if (nuevaSalida === null) return;
+                              d.setAsistencia(worker.id, h.fecha, {
+                                entrada: nuevaEntrada === "x" ? null : nuevaEntrada || null,
+                                salida:  nuevaSalida  === "x" ? null : nuevaSalida  || null,
+                              });
+                            }}
+                          >Editar</button>
+                        </td>
+                      </tr>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {MOCK_HISTORIAL.map((h, i) => (
-                    <tr key={i}>
-                      <td style={{ fontWeight: 600 }}>{h.fecha}</td>
-                      <td style={{ fontFamily: "'DM Mono',monospace" }}>{h.entrada}</td>
-                      <td style={{ fontFamily: "'DM Mono',monospace", color: "var(--text-muted)" }}>{h.salida}</td>
-                      <td style={{ fontFamily: "'DM Mono',monospace", color: "var(--text-muted)" }}>{h.horas}</td>
-                      <td><Badge variant={h.estado} small /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
 
-        {/* ====== Tab: Sueldo ====== */}
+        {/* ==== Tab: Sueldo ==== */}
         {tab === "sueldo" && (
-          <div style={{ padding: 20 }}>
-            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16 }}>Desglose — Abril 2026</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ padding: 18 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Desglose — {MESES[month]} {year}</div>
+            <div style={{ fontSize: 11, color:"var(--text-muted)", marginBottom: 16 }}>
+              Nadie gana sueldo base. El total es la suma de días según tarifa. Puedes editar las tarifas desde &quot;Perfil&quot;.
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
               {[
-                { label: "Sueldo base", value: money(worker.sueldo), color: "var(--text)", bold: false, sub: "22 días hábiles" },
-                { label: "Días trabajados", value: `${Math.round((worker.sueldo / 22) * diasTrab)}`, color: "#16a34a", bold: false, sub: `${diasTrab}/22 días` },
-                { label: "Descuento tardanzas", value: `−${money(descTard)}`, color: "var(--brand)", bold: false, sub: `${tardanzas} tardanza × S/ 22.50` },
-                { label: "Adelantos recibidos", value: `−${money(adelantosM)}`, color: "var(--text-muted)", bold: false, sub: "Sin adelantos este mes" },
-                { label: "Neto a pagar", value: money(neto), color: "#16a34a", bold: true, sub: "Abril 2026" },
-              ].map(({ label, value, color, bold, sub }) => (
-                <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderRadius: 10, background: bold ? "rgba(34,197,94,0.08)" : "var(--bg)", border: `1px solid ${bold ? "rgba(34,197,94,0.2)" : "var(--border)"}` }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: bold ? 700 : 500, color: bold ? "#16a34a" : "var(--text)" }}>{label}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{sub}</div>
-                  </div>
-                  <span style={{ fontSize: bold ? 18 : 14, fontWeight: bold ? 800 : 600, color, fontFamily: "'DM Mono',monospace" }}>{value}</span>
+                { label:"Día normal", dias: sueldoMes.totales.normal,  tarifa: worker.tarifas.diaNormal, color:"#16a34a" },
+                { label:"Tardanza",   dias: sueldoMes.totales.tardanza,tarifa: worker.tarifas.tardanza, color:"#f59e0b" },
+                { label:"Fin semana", dias: sueldoMes.totales.finSem,  tarifa: worker.tarifas.finSemana,color:"#6366f1" },
+                { label:"Feriado",    dias: sueldoMes.totales.feriado, tarifa: worker.tarifas.feriado,  color:"var(--brand)" },
+              ].map(r => (
+                <div key={r.label} style={{ padding: 12, background:"var(--bg)", border:"1px solid var(--border)", borderLeft:`4px solid ${r.color}`, borderRadius: 9 }}>
+                  <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>{r.label}</div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: r.color, fontFamily:"'DM Mono',monospace" }}>{r.dias} × {money(r.tarifa)}</div>
+                  <HideableAmount value={money(r.dias * r.tarifa)} size={12} color="var(--text-muted)" weight={600} fontFamily="'DM Mono',monospace" />
                 </div>
               ))}
             </div>
+
+            <div style={{ padding: 16, background:"rgba(34,197,94,0.08)", border:"1px solid rgba(34,197,94,0.3)", borderRadius: 10, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <span style={{ fontWeight: 700, fontSize: 14, color:"#16a34a" }}>Neto a pagar</span>
+              <HideableAmount value={money(sueldoMes.total)} size={22} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
+            </div>
           </div>
         )}
 
-        {/* ====== Tab: Adelantos ====== */}
+        {/* ==== Tab: Adelantos ==== */}
         {tab === "adelantos" && (
-          <div style={{ padding: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>Adelantos de {worker.nombre.split(" ")[0]}</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>Requieren aprobación del Owner</div>
-              </div>
-              <button onClick={() => setModalAdel(true)} className="btn-primary" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Icon name="plus" size={13} color="#fff" /> Solicitar adelanto
+          <div style={{ padding: 18 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Adelantos de {worker.apodo || worker.nombre.split(" ")[0]}</div>
+              <button className="btn-primary" style={{ display:"flex", alignItems:"center", gap: 6 }}
+                onClick={()=>{
+                  const monto = Number(prompt("Monto del adelanto (S/):", "100"));
+                  if (!monto || monto <= 0) return;
+                  const motivo = prompt("Motivo:", "");
+                  if (!motivo) return;
+                  d.addAdelanto({ workerId: worker.id, monto, motivo, fecha: new Date().toISOString().slice(0,10) });
+                }}>
+                <Icon name="plus" size={12} color="#fff" /> Nuevo adelanto
               </button>
             </div>
 
-            <div style={{ textAlign: "center", padding: "32px 0", color: "var(--text-muted)" }}>
-              <Icon name="check_circle" size={32} color="var(--border)" />
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginTop: 10, marginBottom: 4 }}>Sin adelantos este mes</div>
-              <div style={{ fontSize: 12 }}>No hay adelantos registrados en Abril 2026</div>
-            </div>
+            {adelantos.length === 0 ? (
+              <div style={{ textAlign:"center", padding: "30px 0", color:"var(--text-muted)", fontSize: 13 }}>
+                Sin adelantos registrados
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
+                {adelantos.map(a => (
+                  <div key={a.id} style={{ display:"flex", alignItems:"center", gap: 10, padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <HideableAmount value={money(a.monto)} size={14} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
+                      <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{a.motivo} · {a.fecha}</div>
+                    </div>
+                    <Badge variant={a.estado as "pendiente"|"aprobado"|"rechazado"} small />
+                    {a.estado === "pendiente" && (
+                      <div style={{ display:"flex", gap: 4 }}>
+                        <button className="btn-ghost" style={{ border:"1px solid var(--border)", padding:"4px 8px", fontSize: 11 }} onClick={()=>d.updateAdelanto(a.id, { estado:"rechazado" })}>Rechazar</button>
+                        <button style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius: 6, padding:"4px 10px", cursor:"pointer", fontSize: 11, fontWeight: 700 }} onClick={()=>d.updateAdelanto(a.id, { estado:"aprobado" })}>Aprobar</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* ====== Tab: Permisos ====== */}
+        {/* ==== Tab: Permisos ==== */}
         {tab === "permisos" && (
-          <div style={{ padding: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>Permisos y justificaciones</div>
-              <button onClick={() => setModalPerm(true)} className="btn-primary" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Icon name="plus" size={13} color="#fff" /> Registrar permiso
+          <div style={{ padding: 18 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Permisos</div>
+              <button className="btn-primary" style={{ display:"flex", alignItems:"center", gap: 6 }}
+                onClick={()=>{
+                  const fecha = prompt("Fecha (yyyy-mm-dd):", new Date().toISOString().slice(0,10));
+                  if (!fecha) return;
+                  const tipo = (prompt("Tipo (personal / medico / vacaciones):", "personal") ?? "personal") as "personal"|"medico"|"vacaciones";
+                  const motivo = prompt("Motivo:", "") ?? "";
+                  d.addPermiso({ workerId: worker.id, fecha, tipo, motivo });
+                }}>
+                <Icon name="plus" size={12} color="#fff" /> Nuevo permiso
               </button>
             </div>
 
-            <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>Permiso personal</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
-                  Vie 18 Abr 2026 · Aprobado por Owner · Sin descuento
-                </div>
+            {permisos.length === 0 ? (
+              <div style={{ textAlign:"center", padding: "30px 0", color:"var(--text-muted)", fontSize: 13 }}>
+                Sin permisos registrados
               </div>
-              <Badge variant="permiso" />
-            </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
+                {permisos.map(p => (
+                  <div key={p.id} style={{ display:"flex", alignItems:"center", gap: 10, padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, textTransform:"capitalize" }}>{p.tipo} — {p.fecha}</div>
+                      <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{p.motivo}</div>
+                    </div>
+                    <Badge variant={p.estado as "pendiente"|"aprobado"|"rechazado"} small />
+                    {p.estado === "pendiente" && (
+                      <div style={{ display:"flex", gap: 4 }}>
+                        <button className="btn-ghost" style={{ border:"1px solid var(--border)", padding:"4px 8px", fontSize: 11 }} onClick={()=>d.updatePermiso(p.id, { estado:"rechazado" })}>Rechazar</button>
+                        <button style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius: 6, padding:"4px 10px", cursor:"pointer", fontSize: 11, fontWeight: 700 }} onClick={()=>d.updatePermiso(p.id, { estado:"aprobado" })}>Aprobar</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ==== Tab: Perfil ==== */}
+        {tab === "perfil" && (
+          <div style={{ padding: 18 }}>
+            <PerfilEditor worker={worker} />
           </div>
         )}
       </div>
-
-      {/* ================= MODAL SOLICITAR ADELANTO ================= */}
-      <Modal open={modalAdel} onClose={() => setModalAdel(false)} title="Solicitar Adelanto" width={400}>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
-          Para {worker.nombre} · Será enviado al Owner para aprobación
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
-          <div>
-            <div className="section-label">Monto solicitado</div>
-            <input className="input-base input-mono" placeholder="S/ 0.00" value={montoAdel} onChange={e => setMontoAdel(e.target.value)} />
-            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>Se descontará automáticamente de la planilla del mes</div>
-          </div>
-          <div>
-            <div className="section-label">Motivo</div>
-            <textarea className="input-base" rows={3} placeholder="Describe el motivo..." value={motivoAdel} onChange={e => setMotivoAdel(e.target.value)} style={{ resize: "none" }} />
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn-outline" style={{ flex: 1 }} onClick={() => setModalAdel(false)}>Cancelar</button>
-          <button className="btn-primary" style={{ flex: 2 }}>Enviar solicitud</button>
-        </div>
-      </Modal>
-
-      {/* ================= MODAL REGISTRAR PERMISO ================= */}
-      <Modal open={modalPerm} onClose={() => setModalPerm(false)} title="Registrar Permiso" width={400}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
-          <div>
-            <div className="section-label">Tipo de permiso</div>
-            <select className="select-base" style={{ width: "100%" }} value={tipoPerm} onChange={e => setTipoPerm(e.target.value)}>
-              <option value="personal">Permiso personal</option>
-              <option value="medico">Descanso médico</option>
-              <option value="vacaciones">Vacaciones</option>
-            </select>
-          </div>
-          <div>
-            <div className="section-label">Fecha</div>
-            <input type="date" className="input-base" value={fechaPerm} onChange={e => setFechaPerm(e.target.value)} />
-          </div>
-          <div>
-            <div className="section-label">Motivo</div>
-            <textarea className="input-base" rows={3} placeholder="Describe el motivo..." value={motivoPerm} onChange={e => setMotivoPerm(e.target.value)} style={{ resize: "none" }} />
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn-outline" style={{ flex: 1 }} onClick={() => setModalPerm(false)}>Cancelar</button>
-          <button className="btn-primary" style={{ flex: 2 }}>Guardar permiso</button>
-        </div>
-      </Modal>
     </div>
   );
 }
 
-/* ================= PÁGINA PRINCIPAL TRABAJADORES ================= */
+/* ================= EDITOR DE PERFIL ================= */
+function PerfilEditor({ worker }: { worker: Worker }) {
+  const d = useData();
+  const [local, setLocal] = useState<Worker>(worker);
+
+  function save(patch: Partial<Worker>) {
+    const nuevo = { ...local, ...patch };
+    setLocal(nuevo);
+    d.updateWorker(worker.id, patch);
+  }
+
+  return (
+    <div style={{ display:"flex", gap: 20, flexWrap:"wrap" }}>
+      <PhotoUpload
+        value={local.avatarBase64}
+        onChange={v => save({ avatarBase64: v })}
+        size={110}
+        initials={(local.apodo || local.nombre)[0]}
+        color={d.sedes.find(s=>s.id===local.sedeId)?.color ?? "#C41A3A"}
+      />
+      <div style={{ flex: 1, minWidth: 260, display:"flex", flexDirection:"column", gap: 12 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+          <div><div className="section-label">Nombre</div><input className="input-base" value={local.nombre} onChange={e=>save({ nombre: e.target.value })} /></div>
+          <div><div className="section-label">Apodo</div><input className="input-base" value={local.apodo} onChange={e=>save({ apodo: e.target.value })} /></div>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+          <div>
+            <div className="section-label">Sede</div>
+            <select className="select-base" style={{ width:"100%" }} value={local.sedeId} onChange={e=>save({ sedeId: e.target.value })}>
+              {d.sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+            </select>
+          </div>
+          <div><div className="section-label">Cargo</div><input className="input-base" value={local.cargo} onChange={e=>save({ cargo: e.target.value })} /></div>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+          <div><div className="section-label">Email</div><input className="input-base" value={local.email} onChange={e=>save({ email: e.target.value })} /></div>
+          <div><div className="section-label">Teléfono</div><input className="input-base" value={local.telefono ?? ""} onChange={e=>save({ telefono: e.target.value })} /></div>
+        </div>
+
+        <div>
+          <div className="section-label">Turno</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+            <input type="time" className="input-base input-mono" value={local.turno.entrada} onChange={e=>save({ turno: { ...local.turno, entrada: e.target.value } })} />
+            <input type="time" className="input-base input-mono" value={local.turno.salida}  onChange={e=>save({ turno: { ...local.turno, salida:  e.target.value } })} />
+          </div>
+        </div>
+
+        <div>
+          <div className="section-label">Tarifas por día (S/)</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap: 10 }}>
+            {(["diaNormal","tardanza","finSemana","feriado"] as const).map(k => (
+              <div key={k}>
+                <div style={{ fontSize: 10, color:"var(--text-muted)", marginBottom: 4, textTransform:"capitalize" }}>{k}</div>
+                <input type="number" className="input-base input-mono" value={local.tarifas[k]} onChange={e=>save({ tarifas: { ...local.tarifas, [k]: Number(e.target.value) } })} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <label style={{ display:"flex", alignItems:"center", gap: 8, cursor:"pointer" }}>
+          <input type="checkbox" checked={local.activo} onChange={e=>save({ activo: e.target.checked })} />
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Activo</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/* ================= PÁGINA PRINCIPAL ================= */
 export default function TrabajadoresPage() {
-  const [mobileMenu, setMobileMenu] = useState(false);
-  const [perfil, setPerfil] = useState<WorkerWithSede | null>(null); // ← tipo corregido
+  const d = useData();
+  const [perfilId, setPerfilId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editW, setEditW] = useState<Worker | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [filtroSede, setFiltroSede] = useState("todas");
   const [filtroEst, setFiltroEst] = useState("todos");
 
-  /* ====== En producción reemplazar con useEffect + Supabase ====== */
-  const trabajadores = MOCK_TRABAJADORES;
+  const workers = d.workers.filter(w => w.rol === "trabajador");
 
-  /* ==== Filtros ==== */
-  const filtrados = trabajadores.filter(w => {
-    const matchSede = filtroSede === "todas" || w.sede.nombre === filtroSede;
-    const matchEst = filtroEst === "todos" || (filtroEst === "activo" ? w.activo : !w.activo);
-    const matchBusq = w.nombre.toLowerCase().includes(busqueda.toLowerCase());
+  const filtrados = workers.filter(w => {
+    const matchSede = filtroSede === "todas" || w.sedeId === filtroSede;
+    const matchEst  = filtroEst === "todos" || (filtroEst === "activo" ? w.activo : !w.activo);
+    const t = busqueda.toLowerCase();
+    const matchBusq = !t || w.nombre.toLowerCase().includes(t) || w.apodo.toLowerCase().includes(t);
     return matchSede && matchEst && matchBusq;
   });
 
-  /* ==== Stats ==== */
-  const activos = trabajadores.filter(w => w.activo).length;
-  const inactivos = trabajadores.filter(w => !w.activo).length;
-  const porSA = trabajadores.filter(w => w.sede.nombre === "Santa Anita").length;
-  const porPP = trabajadores.filter(w => w.sede.nombre === "Puente Piedra").length;
+  const perfil = perfilId ? d.workers.find(w => w.id === perfilId) : null;
 
-  /* ==== Vista perfil ==== */
   if (perfil) {
     return (
       <>
-        <Topbar
-          title={perfil.nombre}
-          subtitle={`${perfil.cargo} · ${perfil.sede.nombre}`}
-          onMenuToggle={() => setMobileMenu(true)}
-        />
+        <Topbar title={perfil.nombre} subtitle={`${perfil.cargo} · ${d.sedes.find(s=>s.id===perfil.sedeId)?.nombre ?? ""}`} />
         <main className="page-main">
-          <PerfilTrabajador worker={perfil} onBack={() => setPerfil(null)} />
+          <PerfilTrabajador worker={perfil} onBack={()=>setPerfilId(null)} />
         </main>
       </>
     );
@@ -357,125 +626,78 @@ export default function TrabajadoresPage() {
 
   return (
     <>
-      <Topbar
-        title="Trabajadores"
-        subtitle={`${activos} activos · ${filtrados.length} visibles`}
-        onMenuToggle={() => setMobileMenu(true)}
-      />
+      <Topbar title="Trabajadores" subtitle={`${workers.filter(w=>w.activo).length} activos · ${filtrados.length} visibles`} />
       <main className="page-main">
-
-        {/* ================= STATS ================= */}
-        <div className="grid-stats" style={{ marginBottom: 16 }}>
-          <StatCard label="Total" value={trabajadores.length} color="var(--text)" />
-          <StatCard label="Activos" value={activos} color="#16a34a" />
-          <StatCard label="Santa Anita" value={porSA} color="var(--brand)" />
-          <StatCard label="Puente Piedra" value={porPP} color="#1d6fa4" />
-        </div>
-
-        {/* ================= FILTROS ================= */}
         <div className="card" style={{ padding: "14px 18px", marginBottom: 14 }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-
-            {/* Búsqueda */}
-            <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
-              // DESPUÉS
-              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center" }}>
+          <div style={{ display:"flex", gap: 10, flexWrap:"wrap", alignItems:"center" }}>
+            <div style={{ position:"relative", flex: 1, minWidth: 180 }}>
+              <span style={{ position:"absolute", left: 10, top:"50%", transform:"translateY(-50%)", display:"flex", alignItems:"center" }}>
                 <Icon name="search" size={14} color="var(--text-muted)" />
               </span>
-              <input
-                className="input-base"
-                placeholder="Buscar trabajador..."
-                value={busqueda}
-                onChange={e => setBusqueda(e.target.value)}
-                style={{ paddingLeft: 32 }}
-              />
+              <input className="input-base" placeholder="Buscar por nombre o apodo..." value={busqueda} onChange={e=>setBusqueda(e.target.value)} style={{ paddingLeft: 32 }} />
             </div>
-
-            {/* Sede */}
-            <select className="select-base" value={filtroSede} onChange={e => setFiltroSede(e.target.value)}>
+            <select className="select-base" value={filtroSede} onChange={e=>setFiltroSede(e.target.value)}>
               <option value="todas">Todas las sedes</option>
-              <option value="Santa Anita">Santa Anita</option>
-              <option value="Puente Piedra">Puente Piedra</option>
+              {d.sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
             </select>
-
-            {/* Estado */}
-            <select className="select-base" value={filtroEst} onChange={e => setFiltroEst(e.target.value)}>
+            <select className="select-base" value={filtroEst} onChange={e=>setFiltroEst(e.target.value)}>
               <option value="todos">Todos</option>
               <option value="activo">Activos</option>
               <option value="inactivo">Inactivos</option>
             </select>
-
-            <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}>
-              {filtrados.length} resultados
-            </span>
-
-            <button className="btn-primary" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              className="btn-primary"
+              style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap: 6 }}
+              onClick={()=>{ setEditW(null); setModalOpen(true); }}
+            >
               <Icon name="plus" size={13} color="#fff" /> Nuevo trabajador
             </button>
           </div>
         </div>
 
-        {/* ================= TABLA ================= */}
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="card" style={{ padding: 0, overflow:"hidden" }}>
           <div className="table-wrap">
             <table className="tramys-table">
               <thead>
-                <tr>
-                  {["Trabajador", "Cargo", "Sede", "Turno", "Días", "Tardanzas", "Estado", ""].map(h => (
-                    <th key={h}>{h}</th>
-                  ))}
-                </tr>
+                <tr><th>Trabajador</th><th>Apodo</th><th>Sede</th><th>Cargo</th><th>Turno</th><th>Estado</th><th></th></tr>
               </thead>
               <tbody>
                 {filtrados.map(w => {
-                  const col = colorSede(w.sede.nombre);
+                  const sede = d.sedes.find(s => s.id === w.sedeId);
                   return (
-                    <tr key={w.id} onClick={() => setPerfil(w)}>
+                    <tr key={w.id} onClick={()=>setPerfilId(w.id)}>
                       <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <Avatar initials={iniciales(w.nombre)} size={30} color={col} />
+                        <div style={{ display:"flex", alignItems:"center", gap: 10 }}>
+                          <PhotoAvatar src={w.avatarBase64} initials={(w.apodo || w.nombre)[0]} size={30} color={sede?.color ?? "#C41A3A"} />
                           <div>
                             <div style={{ fontWeight: 600, fontSize: 13 }}>{w.nombre}</div>
-                            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                              {w.fecha_ingreso
-                                ? `Desde ${new Date(w.fecha_ingreso).toLocaleDateString("es-PE", { month: "short", year: "numeric" })}`
-                                : ""}
-                            </div>
+                            <div style={{ fontSize: 10, color:"var(--text-muted)" }}>{w.email}</div>
                           </div>
                         </div>
                       </td>
-                      <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{w.cargo}</td>
-                      <td>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: col }}>{w.sede.nombre}</span>
-                      </td>
-                      <td style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: "var(--text-muted)" }}>{w.turno}</td>
-                      <td style={{ fontWeight: 600 }}>18/22</td>
-                      <td>
-                        <span style={{ fontWeight: 700, color: 1 > 0 ? "var(--brand)" : "#16a34a" }}>1</span>
-                      </td>
+                      <td><span style={{ fontWeight: 700, fontSize: 12, color: sede?.color ?? "var(--text)" }}>{w.apodo}</span></td>
+                      <td><span style={{ fontSize: 12, fontWeight: 600, color: sede?.color ?? "var(--text-muted)" }}>{sede?.nombre}</span></td>
+                      <td style={{ fontSize: 12, color:"var(--text-muted)" }}>{w.cargo}</td>
+                      <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 11, color:"var(--text-muted)" }}>{w.turno.entrada}–{w.turno.salida}</td>
                       <td><Badge variant={w.activo ? "activo" : "inactivo"} small /></td>
-                      <td onClick={e => { e.stopPropagation(); setPerfil(w); }}>
-                        <button className="btn-outline" style={{ fontSize: 11, padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }}>
-                          Ver perfil <Icon name="chevron_right" size={12} />
+                      <td onClick={e=>{ e.stopPropagation(); setEditW(w); setModalOpen(true); }}>
+                        <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px", display:"inline-flex", alignItems:"center", gap: 4 }}>
+                          <Icon name="edit" size={11} /> Editar
                         </button>
                       </td>
                     </tr>
                   );
                 })}
-
                 {filtrados.length === 0 && (
-                  <tr>
-                    <td colSpan={8} style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
-                      No se encontraron trabajadores con esos filtros
-                    </td>
-                  </tr>
+                  <tr><td colSpan={7} style={{ textAlign:"center", padding: 36, color:"var(--text-muted)" }}>Sin resultados</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
-
       </main>
+
+      <ModalWorker open={modalOpen} onClose={()=>setModalOpen(false)} worker={editW} />
     </>
   );
 }

@@ -188,8 +188,8 @@ function IconCard({ name, size, copied, onCopy, accentColor }: {
             }}
         >
             <Icon name={name} size={size} color={isCopied ? "#16a34a" : accentColor ?? "var(--text)"} />
-            <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", textAlign: "center", maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {isCopied ? "✓ copiado" : name}
+            <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", textAlign: "center", maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display:"inline-flex", alignItems:"center", gap:3, justifyContent:"center" }}>
+                {isCopied ? (<><Icon name="check" size={9} color="#16a34a" /> copiado</>) : name}
             </span>
         </div>
     );

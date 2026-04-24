@@ -13,23 +13,20 @@ const NAV_OWNER_PRIMARY = [
   { href:"/adelantos",    icon:"adelantos",    label:"Adelantos"  },
 ];
 const NAV_OWNER_MORE = [
-  { href:"/sedes",      icon:"sedes",      label:"Sedes"     },
-  { href:"/jaladores",  icon:"jaladores",  label:"Jaladores" },
-  { href:"/planilla",   icon:"planilla",   label:"Planilla"  },
-  { href:"/feriados",   icon:"feriados",   label:"Feriados"  },
-  { href:"/cumpleanos", icon:"cumpleanos", label:"Cumpleaños"},
-  { href:"/accesos",    icon:"accesos",    label:"Accesos"   },
+  { href:"/sedes",     icon:"sedes",     label:"Sedes"     },
+  { href:"/jaladores", icon:"jaladores", label:"Jaladores" },
+  { href:"/planilla",  icon:"planilla",  label:"Planilla"  },
+  { href:"/eventos",   icon:"feriados",  label:"Eventos"   },
+  { href:"/accesos",   icon:"accesos",   label:"Accesos"   },
 ];
 
 const NAV_ENC_PRIMARY = [
   { href:"/dashboard",    icon:"dashboard",    label:"Inicio"     },
   { href:"/trabajadores", icon:"trabajadores", label:"Personal"   },
   { href:"/asistencia",   icon:"asistencia",   label:"Asistencia" },
-  { href:"/feriados",     icon:"feriados",     label:"Feriados"   },
+  { href:"/eventos",      icon:"feriados",     label:"Eventos"    },
 ];
-const NAV_ENC_MORE = [
-  { href:"/cumpleanos", icon:"cumpleanos", label:"Cumpleaños" },
-];
+const NAV_ENC_MORE: { href:string; icon:string; label:string }[] = [];
 
 export function BottomNav() {
   const pathname = usePathname();

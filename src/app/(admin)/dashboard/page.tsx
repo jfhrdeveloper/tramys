@@ -1,167 +1,349 @@
 "use client";
-import { useState, useEffect } from "react";
+
+import { useMemo } from "react";
 import { Topbar } from "@/components/layout/Topbar";
-import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
-import { Avatar } from "@/components/ui/Avatar";
+import { PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { createClient } from "@/lib/supabase/client";
-import { money, iniciales, colorSede } from "@/lib/utils/formatters";
-
-const FEED = [
-  { dot:"#22c55e", text:"Luis Vera registró entrada",      hora:"08:03", sede:"SA" },
-  { dot:"#C41A3A", text:"Miguel T. — nueva captación",     hora:"08:15", sede:"PP" },
-  { dot:"#f59e0b", text:"Marco Díaz llegó tarde",           hora:"08:47", sede:"PP" },
-  { dot:"#C41A3A", text:"Carlos M. — nueva captación",      hora:"09:00", sede:"SA" },
-  { dot:"#8b8fa8", text:"Solicitud adelanto — Sofía Ríos",  hora:"09:20", sede:"SA" },
-];
-
-const JALADORES_MOCK = [
-  { nombre:"Miguel Torres", avatar:"MT", sedeColor:"#1d6fa4", captMes:28, meta:30, captHoy:6, comision:840, racha:8 },
-  { nombre:"Carlos Mendoza",avatar:"CM", sedeColor:"#C41A3A", captMes:26, meta:30, captHoy:4, comision:780, racha:5 },
-  { nombre:"Luis Ramos",    avatar:"LR", sedeColor:"#C41A3A", captMes:19, meta:30, captHoy:3, comision:570, racha:3 },
-  { nombre:"Jhon Paredes",  avatar:"JP", sedeColor:"#1d6fa4", captMes:14, meta:30, captHoy:2, comision:420, racha:1 },
-  { nombre:"Roberto Asto",  avatar:"RA", sedeColor:"#1d6fa4", captMes:9,  meta:30, captHoy:0, comision:270, racha:0 },
-];
-
-const ASIST_MOCK = [
-  { nombre:"Ana Torres",    avatar:"AT", sedeColor:"#C41A3A", sede:"Santa Anita",   entrada:"08:02", estado:"presente" as const },
-  { nombre:"Luis Vera",     avatar:"LV", sedeColor:"#C41A3A", sede:"Santa Anita",   entrada:"07:58", estado:"presente" as const },
-  { nombre:"Marco Díaz",    avatar:"MD", sedeColor:"#1d6fa4", sede:"Puente Piedra", entrada:"08:47", estado:"tardanza" as const },
-  { nombre:"Sofía Ríos",    avatar:"SR", sedeColor:"#C41A3A", sede:"Santa Anita",   entrada:"09:02", estado:"tardanza" as const },
-  { nombre:"Carmen Flores", avatar:"CF", sedeColor:"#1d6fa4", sede:"Puente Piedra", entrada:"08:11", estado:"presente" as const },
-  { nombre:"Pedro Chávez",  avatar:"PC", sedeColor:"#C41A3A", sede:"Santa Anita",   entrada:"—",     estado:"ausente"  as const },
-];
-
-const ADELANTOS_PEND = [
-  { nombre:"Marco Díaz",    avatar:"MD", sedeColor:"#1d6fa4", monto:350, motivo:"Emergencia familiar", hace:"2h" },
-  { nombre:"Carmen Flores", avatar:"CF", sedeColor:"#1d6fa4", monto:200, motivo:"Pago de alquiler",    hace:"5h" },
-  { nombre:"Sofía Ríos",    avatar:"SR", sedeColor:"#C41A3A", monto:150, motivo:"Útiles escolares",    hace:"1d" },
-];
+import { Icon } from "@/components/ui/Icons";
+import { HideableAmount } from "@/components/ui/HideableAmount";
+import { money } from "@/lib/utils/formatters";
+import { useData, ingresoDia, isoToday, isWeekendISO } from "@/components/providers/DataProvider";
+import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
+import Link from "next/link";
 
 export default function DashboardPage() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const totalComis = JALADORES_MOCK.reduce((a,j)=>a+j.comision,0);
-  const captHoy    = JALADORES_MOCK.reduce((a,j)=>a+j.captHoy,0);
-  const presentes  = ASIST_MOCK.filter(w=>w.estado==="presente").length;
+  const d = useData();
+  const hoy = isoToday();
+
+  /* ==== Asistencia de hoy ==== */
+  const hoyRecords = useMemo(() => {
+    return d.workers
+      .filter(w => w.activo && w.rol === "trabajador")
+      .map(w => {
+        const rec = d.asistencia.find(a => a.workerId === w.id && a.fecha === hoy);
+        return { worker: w, rec };
+      });
+  }, [d.workers, d.asistencia, hoy]);
+
+  const presentes = hoyRecords.filter(x => x.rec?.estado === "presente").length;
+  const tardanzas = hoyRecords.filter(x => x.rec?.estado === "tardanza").length;
+  const ausentes  = hoyRecords.filter(x => !x.rec || x.rec.estado === "ausente").length;
+  const pctAsist  = hoyRecords.length ? Math.round(((presentes + tardanzas) / hoyRecords.length) * 100) : 0;
+
+  /* ==== Adelantos pendientes ==== */
+  const pendientes = d.adelantos.filter(a => a.estado === "pendiente");
+  const totalPend  = pendientes.reduce((a, x) => a + x.monto, 0);
+
+  /* ==== Comisiones jaladores del mes ==== */
+  const year = new Date().getFullYear();
+  const month = new Date().getMonth();
+  const ingresosMes = d.ingresosJaladores.filter(i => {
+    const dt = new Date(i.fecha);
+    return dt.getFullYear() === year && dt.getMonth() === month;
+  });
+  const comisionesMes = ingresosMes.reduce((a, i) => {
+    const j = d.jaladores.find(x => x.id === i.jaladorId);
+    if (!j) return a;
+    return a + (i.monto * j.porcentajeComision / 100);
+  }, 0);
+
+  /* ==== Planilla del mes (aproximada con tarifas × asistencia del mes) ==== */
+  const planillaMes = useMemo(() => {
+    let total = 0;
+    for (const w of d.workers) {
+      if (!w.activo || w.rol === "owner") continue;
+      const recs = d.asistencia.filter(a => {
+        if (a.workerId !== w.id) return false;
+        const [y, m] = a.fecha.split("-").map(Number);
+        return y === year && m - 1 === month;
+      });
+      for (const r of recs) {
+        const feriado = esFeriadoOficial(r.fecha).es;
+        total += ingresoDia(r, w.tarifas, isWeekendISO(r.fecha), feriado);
+      }
+    }
+    return total;
+  }, [d.workers, d.asistencia, year, month]);
+
+  /* ==== Cumpleaños hoy ==== */
+  const hoyMMDD = hoy.slice(5);
+  const cumpleHoy = d.eventos.filter(e => e.tipo === "cumpleanos" && e.date.slice(5) === hoyMMDD);
+
+  /* ==== Ranking jaladores por comisión del mes ==== */
+  const rankingJaladores = useMemo(() => {
+    return d.jaladores
+      .filter(j => j.activo)
+      .map(j => {
+        const ing = ingresosMes.filter(i => i.jaladorId === j.id).reduce((a, i) => a + i.monto, 0);
+        const com = ing * j.porcentajeComision / 100;
+        return { j, ingresos: ing, comisiones: com };
+      })
+      .sort((a, b) => b.comisiones - a.comisiones);
+  }, [d.jaladores, ingresosMes]);
+  const totalIngresoJal = rankingJaladores.reduce((a, r) => a + r.ingresos, 0);
+
+  /* ==== Actividad reciente ==== */
+  const actividad = useMemo(() => {
+    const items: { text: string; hora: string; color: string; icon: string }[] = [];
+    for (const r of d.asistencia.filter(a => a.fecha === hoy).slice(0, 4)) {
+      const w = d.workers.find(x => x.id === r.workerId);
+      if (!w) continue;
+      if (r.estado === "tardanza") items.push({ text:`${w.apodo || w.nombre.split(" ")[0]} llegó tarde`, hora:r.entrada ?? "—", color:"#f59e0b", icon:"alert_circle" });
+      else if (r.estado === "presente") items.push({ text:`${w.apodo || w.nombre.split(" ")[0]} registró entrada`, hora:r.entrada ?? "—", color:"#22c55e", icon:"check_circle" });
+    }
+    for (const a of pendientes.slice(0, 2)) {
+      const w = d.workers.find(x => x.id === a.workerId);
+      if (!w) continue;
+      items.push({ text:`Solicitud adelanto — ${w.apodo || w.nombre.split(" ")[0]}`, hora:`${money(a.monto)}`, color:"#C41A3A", icon:"hand_coin" });
+    }
+    return items.slice(0, 6);
+  }, [d.asistencia, d.workers, pendientes, hoy]);
 
   return (
     <>
-      <Topbar title="Dashboard General" subtitle="Dom 19 Abr 2026 · En vivo" onMenuToggle={()=>setMobileMenuOpen(true)} />
+      <Topbar title="Dashboard" subtitle="Vista general operativa" />
       <main className="page-main">
-        {/* ====== KPIs ====== */}
-        <div className="grid-stats" style={{ marginBottom:16 }}>
-          <StatCard label="Planilla del mes"     value={money(28400)}   color="var(--brand)" sub="24 trabajadores activos" />
-          <StatCard label="Comisiones jaladores" value={money(totalComis)} color="#16a34a" sub="5 jaladores · Abril"   />
-          <StatCard label="Adelantos pendientes" value="3"              color="#f59e0b"      sub="S/ 700 por aprobar"  />
-          <StatCard label="Captaciones hoy"      value={`${captHoy}`}  color="#6366f1"      sub="Todas las sedes"     />
-        </div>
 
-        {/* ====== Presencia + Jaladores ====== */}
-        <div className="grid-2" style={{ marginBottom:16 }}>
-          {/* Presencia */}
-          <div className="card">
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
-              <div>
-                <div style={{ fontWeight:700,fontSize:15 }}>Presencia en Vivo</div>
-                <div style={{ fontSize:11,color:"var(--text-muted)",fontFamily:"'DM Mono',monospace" }}>{presentes} presentes · {ASIST_MOCK.filter(w=>w.estado==="tardanza").length} tardanzas</div>
-              </div>
-              <div style={{ fontSize:28,fontWeight:800,color:"var(--brand)" }}>{Math.round((presentes/ASIST_MOCK.length)*100)}%</div>
+        {/* ====== HERO: Resumen del día ====== */}
+        <div
+          className="card"
+          style={{
+            marginBottom: 16,
+            background: "linear-gradient(135deg, rgba(196,26,58,0.08) 0%, rgba(196,26,58,0.02) 100%)",
+            borderLeft: "4px solid var(--brand)",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 16,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.8 }}>
+              Operación de hoy
             </div>
-            {ASIST_MOCK.map((w,i)=>(
-              <div key={i} style={{ display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,background:"var(--bg)",border:"1px solid var(--border)",marginBottom:6 }}>
-                <Avatar initials={w.avatar} size={26} color={w.sedeColor} />
-                <div style={{ flex:1 }}>
-                  <div style={{ fontWeight:600,fontSize:12 }}>{w.nombre}</div>
-                  <div style={{ fontSize:10,color:"var(--text-muted)",fontFamily:"'DM Mono',monospace" }}>{w.sede} · {w.entrada}</div>
-                </div>
-                <Badge variant={w.estado} small />
-              </div>
-            ))}
+            <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.1, marginTop: 4 }}>
+              {new Date().toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" })}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
+              {d.sedes.filter(s => s.activa).length} sedes · {d.workers.filter(w => w.activo && w.rol === "trabajador").length} trabajadores
+            </div>
           </div>
 
-          {/* Jaladores ranking */}
-          <div className="card">
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
-              <div>
-                <div style={{ fontWeight:700,fontSize:15 }}>Ranking Jaladores</div>
-                <div style={{ fontSize:11,color:"var(--text-muted)",fontFamily:"'DM Mono',monospace" }}>Abril 2026 · +{captHoy} hoy</div>
-              </div>
-              <span style={{ fontSize:11,background:"rgba(196,26,58,0.1)",color:"var(--brand)",borderRadius:99,padding:"3px 10px",fontWeight:600 }}>+{captHoy} hoy</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>Asistencia</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: "var(--brand)", fontFamily: "'DM Mono',monospace" }}>{pctAsist}%</span>
             </div>
-            {[...JALADORES_MOCK].sort((a,b)=>b.captMes-a.captMes).map((j,i)=>{
-              const pct = Math.round((j.captMes/j.meta)*100);
-              const medals = ["🥇","🥈","🥉"];
-              return (
-                <div key={j.nombre} style={{ marginBottom:12 }}>
-                  <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:5 }}>
-                    <span style={{ fontSize:16,width:22,textAlign:"center" }}>{i<3?medals[i]:<span style={{ fontSize:11,color:"var(--text-muted)" }}>{i+1}</span>}</span>
-                    <Avatar initials={j.avatar} size={22} color={j.sedeColor} />
-                    <span style={{ flex:1,fontWeight:600,fontSize:12 }}>{j.nombre}</span>
-                    {j.racha>0 && <span style={{ fontSize:11,color:"#f59e0b" }}>🔥{j.racha}</span>}
-                    <span style={{ fontSize:11,fontWeight:700,color:pct>=80?"#22c55e":"var(--brand)",fontFamily:"'DM Mono',monospace" }}>{pct}%</span>
+            <ProgressBar value={pctAsist} height={8} showPct={false} />
+            <div style={{ display: "flex", gap: 10, fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", marginTop: 4 }}>
+              <span><span style={{ color: "#16a34a", fontWeight: 700 }}>●</span> {presentes}</span>
+              <span><span style={{ color: "#f59e0b", fontWeight: 700 }}>●</span> {tardanzas}</span>
+              <span><span style={{ color: "#8b8fa8", fontWeight: 700 }}>●</span> {ausentes}</span>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>Planilla del mes</span>
+            <HideableAmount value={money(planillaMes)} size={22} color="var(--text)" weight={800} fontFamily="'DM Mono',monospace" />
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Acumulado a hoy</span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>Comisiones jaladores</span>
+            <HideableAmount value={money(comisionesMes)} size={22} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Abril · a pagar</span>
+          </div>
+        </div>
+
+        {/* ====== Alertas ====== */}
+        {(cumpleHoy.length > 0 || pendientes.length > 0) && (
+          <div className="grid-2" style={{ marginBottom: 16 }}>
+            {cumpleHoy.length > 0 && (
+              <div className="card" style={{ borderLeft: "4px solid #f59e0b", background: "rgba(245,158,11,0.04)" }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ width: 42, height: 42, borderRadius: "50%", background: "rgba(245,158,11,0.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Icon name="cake" size={22} color="#d97706" />
                   </div>
-                  <div style={{ paddingLeft:30 }}><ProgressBar value={pct} showPct={false} /></div>
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#d97706" }}>
+                      {cumpleHoy.length === 1 ? "¡Cumpleaños hoy!" : `${cumpleHoy.length} cumpleaños hoy`}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      {cumpleHoy.map(c => c.nombre).join(", ")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {pendientes.length > 0 && (
+              <div className="card" style={{ borderLeft: "4px solid #f59e0b" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Adelantos pendientes</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {pendientes.length} por aprobar · <HideableAmount value={money(totalPend)} size={11} color="var(--brand)" weight={700} fontFamily="'DM Mono',monospace" />
+                    </div>
+                  </div>
+                  <Link href="/adelantos" className="btn-primary" style={{ fontSize: 12, padding: "6px 12px" }}>
+                    Revisar
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ====== Columna A: Sedes + Asistencia | Columna B: Jaladores + Actividad ====== */}
+        <div className="grid-2" style={{ marginBottom: 16 }}>
+
+          {/* Presencia por sede */}
+          <div className="card">
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Presencia por sede</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {d.sedes.filter(s => s.activa).map(s => {
+                const recs = hoyRecords.filter(r => r.worker.sedeId === s.id);
+                const p = recs.filter(r => r.rec?.estado === "presente").length;
+                const t = recs.filter(r => r.rec?.estado === "tardanza").length;
+                const a = recs.filter(r => !r.rec || r.rec.estado === "ausente").length;
+                const pct = recs.length ? Math.round(((p + t) / recs.length) * 100) : 0;
+                return (
+                  <Link key={s.id} href="/asistencia" style={{ textDecoration: "none" }}>
+                    <div style={{
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      borderLeft: `4px solid ${s.color}`,
+                      borderRadius: 10,
+                      padding: "12px 14px",
+                      display: "flex", alignItems: "center", gap: 12,
+                      transition: "all 0.15s", cursor: "pointer",
+                    }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--hover)"}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "var(--bg)"}
+                    >
+                      <div style={{ width: 42, height: 42, borderRadius: 10, background: `${s.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <Icon name="sedes" size={20} color={s.color} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{s.nombre}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
+                          {p} pres · {t} tard · {a} aus
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: s.color, fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>{pct}%</div>
+                        <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", textTransform: "uppercase" }}>asistencia</div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Ranking jaladores */}
+          <div className="card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Ranking jaladores</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>Por comisión del mes</div>
+              </div>
+              <Link href="/jaladores" style={{ fontSize: 11, color: "var(--brand)", textDecoration: "none", fontWeight: 600 }}>Ver todos →</Link>
+            </div>
+            {rankingJaladores.slice(0, 5).map((r, i) => {
+              const sede = d.sedes.find(s => s.id === r.j.sedeId);
+              const max = rankingJaladores[0]?.ingresos || 1;
+              const pct = Math.round((r.ingresos / max) * 100);
+              const MEDAL = ["#f59e0b", "#94a3b8", "#b45309"];
+              return (
+                <div key={r.j.id} style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ width: 20, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {i < 3 ? <Icon name="trophy" size={14} color={MEDAL[i]} />
+                        : <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>{i + 1}</span>}
+                    </span>
+                    <PhotoAvatar src={r.j.avatarBase64} initials={(r.j.apodo || r.j.nombre)[0]} size={22} color={sede?.color ?? "#C41A3A"} />
+                    <span style={{ flex: 1, fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.j.apodo || r.j.nombre}
+                    </span>
+                    <HideableAmount value={money(r.comisiones)} size={11} color="#16a34a" weight={700} fontFamily="'DM Mono',monospace" />
+                  </div>
+                  <div style={{ paddingLeft: 28 }}><ProgressBar value={pct} showPct={false} /></div>
                 </div>
               );
             })}
-            <div style={{ marginTop:10,padding:"10px 12px",background:"rgba(196,26,58,0.06)",border:"1px solid rgba(196,26,58,0.15)",borderRadius:9,display:"flex",justifyContent:"space-between" }}>
-              <span style={{ fontSize:12,color:"var(--text-muted)" }}>Total comisiones</span>
-              <span style={{ fontSize:15,fontWeight:800,color:"var(--brand)" }}>{money(totalComis)}</span>
+            <div style={{ marginTop: 10, padding: "10px 12px", background: "rgba(196,26,58,0.06)", border: "1px solid rgba(196,26,58,0.15)", borderRadius: 9, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Ingreso total</span>
+              <HideableAmount value={money(totalIngresoJal)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
             </div>
           </div>
         </div>
 
-        {/* ====== Adelantos + Feed ====== */}
-        <div className="grid-2">
-          {/* Adelantos pendientes */}
-          <div className="card" style={{ border:"1px solid rgba(245,158,11,0.3)",borderLeft:"4px solid #f59e0b" }}>
-            <div style={{ fontWeight:700,fontSize:15,marginBottom:4 }}>⚠️ Adelantos Pendientes</div>
-            <div style={{ fontSize:11,color:"var(--text-muted)",fontFamily:"'DM Mono',monospace",marginBottom:14 }}>Requieren aprobación</div>
-            {ADELANTOS_PEND.map((a,i)=>(
-              <div key={i} style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:10,marginBottom:8 }}>
-                <Avatar initials={a.avatar} size={34} color={a.sedeColor} />
-                <div style={{ flex:1 }}>
-                  <div style={{ fontWeight:700,fontSize:13 }}>{a.nombre}</div>
-                  <div style={{ fontSize:11,color:"var(--text-muted)" }}>{a.motivo} · hace {a.hace}</div>
-                </div>
-                <div style={{ textAlign:"right" }}>
-                  <div style={{ fontWeight:800,fontSize:16,color:"var(--brand)" }}>{money(a.monto)}</div>
-                  <div style={{ display:"flex",gap:6,marginTop:4 }}>
-                    <button className="btn-ghost" style={{ fontSize:10,padding:"3px 8px",borderRadius:6 }}>✕</button>
-                    <button style={{ background:"#16a34a",color:"#fff",border:"none",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"'Bricolage Grotesque',sans-serif" }}>✓ Aprobar</button>
+        {/* ====== Actividad reciente ====== */}
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>Actividad reciente</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>Eventos de hoy</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} className="animate-pulse-dot" />
+              <span style={{ fontSize: 10, color: "#16a34a", fontWeight: 600, fontFamily: "'DM Mono',monospace" }}>LIVE</span>
+            </div>
+          </div>
+          {actividad.length === 0 ? (
+            <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+              Sin actividad registrada hoy
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {actividad.map((f, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: `${f.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Icon name={f.icon} size={14} color={f.color} />
                   </div>
+                  <div style={{ flex: 1, fontSize: 12, fontWeight: 500 }}>{f.text}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>{f.hora}</div>
                 </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Feed actividad */}
-          <div className="card">
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
-              <div>
-                <div style={{ fontWeight:700,fontSize:15 }}>Actividad Reciente</div>
-                <div style={{ fontSize:11,color:"var(--text-muted)",fontFamily:"'DM Mono',monospace" }}>Últimos movimientos</div>
-              </div>
-              <div style={{ display:"flex",alignItems:"center",gap:5 }}>
-                <div style={{ width:6,height:6,borderRadius:"50%",background:"#22c55e" }} className="animate-pulse-dot" />
-                <span style={{ fontSize:10,color:"#16a34a",fontWeight:600,fontFamily:"'DM Mono',monospace" }}>LIVE</span>
-              </div>
+              ))}
             </div>
-            {FEED.map((f,i)=>(
-              <div key={i} style={{ display:"flex",gap:10,paddingBottom:i<FEED.length-1?12:0,borderBottom:i<FEED.length-1?"1px solid var(--border)":"none",marginBottom:i<FEED.length-1?12:0 }}>
-                <div style={{ display:"flex",flexDirection:"column",alignItems:"center" }}>
-                  <div style={{ width:8,height:8,borderRadius:"50%",background:f.dot,marginTop:3,flexShrink:0 }} />
-                  {i<FEED.length-1 && <div style={{ width:1,flex:1,background:"var(--border)",marginTop:3 }} />}
-                </div>
-                <div>
-                  <div style={{ fontSize:12,fontWeight:500 }}>{f.text}</div>
-                  <div style={{ fontSize:10,color:"var(--text-muted)",fontFamily:"'DM Mono',monospace" }}>{f.hora} · {f.sede}</div>
-                </div>
-              </div>
-            ))}
+          )}
+        </div>
+
+        {/* Tabla rápida de últimos registros */}
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Presencia en vivo</div>
+          <div className="table-wrap">
+            <table className="tramys-table">
+              <thead>
+                <tr><th>Trabajador</th><th>Sede</th><th>Entrada</th><th>Estado</th></tr>
+              </thead>
+              <tbody>
+                {hoyRecords.slice(0, 8).map(r => {
+                  const s = d.sedes.find(s => s.id === r.worker.sedeId);
+                  const est = r.rec?.estado ?? "ausente";
+                  return (
+                    <tr key={r.worker.id}>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <PhotoAvatar src={r.worker.avatarBase64} initials={(r.worker.apodo || r.worker.nombre)[0]} size={26} color={s?.color ?? "#C41A3A"} />
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{r.worker.apodo || r.worker.nombre.split(" ")[0]}</div>
+                            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{r.worker.nombre}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td><span style={{ fontSize: 11, fontWeight: 600, color: s?.color ?? "var(--text-muted)" }}>{s?.nombre}</span></td>
+                      <td style={{ fontFamily: "'DM Mono',monospace", fontSize: 12 }}>{r.rec?.entrada ?? "—"}</td>
+                      <td><Badge variant={est as "presente" | "tardanza" | "ausente" | "permiso" | "feriado"} small /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
+
       </main>
     </>
   );

@@ -1,289 +1,266 @@
 "use client";
-import { useState } from "react";
+
+import { useMemo, useState } from "react";
 import { Topbar } from "@/components/layout/Topbar";
-import { StatCard } from "@/components/ui/StatCard";
 import { Icon } from "@/components/ui/Icons";
+import { HideableAmount } from "@/components/ui/HideableAmount";
 import { money } from "@/lib/utils/formatters";
+import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
+import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 
-/* ================= DATOS MOCK ================= */
-const PLANILLA_MESES = [
-  { mes:"Ene", sa:15200, pp:10800 },
-  { mes:"Feb", sa:15800, pp:11200 },
-  { mes:"Mar", sa:16100, pp:11000 },
-  { mes:"Abr", sa:16800, pp:11600 },
-];
+const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
-const ASIST_SEMANA = [
-  { dia:"Lun", presentes:20, tardanzas:2, ausentes:2 },
-  { dia:"Mar", presentes:22, tardanzas:1, ausentes:1 },
-  { dia:"Mié", presentes:21, tardanzas:3, ausentes:0 },
-  { dia:"Jue", presentes:19, tardanzas:2, ausentes:3 },
-  { dia:"Vie", presentes:23, tardanzas:0, ausentes:1 },
-  { dia:"Sáb", presentes:8,  tardanzas:1, ausentes:1 },
-  { dia:"Dom", presentes:18, tardanzas:2, ausentes:4 },
-];
-
-const CAPT_SEMANA = [
-  { dia:"Lun", sa:8,  pp:5  },
-  { dia:"Mar", sa:10, pp:7  },
-  { dia:"Mié", sa:7,  pp:6  },
-  { dia:"Jue", sa:9,  pp:4  },
-  { dia:"Vie", sa:12, pp:8  },
-  { dia:"Sáb", sa:6,  pp:3  },
-  { dia:"Dom", sa:14, pp:9  },
-];
-
-const REPORTES_LIST = [
-  { id:"planilla",    icono:"💰", titulo:"Planilla mensual",       desc:"Sueldos, descuentos y netos de todos los trabajadores",      formatos:["PDF","Excel"] },
-  { id:"asistencia",  icono:"📅", titulo:"Asistencia mensual",     desc:"Registro completo de entradas, salidas y estados del mes",    formatos:["PDF","Excel"] },
-  { id:"jaladores",   icono:"🎯", titulo:"Reporte de jaladores",   desc:"Captaciones, metas, comisiones y ranking del mes",            formatos:["PDF","Excel"] },
-  { id:"adelantos",   icono:"💳", titulo:"Adelantos emitidos",     desc:"Historial de adelantos aprobados, rechazados y pendientes",   formatos:["PDF","Excel"] },
-  { id:"trabajador",  icono:"👤", titulo:"Planilla por trabajador",desc:"Desglose individual de sueldo, tardanzas y adelantos",        formatos:["PDF"]         },
-  { id:"sedes",       icono:"🏢", titulo:"Resumen de sedes",       desc:"Comparativa de asistencia y planilla por sede",              formatos:["PDF","Excel"] },
-];
-
-/* ================= GRÁFICA BARRAS APILADAS ================= */
-function GraficaBarras({
-  data, keysY, colores, labelX,
+/* ============ LINE CHART SVG ============ */
+function LineChart({
+  series, height = 180,
 }: {
-  data: Record<string,number|string>[];
-  keysY: string[]; colores: string[]; labelX: string;
+  series: { label: string; color: string; values: number[] }[];
+  height?: number;
 }) {
-  const maxVal = Math.max(...data.map(d => keysY.reduce((a,k) => a + (Number(d[k]) || 0), 0)));
+  const W = 640;
+  const H = height;
+  const padT = 20, padB = 30, padL = 40, padR = 16;
+  const maxLen = Math.max(...series.map(s => s.values.length));
+  const allVals = series.flatMap(s => s.values);
+  const maxVal = Math.max(...allVals, 1);
+
+  const x = (i: number) => padL + (i / Math.max(maxLen - 1, 1)) * (W - padL - padR);
+  const y = (v: number) => H - padB - (v / maxVal) * (H - padT - padB);
+
+  const gridLines = 4;
+
   return (
-    <div style={{ display:"flex", gap:8, alignItems:"flex-end", height:90 }}>
-      {data.map((d, i) => {
-        const total = keysY.reduce((a,k) => a + (Number(d[k]) || 0), 0);
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
+      {/* grid */}
+      {Array.from({ length: gridLines+1 }).map((_, i) => {
+        const yy = padT + (i / gridLines) * (H - padT - padB);
+        const val = Math.round((1 - i/gridLines) * maxVal);
         return (
-          <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
-            <div style={{ width:"100%", display:"flex", flexDirection:"column", height:72, justifyContent:"flex-end" }}>
-              {keysY.map((k, ki) => (
-                <div key={k} style={{
-                  width:"100%",
-                  borderRadius: ki===0 ? "0 0 4px 4px" : ki===keysY.length-1 ? "4px 4px 0 0" : "0",
-                  height:`${((Number(d[k])||0)/maxVal)*72}px`,
-                  background: colores[ki], minHeight: 2,
-                }} />
-              ))}
-            </div>
-            <span style={{ fontSize:9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>{String(d[labelX])}</span>
-          </div>
+          <g key={i}>
+            <line x1={padL} x2={W-padR} y1={yy} y2={yy} stroke="var(--border)" strokeDasharray="3 3" />
+            <text x={padL-6} y={yy+3} fontSize="9" fill="var(--text-muted)" textAnchor="end" fontFamily="'DM Mono',monospace">{val}</text>
+          </g>
         );
       })}
-    </div>
-  );
-}
-
-/* ================= GRÁFICA LÍNEA SVG ================= */
-function GraficaLinea({
-  data, keyA, keyB, colorA, colorB,
-}: {
-  data: Record<string,number|string>[];
-  keyA: string; keyB: string; colorA: string; colorB: string;
-}) {
-  const W = 300, H = 80;
-  const maxVal = Math.max(...data.flatMap(d => [Number(d[keyA])||0, Number(d[keyB])||0]));
-
-  const pts = (key: string) => data.map((d, i) => [
-    (i / (data.length - 1)) * (W - 20) + 10,
-    H - 10 - ((Number(d[key])||0) / maxVal) * (H - 20),
-  ] as [number,number]);
-
-  const path = (p: [number,number][]) => p.map((pt, i) => i === 0 ? `M${pt[0]},${pt[1]}` : `L${pt[0]},${pt[1]}`).join(" ");
-
-  return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ height:80 }}>
-      <path d={path(pts(keyA))} fill="none" stroke={colorA} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d={path(pts(keyB))} fill="none" stroke={colorB} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4 3" />
-      {pts(keyA).map((p, i) => <circle key={`a${i}`} cx={p[0]} cy={p[1]} r="3" fill={colorA} />)}
-      {pts(keyB).map((p, i) => <circle key={`b${i}`} cx={p[0]} cy={p[1]} r="3" fill={colorB} />)}
+      {/* eje X labels */}
+      {Array.from({ length: maxLen }).map((_, i) => (
+        <text key={i} x={x(i)} y={H - 10} fontSize="9" fill="var(--text-muted)" textAnchor="middle" fontFamily="'DM Mono',monospace">
+          {MESES[i] ?? ""}
+        </text>
+      ))}
+      {/* lines + areas */}
+      {series.map((s, si) => {
+        const path = s.values.map((v, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(v)}`).join(" ");
+        const area = `${path} L${x(s.values.length-1)},${H-padB} L${padL},${H-padB} Z`;
+        return (
+          <g key={si}>
+            <path d={area} fill={s.color} opacity={0.12} />
+            <path d={path} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            {s.values.map((v, i) => (
+              <circle key={i} cx={x(i)} cy={y(v)} r="3" fill={s.color} />
+            ))}
+          </g>
+        );
+      })}
     </svg>
   );
 }
 
-/* ================= PÁGINA PRINCIPAL ================= */
+/* ============ BARRAS HORIZONTALES ============ */
+function HBars({ data, color }: { data: { label: string; value: number }[]; color: string }) {
+  const max = Math.max(...data.map(d => d.value), 1);
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap: 10 }}>
+      {data.map((d, i) => (
+        <div key={i} style={{ display:"flex", alignItems:"center", gap: 10 }}>
+          <span style={{ fontSize: 12, color:"var(--text-muted)", width: 90, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.label}</span>
+          <div style={{ flex: 1, height: 22, background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 6, overflow:"hidden", position:"relative" }}>
+            <div style={{
+              height: "100%",
+              width: `${(d.value/max)*100}%`,
+              background: `linear-gradient(90deg, ${color}88, ${color})`,
+              transition: "width 0.6s",
+            }} />
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 700, fontFamily:"'DM Mono',monospace", minWidth: 48, textAlign:"right" }}>{d.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ================= PÁGINA ================= */
 export default function ReportesPage() {
-  const [tab,         setTab]         = useState<"graficas"|"exportar">("graficas");
-  const [mesSelected, setMesSelected] = useState("Abril 2026");
-  const [descargando, setDescargando] = useState<string|null>(null);
+  const d = useData();
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
 
-  function simularDescarga(id: string) {
-    setDescargando(id);
-    setTimeout(() => setDescargando(null), 1800);
-  }
+  /* Planilla por mes del año */
+  const planillaPorMes = useMemo(() => {
+    const res: number[] = Array.from({ length: 12 }, () => 0);
+    for (const w of d.workers) {
+      if (w.rol !== "trabajador" || !w.activo) continue;
+      for (const a of d.asistencia) {
+        if (a.workerId !== w.id) continue;
+        const [y, m] = a.fecha.split("-").map(Number);
+        if (y !== year) continue;
+        res[m-1] += ingresoDia(a, w.tarifas, isWeekendISO(a.fecha), esFeriadoOficial(a.fecha).es);
+      }
+    }
+    return res;
+  }, [d.workers, d.asistencia, year]);
 
-  const INSIGHTS = [
-    { icon:"📅", label:"Días mayor asistencia",    value:"Martes y Miércoles"     },
-    { icon:"🏆", label:"Jalador top del mes",       value:"Miguel Torres (93%)"    },
-    { icon:"🏢", label:"Sede más puntual",          value:"Santa Anita (91%)"      },
-    { icon:"🎯", label:"Mayor captación en un día", value:"Viernes (20 clientes)"  },
-    { icon:"⚠️", label:"Tardanzas más frecuentes",  value:"Marco Díaz (4)"         },
-    { icon:"✅", label:"Total planilla pagada",     value:money(18400)             },
-  ];
+  /* Comisiones jaladores por mes */
+  const comisionesPorMes = useMemo(() => {
+    const res: number[] = Array.from({ length: 12 }, () => 0);
+    for (const i of d.ingresosJaladores) {
+      const j = d.jaladores.find(x => x.id === i.jaladorId);
+      if (!j) continue;
+      const [y, m] = i.fecha.split("-").map(Number);
+      if (y !== year) continue;
+      res[m-1] += i.monto * j.porcentajeComision / 100;
+    }
+    return res;
+  }, [d.ingresosJaladores, d.jaladores, year]);
+
+  /* Asistencia % por mes */
+  const asistenciaPorMes = useMemo(() => {
+    const res: number[] = Array.from({ length: 12 }, () => 0);
+    const trabajadores = d.workers.filter(w => w.rol === "trabajador" && w.activo);
+    for (let m = 0; m < 12; m++) {
+      const dim = new Date(year, m+1, 0).getDate();
+      let presencias = 0, total = 0;
+      for (let day = 1; day <= dim; day++) {
+        const iso = `${year}-${String(m+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+        for (const w of trabajadores) {
+          total += 1;
+          const rec = d.asistencia.find(a => a.workerId === w.id && a.fecha === iso);
+          if (rec && (rec.estado === "presente" || rec.estado === "tardanza")) presencias += 1;
+        }
+      }
+      res[m] = total ? Math.round((presencias/total) * 100) : 0;
+    }
+    return res;
+  }, [d.workers, d.asistencia, year]);
+
+  /* Top jaladores */
+  const topJaladores = useMemo(() => {
+    return d.jaladores
+      .filter(j => j.activo)
+      .map(j => {
+        const ing = d.ingresosJaladores
+          .filter(i => i.jaladorId === j.id)
+          .filter(i => i.fecha.startsWith(String(year)))
+          .reduce((a,i) => a + i.monto, 0);
+        return { label: j.apodo || j.nombre.split(" ")[0], value: ing };
+      })
+      .sort((a,b) => b.value - a.value)
+      .slice(0, 6);
+  }, [d.jaladores, d.ingresosJaladores, year]);
+
+  /* Ingresos por sede */
+  const ingresosPorSede = d.sedes.map(s => ({ label: s.nombre, value: s.cajaMes.ingresos, color: s.color }));
+
+  /* Total bruto año */
+  const totalPlanillaAnio = planillaPorMes.reduce((a, x) => a + x, 0);
+  const totalComisionesAnio = comisionesPorMes.reduce((a, x) => a + x, 0);
 
   return (
     <>
-      <Topbar title="Reportes y Exportación" subtitle="Datos actualizados en tiempo real" onMenuToggle={()=>{}} />
+      <Topbar title="Reportes" subtitle={`Vista analítica · ${year}`} />
       <main className="page-main">
 
-        {/* Tabs + selector mes */}
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:10 }}>
-          <div style={{ display:"flex", gap:0, background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:3 }}>
-            {(["graficas","exportar"] as const).map(t=>(
-              <button key={t} onClick={()=>setTab(t)} style={{ padding:"7px 18px", borderRadius:8, border:"none", cursor:"pointer", background:tab===t?"var(--brand)":"transparent", color:tab===t?"#fff":"var(--text-muted)", fontWeight:tab===t?700:500, fontSize:12, fontFamily:"'Bricolage Grotesque',sans-serif", transition:"all 0.2s" }}>
-                {t==="graficas"?"📊 Gráficas":"📥 Exportar"}
-              </button>
-            ))}
-          </div>
-          <select className="select-base" value={mesSelected} onChange={e=>setMesSelected(e.target.value)}>
-            {["Abril 2026","Marzo 2026","Febrero 2026","Enero 2026"].map(m=><option key={m}>{m}</option>)}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
+          <div style={{ fontSize: 13, color:"var(--text-muted)" }}>Selecciona año para visualizar todos los datos</div>
+          <select className="select-base" value={year} onChange={e=>setYear(Number(e.target.value))}>
+            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
 
-        {/* ====== TAB GRÁFICAS ====== */}
-        {tab==="graficas" && (
-          <>
-            <div className="grid-stats" style={{ marginBottom:16 }}>
-              <StatCard label="Planilla total"      value={money(28400)} color="var(--brand)"  sub="Ambas sedes · Abril" />
-              <StatCard label="Asistencia promedio" value="82%"          color="#16a34a"       sub="Esta semana"          />
-              <StatCard label="Captaciones mes"     value="96"           color="#6366f1"       sub="5 jaladores activos"  />
-              <StatCard label="Comisiones mes"      value={money(2880)}  color="#f59e0b"       sub="A pagar fin de mes"   />
+        {/* Planilla + comisiones línea */}
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 8, flexWrap:"wrap", gap: 8 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>Planilla y comisiones del año</div>
+              <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>Tendencia mensual</div>
             </div>
-
-            <div className="grid-2" style={{ marginBottom:16 }}>
-              {/* Planilla por sede */}
-              <div className="card">
-                <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>Planilla por Sede</div>
-                <div style={{ fontSize:11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom:16 }}>Enero — Abril 2026</div>
-                <GraficaBarras data={PLANILLA_MESES} keysY={["sa","pp"]} colores={["var(--brand)","#1d6fa4"]} labelX="mes" />
-                <div style={{ display:"flex", gap:16, marginTop:10 }}>
-                  {[["Santa Anita","var(--brand)"],["Puente Piedra","#1d6fa4"]].map(([l,c])=>(
-                    <div key={String(l)} style={{ display:"flex", alignItems:"center", gap:5 }}>
-                      <div style={{ width:10, height:10, borderRadius:2, background:String(c) }} />
-                      <span style={{ fontSize:11, color:"var(--text-muted)" }}>{l}</span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop:12, paddingTop:10, borderTop:"1px solid var(--border)", display:"flex", justifyContent:"space-between" }}>
-                  <span style={{ fontSize:12, color:"var(--text-muted)" }}>Total Abril</span>
-                  <span style={{ fontWeight:800, fontSize:15, color:"var(--brand)" }}>{money(28400)}</span>
-                </div>
+            <div style={{ display:"flex", gap: 14 }}>
+              <div>
+                <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>Planilla total</div>
+                <HideableAmount value={money(totalPlanillaAnio)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
               </div>
-
-              {/* Asistencia semanal */}
-              <div className="card">
-                <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>Asistencia — Esta Semana</div>
-                <div style={{ fontSize:11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom:16 }}>14–19 Abril 2026</div>
-                <GraficaBarras data={ASIST_SEMANA} keysY={["presentes","tardanzas","ausentes"]} colores={["#22c55e","var(--brand)","#d1d5db"]} labelX="dia" />
-                <div style={{ display:"flex", gap:14, marginTop:10 }}>
-                  {[["Presentes","#22c55e"],["Tardanzas","var(--brand)"],["Ausentes","#d1d5db"]].map(([l,c])=>(
-                    <div key={String(l)} style={{ display:"flex", alignItems:"center", gap:5 }}>
-                      <div style={{ width:10, height:10, borderRadius:2, background:String(c) }} />
-                      <span style={{ fontSize:11, color:"var(--text-muted)" }}>{l}</span>
-                    </div>
-                  ))}
-                </div>
+              <div>
+                <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>Comisiones total</div>
+                <HideableAmount value={money(totalComisionesAnio)} size={15} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
               </div>
             </div>
-
-            <div className="grid-2">
-              {/* Captaciones por sede */}
-              <div className="card">
-                <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>Captaciones por Sede</div>
-                <div style={{ fontSize:11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom:12 }}>Comparativa semanal</div>
-                <GraficaLinea data={CAPT_SEMANA} keyA="sa" keyB="pp" colorA="var(--brand)" colorB="#1d6fa4" />
-                <div style={{ display:"flex", gap:5, marginTop:4, justifyContent:"space-between" }}>
-                  {CAPT_SEMANA.map(d=><span key={d.dia} style={{ flex:1, textAlign:"center", fontSize:9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>{d.dia}</span>)}
-                </div>
-                <div style={{ display:"flex", gap:16, marginTop:10 }}>
-                  {[["Santa Anita","var(--brand)","——"],["Puente Piedra","#1d6fa4","- -"]].map(([l,c,dash])=>(
-                    <div key={String(l)} style={{ display:"flex", alignItems:"center", gap:5 }}>
-                      <span style={{ fontSize:11, color:String(c), fontFamily:"'DM Mono',monospace" }}>{dash}</span>
-                      <span style={{ fontSize:11, color:"var(--text-muted)" }}>{l}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Insights */}
-              <div className="card">
-                <div style={{ fontWeight:700, fontSize:14, marginBottom:14 }}>Resumen del Mes</div>
-                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {INSIGHTS.map((r, i) => (
-                    <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius:8 }}>
-                      <span style={{ fontSize:16 }}>{r.icon}</span>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>{r.label}</div>
-                        <div style={{ fontSize:13, fontWeight:600 }}>{r.value}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          </div>
+          <LineChart
+            series={[
+              { label:"Planilla", color:"#C41A3A", values: planillaPorMes },
+              { label:"Comisiones", color:"#16a34a", values: comisionesPorMes },
+            ]}
+            height={200}
+          />
+          <div style={{ display:"flex", gap: 16, marginTop: 10 }}>
+            <div style={{ display:"flex", alignItems:"center", gap: 6, fontSize: 11, color:"var(--text-muted)" }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background:"#C41A3A" }} /> Planilla
             </div>
-          </>
-        )}
-
-        {/* ====== TAB EXPORTAR ====== */}
-        {tab==="exportar" && (
-          <>
-            <div style={{ fontSize:13, color:"var(--text-muted)", marginBottom:16 }}>
-              Selecciona el reporte que necesitas descargar · Período: <strong style={{ color:"var(--text)" }}>{mesSelected}</strong>
+            <div style={{ display:"flex", alignItems:"center", gap: 6, fontSize: 11, color:"var(--text-muted)" }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background:"#16a34a" }} /> Comisiones
             </div>
+          </div>
+        </div>
 
-            <div className="grid-2" style={{ marginBottom:16 }}>
-              {REPORTES_LIST.map(r => {
-                const cargando = descargando===r.id;
-                return (
-                  <div key={r.id} className="card" style={{ display:"flex", gap:14, alignItems:"flex-start" }}>
-                    <div style={{ fontSize:28, flexShrink:0 }}>{r.icono}</div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>{r.titulo}</div>
-                      <div style={{ fontSize:12, color:"var(--text-muted)", marginBottom:10, lineHeight:1.5 }}>{r.desc}</div>
-                      <div style={{ fontSize:10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom:10 }}>
-                        Período: <span style={{ color:"var(--text)", fontWeight:600 }}>{mesSelected}</span>
-                      </div>
-                      <div style={{ display:"flex", gap:8 }}>
-                        {r.formatos.map(f => (
-                          <button key={f} onClick={() => simularDescarga(`${r.id}-${f}`)} disabled={cargando} style={{
-                            padding:"7px 14px", borderRadius:8, cursor:cargando?"not-allowed":"pointer", fontSize:12, fontWeight:600,
-                            background:cargando?"var(--border)":f==="PDF"?"var(--brand)":"transparent",
-                            color:cargando?"var(--text-muted)":f==="PDF"?"#fff":"var(--brand)",
-                            border:f==="PDF"?"none":`1px solid var(--brand)`,
-                            fontFamily:"'Bricolage Grotesque',sans-serif", transition:"all 0.15s",
-                            display:"flex", alignItems:"center", gap:5,
-                          }}>
-                            {cargando ? (
-                              <><div style={{ width:12,height:12,border:`2px solid var(--text-muted)`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite" }} />Generando...</>
-                            ) : (
-                              <><Icon name="download" size={12} color={f==="PDF"?"#fff":"var(--brand)"} />{f}</>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+        {/* Asistencia % línea + top jaladores */}
+        <div className="grid-2">
+          <div className="card">
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Asistencia mensual (%)</div>
+            <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom: 12 }}>Promedio general</div>
+            <LineChart series={[{ label:"Asistencia", color:"#6366f1", values: asistenciaPorMes }]} height={180} />
+          </div>
+
+          <div className="card">
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Top jaladores del año</div>
+            <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom: 12 }}>Por ingresos totales</div>
+            <HBars data={topJaladores} color="#C41A3A" />
+          </div>
+        </div>
+
+        {/* Ingresos por sede */}
+        <div className="card" style={{ marginTop: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Ingresos por sede (mes)</div>
+          <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom: 14 }}>Caja mensual</div>
+          <div style={{ display:"flex", gap: 12, flexWrap:"wrap" }}>
+            {ingresosPorSede.map(s => {
+              const max = Math.max(...ingresosPorSede.map(x => x.value), 1);
+              const pct = Math.round((s.value / max) * 100);
+              return (
+                <div key={s.label} style={{ flex:"1 1 220px", background:"var(--bg)", border:"1px solid var(--border)", borderLeft:`4px solid ${s.color}`, borderRadius: 10, padding: 12 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{s.label}</span>
+                    <HideableAmount value={money(s.value)} size={13} color={s.color} weight={800} fontFamily="'DM Mono',monospace" />
                   </div>
-                );
-              })}
-            </div>
+                  <div style={{ height: 8, background:"var(--border)", borderRadius: 99, overflow:"hidden" }}>
+                    <div style={{ height:"100%", width: `${pct}%`, background: `linear-gradient(90deg, ${s.color}88, ${s.color})` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
-            {/* Exportación masiva */}
-            <div className="card" style={{ border:"1px solid rgba(196,26,58,0.2)", borderLeft:"4px solid var(--brand)" }}>
-              <div style={{ fontWeight:700, fontSize:15, marginBottom:4 }}>Exportación Completa del Mes</div>
-              <div style={{ fontSize:12, color:"var(--text-muted)", marginBottom:16 }}>
-                Descarga todos los reportes de {mesSelected} en un solo archivo comprimido (.zip)
-              </div>
-              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-                <button className="btn-primary" style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <Icon name="download" size={13} color="#fff" /> 📦 Descargar todo — {mesSelected}
-                </button>
-                <button className="btn-outline" style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <Icon name="timer" size={13} /> Programar envío automático
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+        {/* Exportar */}
+        <div className="card" style={{ marginTop: 14, borderLeft:"4px solid var(--brand)" }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Exportar datos</div>
+          <div style={{ fontSize: 12, color:"var(--text-muted)", marginBottom: 14 }}>Descarga los reportes en los formatos disponibles</div>
+          <div style={{ display:"flex", gap: 10, flexWrap:"wrap" }}>
+            <button className="btn-primary" style={{ display:"inline-flex", alignItems:"center", gap: 6 }}><Icon name="download" size={13} color="#fff" /> Planilla PDF</button>
+            <button className="btn-outline" style={{ display:"inline-flex", alignItems:"center", gap: 6 }}><Icon name="download" size={13} /> Asistencia Excel</button>
+            <button className="btn-outline" style={{ display:"inline-flex", alignItems:"center", gap: 6 }}><Icon name="download" size={13} /> Jaladores Excel</button>
+            <button className="btn-outline" style={{ display:"inline-flex", alignItems:"center", gap: 6 }}><Icon name="download" size={13} /> Reporte completo ZIP</button>
+          </div>
+        </div>
       </main>
     </>
   );

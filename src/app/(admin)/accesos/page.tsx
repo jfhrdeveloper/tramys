@@ -65,7 +65,7 @@ function ModalEditarRol({ open, onClose, usuario }: { open:boolean; onClose:()=>
         Modificar rol y permisos de {usuario.nombre}
       </div>
 
-      {/* Info usuario */}
+      {/* ====== Info usuario ====== */}
       <div style={{ display:"flex", gap:12, alignItems:"center", padding:"12px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius:10, marginBottom:20 }}>
         <Avatar initials={iniciales(usuario.nombre)} size={40} color={ROLES_INFO[usuario.rol].color} />
         <div style={{ flex:1 }}>
@@ -75,7 +75,7 @@ function ModalEditarRol({ open, onClose, usuario }: { open:boolean; onClose:()=>
         <Badge variant={usuario.rol} />
       </div>
 
-      {/* Selector rol */}
+      {/* ====== Selector rol ====== */}
       <div style={{ marginBottom:16 }}>
         <div className="section-label">Rol</div>
         <div style={{ display:"flex", gap:8 }}>
@@ -93,7 +93,7 @@ function ModalEditarRol({ open, onClose, usuario }: { open:boolean; onClose:()=>
         <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:8 }}>{ROLES_INFO[rolSel].desc}</div>
       </div>
 
-      {/* Sede */}
+      {/* ====== Sede asignada ====== */}
       {rolSel !== "owner" && (
         <div style={{ marginBottom:20 }}>
           <div className="section-label">Sede asignada</div>
@@ -134,10 +134,11 @@ export default function AccesosPage() {
 
   const usuariosFiltrados = MOCK_USUARIOS.filter(u => filtroRol==="todos" || u.rol===filtroRol);
 
+  /* ==== Definición de tabs con iconos ==== */
   const TABS = [
-    { id:"usuarios"  as const, label:"👥 Usuarios"         },
-    { id:"permisos"  as const, label:"🔐 Permisos por rol" },
-    { id:"auditlog"  as const, label:"📋 Audit Log"        },
+    { id:"usuarios"  as const, label:"Usuarios",         icon:"trabajadores" as const },
+    { id:"permisos"  as const, label:"Permisos por rol", icon:"lock"         as const },
+    { id:"auditlog"  as const, label:"Audit Log",        icon:"reportes"     as const },
   ];
 
   return (
@@ -149,10 +150,22 @@ export default function AccesosPage() {
       />
       <main className="page-main">
 
-        {/* Tabs */}
-        <div style={{ display:"flex", gap:0, background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:3, alignSelf:"flex-start", marginBottom:16 }}>
+        {/* ====== Tabs de navegación ====== */}
+        <div style={{ display:"flex", gap:0, background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:3, alignSelf:"flex-start", marginBottom:16, flexWrap:"wrap" }}>
           {TABS.map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{ padding:"7px 18px", borderRadius:8, border:"none", cursor:"pointer", background:tab===t.id?"var(--brand)":"transparent", color:tab===t.id?"#fff":"var(--text-muted)", fontWeight:tab===t.id?700:500, fontSize:12, fontFamily:"'Bricolage Grotesque',sans-serif", transition:"all 0.2s" }}>
+            <button
+              key={t.id}
+              onClick={()=>setTab(t.id)}
+              style={{
+                padding:"7px 14px", borderRadius:8, border:"none", cursor:"pointer",
+                background:tab===t.id?"var(--brand)":"transparent",
+                color:tab===t.id?"#fff":"var(--text-muted)",
+                fontWeight:tab===t.id?700:500, fontSize:12,
+                fontFamily:"'Bricolage Grotesque',sans-serif", transition:"all 0.2s",
+                display:"inline-flex", alignItems:"center", gap:6, minHeight:36,
+              }}
+            >
+              <Icon name={t.icon} size={13} color={tab===t.id?"#fff":"var(--text-muted)"} />
               {t.label}
             </button>
           ))}
@@ -222,7 +235,7 @@ export default function AccesosPage() {
         {/* ====== TAB PERMISOS ====== */}
         {tab==="permisos" && (
           <>
-            {/* Selector rol */}
+            {/* ==== Selector rol ==== */}
             <div style={{ display:"flex", gap:10, marginBottom:14 }}>
               {(Object.entries(ROLES_INFO) as [RolType, typeof ROLES_INFO.owner][]).map(([key, info]) => (
                 <button key={key} onClick={()=>setRolVista(key)} style={{ flex:1, padding:"10px 14px", borderRadius:10, cursor:"pointer", border:`2px solid ${rolVista===key?info.color:"var(--border)"}`, background:rolVista===key?`${info.color}12`:"var(--card)", fontFamily:"'Bricolage Grotesque',sans-serif", transition:"all 0.15s" }}>
@@ -232,13 +245,13 @@ export default function AccesosPage() {
               ))}
             </div>
 
-            {/* Descripción */}
+            {/* ==== Descripción ==== */}
             <div className="card" style={{ borderLeft:`4px solid ${ROLES_INFO[rolVista].color}`, marginBottom:14 }}>
               <div style={{ fontWeight:700, fontSize:15, color:ROLES_INFO[rolVista].color, marginBottom:4 }}>{ROLES_INFO[rolVista].nombre}</div>
               <div style={{ fontSize:13, color:"var(--text-muted)" }}>{ROLES_INFO[rolVista].desc}</div>
             </div>
 
-            {/* Tabla permisos */}
+            {/* ==== Tabla permisos ==== */}
             <div className="card" style={{ padding:0, overflow:"hidden" }}>
               <div style={{ padding:"14px 20px", borderBottom:"1px solid var(--border)", fontWeight:700, fontSize:14 }}>
                 Permisos del rol: {ROLES_INFO[rolVista].nombre}

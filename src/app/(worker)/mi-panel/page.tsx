@@ -27,10 +27,10 @@ export default function MiPanelPage() {
 
   return (
     <>
-      <TopbarWorker title="Mi Panel" subtitle={`${WORKER.sede} · Dom 19 Abr 2026`} onMenuToggle={()=>{}} />
+      <TopbarWorker title="Mi Panel" subtitle={`${WORKER.cargo} · ${WORKER.sede}`} onMenuToggle={()=>{}} />
       <main className="page-main">
 
-        {/* Hero bienvenida */}
+        {/* ====== Hero bienvenida ====== */}
         <div style={{ background:"linear-gradient(135deg,#a01530,#C41A3A)", borderRadius:16, padding:"24px 28px", display:"flex", alignItems:"center", gap:20, marginBottom:16, position:"relative", overflow:"hidden" }}>
           <div style={{ position:"absolute", right:-30, top:-30, width:160, height:160, borderRadius:"50%", background:"rgba(255,255,255,0.06)" }} />
           <div style={{ width:56, height:56, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:20, color:"#fff", flexShrink:0 }}>
@@ -38,7 +38,10 @@ export default function MiPanelPage() {
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:11, color:"rgba(255,255,255,0.65)", fontFamily:"'DM Mono',monospace", marginBottom:4 }}>BIENVENIDA DE VUELTA</div>
-            <div style={{ fontWeight:800, fontSize:22, color:"#fff", marginBottom:4 }}>{WORKER.nombre} 👋</div>
+            <div style={{ fontWeight:800, fontSize:22, color:"#fff", marginBottom:4, display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+              <span style={{ minWidth:0, overflow:"hidden", textOverflow:"ellipsis" }}>{WORKER.nombre}</span>
+              <Icon name="user_check" size={18} color="rgba(255,255,255,0.9)" />
+            </div>
             <div style={{ fontSize:12, color:"rgba(255,255,255,0.7)" }}>{WORKER.cargo} · {WORKER.sede} · Turno {WORKER.turno}</div>
           </div>
           <div style={{ textAlign:"right" }}>
@@ -51,7 +54,7 @@ export default function MiPanelPage() {
           </div>
         </div>
 
-        {/* KPIs */}
+        {/* ====== KPIs Principales ====== */}
         <div className="grid-stats" style={{ marginBottom:16 }}>
           <StatCard label="Sueldo base"    value={money(WORKER.sueldo)}  color="var(--brand)"  sub="Abril 2026"          accent="top" />
           <StatCard label="Días trabajados"value={`${WORKER.diasTrab}/22`} color="#16a34a"     sub={`${pct}% del mes`}   accent="top" />
@@ -59,10 +62,10 @@ export default function MiPanelPage() {
           <StatCard label="Neto estimado"  value={money(neto)}            color="#16a34a"       sub="Descuentos aplicados" accent="top" />
         </div>
 
-        {/* Progreso + accesos */}
+        {/* ====== Progreso y Accesos Rápidos ====== */}
         <div className="grid-2">
 
-          {/* Progreso del mes */}
+          {/* ==== Progreso del mes ==== */}
           <div className="card">
             <div style={{ fontWeight:700, fontSize:15, marginBottom:4 }}>Progreso del mes</div>
             <div style={{ fontSize:11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom:16 }}>Días trabajados vs días hábiles</div>
@@ -81,7 +84,7 @@ export default function MiPanelPage() {
             </div>
           </div>
 
-          {/* Accesos rápidos */}
+          {/* ==== Accesos rápidos ==== */}
           <div className="card">
             <div style={{ fontWeight:700, fontSize:15, marginBottom:4 }}>Acciones rápidas</div>
             <div style={{ fontSize:11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom:14 }}>Lo que puedes hacer desde tu panel</div>
