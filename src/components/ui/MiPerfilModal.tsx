@@ -12,6 +12,10 @@ import { PhotoUpload } from "@/components/ui/PhotoUpload";
 import { Icon } from "@/components/ui/Icons";
 import { useSession } from "@/components/providers/SessionProvider";
 import { useData } from "@/components/providers/DataProvider";
+import { createClient } from "@/lib/supabase/client";
+import { subirAvatar } from "@/lib/storage/avatars";
+
+const USE_SUPABASE = process.env.NEXT_PUBLIC_USE_SUPABASE === "true";
 
 interface Props {
   open: boolean;
@@ -58,7 +62,7 @@ export function MiPerfilModal({ open, onClose }: Props) {
 
   if (!worker) return null;
 
-  function guardar() {
+  async function guardar() {
     setErrorFlash(null);
     const nombreCompleto = `${nombres.trim()} ${apellidos.trim()}`.trim();
     if (!nombres.trim())   { setErrorFlash("Los nombres no pueden estar vacíos"); return; }
@@ -68,13 +72,34 @@ export function MiPerfilModal({ open, onClose }: Props) {
       return;
     }
 
+    /* En modo Supabase: subir avatar al bucket y sincronizar Auth */
+    let avatarFinal: string | null = avatar;
+    if (USE_SUPABASE) {
+      try {
+        if (avatar && avatar.startsWith("data:")) {
+          avatarFinal = await subirAvatar(worker!.id, avatar);
+        }
+        const supabase = createClient();
+        const updates: { email?: string; password?: string } = {};
+        if (email.trim() && email.trim() !== worker!.email) updates.email = email.trim();
+        if (mostrarPwd && password) updates.password = password;
+        if (Object.keys(updates).length > 0) {
+          const { error } = await supabase.auth.updateUser(updates);
+          if (error) { setErrorFlash(error.message); return; }
+        }
+      } catch (err) {
+        setErrorFlash(err instanceof Error ? err.message : "Error al guardar en Supabase");
+        return;
+      }
+    }
+
     d.updateWorker(worker!.id, {
       nombre:       nombreCompleto,
       apodo:        apodo.trim(),
       email:        email.trim(),
       telefono:     telefono.trim() || undefined,
       dni:          dni.trim() || undefined,
-      avatarBase64: avatar,
+      avatarBase64: avatarFinal,
     });
 
     setSavedFlash(true);
