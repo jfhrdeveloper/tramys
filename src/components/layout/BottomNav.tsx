@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
+import { useSession } from "@/components/providers/SessionProvider";
 import { Icon } from "@/components/ui/Icons";
+import { MiPerfilModal } from "@/components/ui/MiPerfilModal";
 
 /* ================= BOTTOM NAV MOBILE (ADMIN) ================= */
 const NAV_OWNER_PRIMARY = [
@@ -30,9 +31,10 @@ const NAV_ENC_MORE: { href:string; icon:string; label:string }[] = [];
 
 export function BottomNav() {
   const pathname = usePathname();
-  const { profile, signOut } = useAuth();
+  const { worker, signOut } = useSession();
   const [open, setOpen] = useState(false);
-  const isEnc = profile?.rol === "encargado";
+  const [perfilOpen, setPerfilOpen] = useState(false);
+  const isEnc = worker?.rol === "encargado";
   const primary = isEnc ? NAV_ENC_PRIMARY : NAV_OWNER_PRIMARY;
   const more = isEnc ? NAV_ENC_MORE : NAV_OWNER_MORE;
   const moreActive = more.some(i => pathname===i.href || pathname.startsWith(i.href+"/"));
@@ -52,14 +54,12 @@ export function BottomNav() {
           );
         })}
 
-        {more.length > 0 && (
-          <button onClick={()=>setOpen(true)} style={{ background:"transparent",border:"none",cursor:"pointer",flex:1,padding:0 }}>
-            <div style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"4px 0",color:(open||moreActive)?"var(--brand)":"var(--text-muted)" }}>
-              <Icon name="menu" size={20} color={(open||moreActive)?"var(--brand)":"var(--text-muted)"} />
-              <span style={{ fontSize:9,fontWeight:(open||moreActive)?700:500 }}>Ver más</span>
-            </div>
-          </button>
-        )}
+        <button onClick={()=>setOpen(true)} style={{ background:"transparent",border:"none",cursor:"pointer",flex:1,padding:0 }}>
+          <div style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"4px 0",color:(open||moreActive)?"var(--brand)":"var(--text-muted)" }}>
+            <Icon name="menu" size={20} color={(open||moreActive)?"var(--brand)":"var(--text-muted)"} />
+            <span style={{ fontSize:9,fontWeight:(open||moreActive)?700:500 }}>Más</span>
+          </div>
+        </button>
       </div>
 
       {open && (
@@ -91,6 +91,14 @@ export function BottomNav() {
 
               <div style={{ height:1,background:"var(--border)",margin:"10px 4px" }} />
 
+              <button onClick={()=>{ setOpen(false); setPerfilOpen(true); }} style={{ width:"100%",background:"transparent",border:"none",cursor:"pointer",padding:0,textAlign:"left" }}>
+                <div style={{ display:"flex",alignItems:"center",gap:14,padding:"12px 14px",borderRadius:10,color:"var(--text)",fontWeight:600,fontSize:13 }}>
+                  <Icon name="user" size={20} color="var(--text-muted)" />
+                  <span style={{ flex:1 }}>Mi perfil</span>
+                  <Icon name="chevron_right" size={14} color="var(--text-muted)" />
+                </div>
+              </button>
+
               <button onClick={()=>{ setOpen(false); signOut(); }} style={{ width:"100%",background:"transparent",border:"none",cursor:"pointer",padding:0,textAlign:"left" }}>
                 <div style={{ display:"flex",alignItems:"center",gap:14,padding:"12px 14px",borderRadius:10,color:"var(--brand)",fontWeight:600,fontSize:13 }}>
                   <Icon name="logout" size={20} color="var(--brand)" />
@@ -102,6 +110,8 @@ export function BottomNav() {
           </div>
         </>
       )}
+
+      <MiPerfilModal open={perfilOpen} onClose={() => setPerfilOpen(false)} />
     </>
   );
 }

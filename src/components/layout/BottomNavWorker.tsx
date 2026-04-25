@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
+import { useSession } from "@/components/providers/SessionProvider";
 import { Icon } from "@/components/ui/Icons";
+import { MiPerfilModal } from "@/components/ui/MiPerfilModal";
 
 const PRIMARY = [
   { href:"/mi-panel",      icon:"home",      label:"Inicio"     },
@@ -18,8 +19,9 @@ const MORE = [
 
 export function BottomNavWorker() {
   const pathname = usePathname();
-  const { signOut } = useAuth();
+  const { signOut } = useSession();
   const [open, setOpen] = useState(false);
+  const [perfilOpen, setPerfilOpen] = useState(false);
   const moreActive = MORE.some(i => pathname===i.href);
 
   return (
@@ -76,6 +78,14 @@ export function BottomNavWorker() {
 
               <div style={{ height:1,background:"var(--border)",margin:"10px 4px" }} />
 
+              <button onClick={()=>{ setOpen(false); setPerfilOpen(true); }} style={{ width:"100%",background:"transparent",border:"none",cursor:"pointer",padding:0,textAlign:"left" }}>
+                <div style={{ display:"flex",alignItems:"center",gap:14,padding:"12px 14px",borderRadius:10,color:"var(--text)",fontWeight:600,fontSize:13 }}>
+                  <Icon name="user" size={20} color="var(--text-muted)" />
+                  <span style={{ flex:1 }}>Mi perfil</span>
+                  <Icon name="chevron_right" size={14} color="var(--text-muted)" />
+                </div>
+              </button>
+
               <button onClick={()=>{ setOpen(false); signOut(); }} style={{ width:"100%",background:"transparent",border:"none",cursor:"pointer",padding:0,textAlign:"left" }}>
                 <div style={{ display:"flex",alignItems:"center",gap:14,padding:"12px 14px",borderRadius:10,color:"var(--brand)",fontWeight:600,fontSize:13 }}>
                   <Icon name="logout" size={20} color="var(--brand)" />
@@ -87,6 +97,8 @@ export function BottomNavWorker() {
           </div>
         </>
       )}
+
+      <MiPerfilModal open={perfilOpen} onClose={() => setPerfilOpen(false)} />
     </>
   );
 }
