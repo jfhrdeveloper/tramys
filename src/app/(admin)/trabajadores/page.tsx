@@ -10,11 +10,250 @@ import { MultiverseCalendar } from "@/components/ui/MultiverseCalendar";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { money } from "@/lib/utils/formatters";
 import {
-  useData, ingresoDia, isWeekendISO, type Worker, type TarifasWorker, type Turno,
+  useData, ingresoDia, isWeekendISO,
+  type Worker, type TarifasWorker, type Turno,
+  type AsistenciaRec, type EstadoAsist, type TipoPerm,
 } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 
 type TabPerfil = "asistencia" | "sueldo" | "adelantos" | "permisos" | "perfil";
+
+/* ================= MODAL EDITAR REGISTRO ASISTENCIA ================= */
+const ESTADOS_ASIST: { id: EstadoAsist; label: string; color: string }[] = [
+  { id:"presente", label:"Presente", color:"#16a34a" },
+  { id:"tardanza", label:"Tardanza", color:"#f59e0b" },
+  { id:"ausente",  label:"Ausente",  color:"#8b8fa8" },
+  { id:"permiso",  label:"Permiso",  color:"#d97706" },
+  { id:"feriado",  label:"Feriado",  color:"#6366f1" },
+];
+
+function ModalEditAsistencia({
+  open, onClose, worker, fechaISO,
+}: {
+  open: boolean; onClose: () => void;
+  worker: Worker; fechaISO: string;
+}) {
+  const d = useData();
+  const rec: AsistenciaRec | undefined = d.getAsistencia(worker.id, fechaISO);
+
+  const [estado, setEstado]       = useState<EstadoAsist>(rec?.estado ?? "presente");
+  const [entrada, setEntrada]     = useState<string>(rec?.entrada ?? worker.turno.entrada);
+  const [salida, setSalida]       = useState<string>(rec?.salida ?? worker.turno.salida);
+  const [usaOverride, setUsaOver] = useState<boolean>(rec?.overrideIngreso !== null && rec?.overrideIngreso !== undefined);
+  const [override, setOverride]   = useState<number>(rec?.overrideIngreso ?? 0);
+  const [motivo, setMotivo]       = useState<string>(rec?.motivoEdit ?? "");
+
+  useMemo(() => {
+    setEstado(rec?.estado ?? "presente");
+    setEntrada(rec?.entrada ?? worker.turno.entrada);
+    setSalida(rec?.salida ?? worker.turno.salida);
+    setUsaOver(rec?.overrideIngreso !== null && rec?.overrideIngreso !== undefined);
+    setOverride(rec?.overrideIngreso ?? 0);
+    setMotivo(rec?.motivoEdit ?? "");
+  }, [rec?.id, fechaISO, open]); // eslint-disable-line
+
+  const sinHoras = estado === "ausente" || estado === "permiso";
+
+  function guardar() {
+    d.setAsistencia(worker.id, fechaISO, {
+      estado,
+      entrada: sinHoras ? null : (entrada || null),
+      salida:  sinHoras ? null : (salida  || null),
+      overrideIngreso: usaOverride ? override : null,
+      motivoEdit: motivo.trim() || undefined,
+    });
+    onClose();
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Editar asistencia · ${fechaISO}`} width={460}>
+      <div style={{ fontSize: 12, color:"var(--text-muted)", marginBottom: 14 }}>
+        {worker.nombre} · {worker.cargo}
+      </div>
+
+      <div style={{ display:"flex", flexDirection:"column", gap: 14, marginBottom: 18 }}>
+        {/* Estado */}
+        <div>
+          <div className="section-label">Estado</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(110px, 1fr))", gap: 6 }}>
+            {ESTADOS_ASIST.map(e => (
+              <button key={e.id} type="button" onClick={()=>setEstado(e.id)}
+                style={{
+                  padding:"9px 6px", borderRadius: 8, cursor:"pointer",
+                  border: `2px solid ${estado===e.id ? e.color : "var(--border)"}`,
+                  background: estado===e.id ? `${e.color}14` : "var(--bg)",
+                  color:      estado===e.id ? e.color : "var(--text-muted)",
+                  fontWeight: estado===e.id ? 700 : 500, fontSize: 12,
+                }}>{e.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Horas */}
+        {!sinHoras && (
+          <div>
+            <div className="section-label">Horario</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+              <input type="time" className="input-base input-mono" value={entrada} onChange={e=>setEntrada(e.target.value)} />
+              <input type="time" className="input-base input-mono" value={salida}  onChange={e=>setSalida(e.target.value)}  />
+            </div>
+          </div>
+        )}
+
+        {/* Override de ingreso */}
+        <div>
+          <label style={{ display:"flex", alignItems:"center", gap: 8, cursor:"pointer", marginBottom: 6 }}>
+            <input type="checkbox" checked={usaOverride} onChange={e=>setUsaOver(e.target.checked)} />
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Override manual del ingreso del día</span>
+          </label>
+          {usaOverride && (
+            <input type="number" className="input-base input-mono"
+              value={override || ""}
+              onChange={e=>setOverride(Number(e.target.value))}
+              placeholder="Monto fijo (S/)"
+            />
+          )}
+          {!usaOverride && (
+            <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
+              Usa la tarifa correspondiente del trabajador.
+            </div>
+          )}
+        </div>
+
+        {/* Motivo de edición */}
+        <div>
+          <div className="section-label">Motivo de edición (opcional)</div>
+          <input className="input-base" value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Ej: corrección manual, justificación..." />
+        </div>
+      </div>
+
+      <div style={{ display:"flex", gap: 10 }}>
+        {rec && (
+          <button className="btn-ghost"
+            style={{ color:"var(--brand)", border:"1px solid rgba(196,26,58,0.25)" }}
+            onClick={()=>{
+              if (confirm("¿Borrar el registro de este día?")) {
+                d.setAsistencia(worker.id, fechaISO, {
+                  estado:"ausente", entrada:null, salida:null, overrideIngreso:null, motivoEdit:undefined,
+                });
+                onClose();
+              }
+            }}>
+            Limpiar día
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
+        <button className="btn-outline" onClick={onClose}>Cancelar</button>
+        <button className="btn-primary" onClick={guardar}>Guardar</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ================= MODAL NUEVO ADELANTO ================= */
+function ModalAdelanto({
+  open, onClose, workerId,
+}: { open: boolean; onClose: () => void; workerId: string }) {
+  const d = useData();
+  const [monto, setMonto]   = useState<number>(0);
+  const [motivo, setMotivo] = useState("");
+
+  useMemo(() => { setMonto(0); setMotivo(""); }, [open]); // eslint-disable-line
+
+  function guardar() {
+    if (!monto || monto <= 0) return;
+    d.addAdelanto({
+      workerId, monto, motivo: motivo.trim() || "—",
+      fecha: new Date().toISOString().slice(0,10),
+    });
+    onClose();
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Nuevo adelanto" width={400}>
+      <div style={{ display:"flex", flexDirection:"column", gap: 12, marginBottom: 18 }}>
+        <div>
+          <div className="section-label">Monto (S/)</div>
+          <input type="number" className="input-base input-mono" value={monto || ""} onChange={e=>setMonto(Number(e.target.value))} placeholder="0.00" />
+        </div>
+        <div>
+          <div className="section-label">Motivo</div>
+          <textarea className="input-base" rows={3} value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Ej: emergencia familiar..." style={{ resize:"none" }} />
+        </div>
+      </div>
+      <div style={{ display:"flex", gap: 10 }}>
+        <button className="btn-outline" style={{ flex: 1 }} onClick={onClose}>Cancelar</button>
+        <button className="btn-primary" style={{ flex: 2 }} onClick={guardar} disabled={!monto || monto <= 0}>Crear</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ================= MODAL NUEVO PERMISO ================= */
+const TIPOS_PERM: { id: TipoPerm; label: string; icon: string; color: string }[] = [
+  { id:"personal",   label:"Personal",   icon:"user",       color:"#6366f1" },
+  { id:"medico",     label:"Médico",     icon:"file_check", color:"#16a34a" },
+  { id:"vacaciones", label:"Vacaciones", icon:"calendar",   color:"#f59e0b" },
+];
+
+function ModalPermiso({
+  open, onClose, workerId,
+}: { open: boolean; onClose: () => void; workerId: string }) {
+  const d = useData();
+  const [fecha, setFecha]   = useState(new Date().toISOString().slice(0,10));
+  const [tipo, setTipo]     = useState<TipoPerm>("personal");
+  const [motivo, setMotivo] = useState("");
+
+  useMemo(() => {
+    setFecha(new Date().toISOString().slice(0,10));
+    setTipo("personal");
+    setMotivo("");
+  }, [open]); // eslint-disable-line
+
+  function guardar() {
+    if (!fecha) return;
+    d.addPermiso({ workerId, fecha, tipo, motivo: motivo.trim() || "—" });
+    onClose();
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Nuevo permiso" width={420}>
+      <div style={{ display:"flex", flexDirection:"column", gap: 14, marginBottom: 18 }}>
+        <div>
+          <div className="section-label">Tipo</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap: 8 }}>
+            {TIPOS_PERM.map(t => (
+              <button key={t.id} type="button" onClick={()=>setTipo(t.id)}
+                style={{
+                  padding:"10px 6px", borderRadius: 9, cursor:"pointer",
+                  border: `2px solid ${tipo===t.id ? t.color : "var(--border)"}`,
+                  background: tipo===t.id ? `${t.color}14` : "var(--bg)",
+                  color:      tipo===t.id ? t.color : "var(--text-muted)",
+                  fontWeight: tipo===t.id ? 700 : 500, fontSize: 12,
+                  display:"flex", flexDirection:"column", alignItems:"center", gap: 4,
+                }}>
+                <Icon name={t.icon} size={16} color={tipo===t.id ? t.color : "currentColor"} />
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="section-label">Fecha</div>
+          <input type="date" className="input-base" value={fecha} onChange={e=>setFecha(e.target.value)} />
+        </div>
+        <div>
+          <div className="section-label">Motivo</div>
+          <textarea className="input-base" rows={3} value={motivo} onChange={e=>setMotivo(e.target.value)} style={{ resize:"none" }} />
+        </div>
+      </div>
+      <div style={{ display:"flex", gap: 10 }}>
+        <button className="btn-outline" style={{ flex: 1 }} onClick={onClose}>Cancelar</button>
+        <button className="btn-primary" style={{ flex: 2 }} onClick={guardar} disabled={!fecha}>Crear</button>
+      </div>
+    </Modal>
+  );
+}
 
 /* ================= MODAL NUEVO/EDITAR TRABAJADOR ================= */
 function ModalWorker({
@@ -205,6 +444,9 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
+  const [editAsistFecha, setEditAsistFecha] = useState<string | null>(null);
+  const [modalAdel, setModalAdel] = useState(false);
+  const [modalPerm, setModalPerm] = useState(false);
 
   /* Asistencia del mes */
   function getDayData(day: number) {
@@ -374,18 +616,10 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
                         <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{h.salida ?? "—"}</td>
                         <td><Badge variant={h.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small /></td>
                         <td>
-                          <button className="btn-outline" style={{ fontSize: 11, padding: "3px 8px" }}
-                            onClick={()=>{
-                              const nuevaEntrada = prompt("Hora de entrada (HH:mm) o 'x' para vaciar:", h.entrada ?? "");
-                              if (nuevaEntrada === null) return;
-                              const nuevaSalida = prompt("Hora de salida (HH:mm) o 'x' para vaciar:", h.salida ?? "");
-                              if (nuevaSalida === null) return;
-                              d.setAsistencia(worker.id, h.fecha, {
-                                entrada: nuevaEntrada === "x" ? null : nuevaEntrada || null,
-                                salida:  nuevaSalida  === "x" ? null : nuevaSalida  || null,
-                              });
-                            }}
-                          >Editar</button>
+                          <button className="btn-outline" style={{ fontSize: 11, padding: "3px 8px", display:"inline-flex", alignItems:"center", gap: 4 }}
+                            onClick={()=>setEditAsistFecha(h.fecha)}>
+                            <Icon name="edit" size={11} /> Editar
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -432,13 +666,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
             <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
               <div style={{ fontWeight: 700, fontSize: 14 }}>Adelantos de {worker.apodo || worker.nombre.split(" ")[0]}</div>
               <button className="btn-primary" style={{ display:"flex", alignItems:"center", gap: 6 }}
-                onClick={()=>{
-                  const monto = Number(prompt("Monto del adelanto (S/):", "100"));
-                  if (!monto || monto <= 0) return;
-                  const motivo = prompt("Motivo:", "");
-                  if (!motivo) return;
-                  d.addAdelanto({ workerId: worker.id, monto, motivo, fecha: new Date().toISOString().slice(0,10) });
-                }}>
+                onClick={()=>setModalAdel(true)}>
                 <Icon name="plus" size={12} color="#fff" /> Nuevo adelanto
               </button>
             </div>
@@ -475,13 +703,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
             <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
               <div style={{ fontWeight: 700, fontSize: 14 }}>Permisos</div>
               <button className="btn-primary" style={{ display:"flex", alignItems:"center", gap: 6 }}
-                onClick={()=>{
-                  const fecha = prompt("Fecha (yyyy-mm-dd):", new Date().toISOString().slice(0,10));
-                  if (!fecha) return;
-                  const tipo = (prompt("Tipo (personal / medico / vacaciones):", "personal") ?? "personal") as "personal"|"medico"|"vacaciones";
-                  const motivo = prompt("Motivo:", "") ?? "";
-                  d.addPermiso({ workerId: worker.id, fecha, tipo, motivo });
-                }}>
+                onClick={()=>setModalPerm(true)}>
                 <Icon name="plus" size={12} color="#fff" /> Nuevo permiso
               </button>
             </div>
@@ -519,6 +741,18 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
           </div>
         )}
       </div>
+
+      {/* ====== Modales del perfil ====== */}
+      {editAsistFecha && (
+        <ModalEditAsistencia
+          open={true}
+          onClose={() => setEditAsistFecha(null)}
+          worker={worker}
+          fechaISO={editAsistFecha}
+        />
+      )}
+      <ModalAdelanto open={modalAdel} onClose={() => setModalAdel(false)} workerId={worker.id} />
+      <ModalPermiso  open={modalPerm} onClose={() => setModalPerm(false)} workerId={worker.id} />
     </div>
   );
 }

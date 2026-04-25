@@ -63,11 +63,11 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 - [x] **B6** Planilla (Cálculo ganancia empresa y días reales)
 
 ### ⏳ Fases Pendientes (Trabajador y Pulido)
-- [ ] **B7** Eventos (Toggle feriados oficiales, próximo evento, gráfico de torta)
-- [ ] **B8** Reportes (Rediseño visual completo y nuevos gráficos)
-- [ ] **B9** Accesos temporales (Modal y gestión de caducidad)
-- [ ] **C1** Trabajador: Panel `mi-asistencia` (Calendario multiverse)
-- [ ] **C2** Trabajador: Páginas restantes conectadas al `DataProvider`
+- [x] **B7** Eventos (Toggle feriados oficiales, próximo evento, vista calendario)
+- [x] **B8** Reportes (Rediseño visual completo y nuevos gráficos)
+- [x] **B9** Accesos temporales (Modal y gestión de caducidad)
+- [x] **C1** Trabajador: Panel `mi-asistencia` (Calendario multiverse)
+- [x] **C2** Trabajador: Páginas restantes conectadas al `DataProvider` (mi-sueldo, mis-adelantos, mis-permisos, mis-alertas)
 - [ ] **D1** Pulido final (Cuadratura, centrado, QA de Responsive)
 
 ---
@@ -76,6 +76,7 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 - `src/components/providers/DataProvider.tsx`
 - `src/components/ui/PhotoUpload.tsx`
 - `src/components/ui/Preloader.tsx`
+- `src/components/ui/Skeleton.tsx` (Skeleton, SkeletonText, SkeletonCard, SkeletonTable, SkeletonStats)
 - `src/lib/utils/peruHolidays.ts`
 
 ---
@@ -83,53 +84,59 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 ## 🧠 5. Memoria de Requerimientos Detallados (Backlog Operativo)
 
 ### 👑 VISTA ADMINISTRADOR / OWNER
-- [ ] **1. Dashboard:** Rediseño completo e intuitivo. Métricas correctas. **ELIMINAR** cards superiores.
+- [x] **1. Dashboard:** Rediseño completo, hero unificado, métricas correctas. Cards de KPI superiores eliminadas (todo dentro del hero).
 - [x] **2. Sedes:** Mostrar en 2 cards apiladas (abrir al click). Reestructurado. Agregada sede Lima. Juntar "Caja". Color modificable.
-- [ ] **3. Trabajadores:** 
-  - [ ] Botón "Nuevo trabajador" funcional (incluir **apodo**).
+- [x] **3. Trabajadores:** 
+  - [x] Botón "Nuevo trabajador" funcional (incluye **apodo**).
   - [x] Agregar foto 1x1 cuadrable (Upload base64).
-  - [ ] **ELIMINAR** progreso del mes.
-  - [ ] Asistencia: Subpanel tipo Multiverse (calendario) + historial reciente abajo. Click en fecha = ver horario.
-  - [ ] Editar registro completamente funcional.
-  - [ ] "Mi sueldo": Cambiar icono a billete. Todo modificable (tarifas: normal, feriado, fds, evento). Todo derivado de la asistencia.
-  - [ ] Adelantos y permisos: Rediseño, botones funcionales.
-  - [ ] Perfil y Turnos completamente editables.
-- [ ] **4. Jaladores:** 
-  - [ ] Subpanel de lista + vista de movimiento.
-  - [ ] Botón "Registrar ingreso" (monto ganado en el día) + Editable.
-  - [ ] **ELIMINAR** concepto de "Captación", cambiar a "Comisiones". 
-  - [ ] Perfil: Dashboard dinámico de rendimiento por ingresos.
-  - [ ] **ELIMINAR** KPIs superiores (total jaladores, captación de hoy, comisiones totales).
+  - [x] **ELIMINAR** progreso del mes (no se muestra en el header del perfil).
+  - [x] Asistencia: Subpanel Multiverse (calendario) + historial reciente con Editar.
+  - [x] Editar registro: modal con estado, entrada/salida, override de ingreso y motivo.
+  - [x] "Mi sueldo": icono billete (`money_bill`), tarifas modificables desde "Perfil", todo derivado de la asistencia.
+  - [x] Adelantos y permisos: modales propios (sin más prompt()) y aprobación inline.
+  - [x] Perfil y Turnos completamente editables.
+- [x] **4. Jaladores:** 
+  - [x] Subpanel de lista + vista de movimiento (cuadre semanal/mensual + perfil).
+  - [x] Botón "Registrar ingreso" con modal editable.
+  - [x] **ELIMINAR** "Captación" → "Comisiones" en toda la UI activa (queda solo en código Supabase legacy no montado).
+  - [x] Perfil: Dashboard dinámico (KPIs, barras 14 días, mejor día, promedio).
+  - [x] **ELIMINAR** KPIs superiores (sin StatCards arriba, sólo lista + cuadre).
 - [x] **5. Asistencia:** 
   - [x] Mejorar contraste (actualmente fondo y letras muy blancas).
   - [x] Mostrar **Apodo** (prioridad) o Nombre. NO mostrar cantidad de asistentes.
   - [x] Agregar Dropdown Mes/Año (manteniendo vista actual).
   - [x] **ELIMINAR** KPIs superiores (Presencias, Tardanzas, Ausencias).
-- [ ] **6. Planilla:** 
-  - [ ] Añadir cálculo: `Total Bruto - Neto = Ganancia Compañía`.
-  - [ ] Mostrar días trabajados separados por tipo (normal, tardanza, fds, feriado).
+- [x] **6. Planilla:** 
+  - [x] Cálculo `Ingresos Sedes − Neto = Queda Empresa` visible como KPI.
+  - [x] Días trabajados separados por tipo (Normal/Tarde/FdS/Feriado) en columnas + tfoot con totales.
   - [x] Eliminar Sueldo Base (ya es suma de días).
-- [ ] **7. Eventos:** 
-  - [ ] Checkbox para mostrar feriados oficiales de Perú + los agregados.
-  - [ ] **ELIMINAR** KPIs de totales. Reemplazar por 1 card de "Próximo evento".
-  - [ ] SVG cumpleaños = Torta por defecto. Todos los eventos deben tener SVG según tipo.
-  - [ ] Agregar Dropdown Mes/Año.
-- [ ] **8. Reportes:** 
-  - [ ] Rediseño visual completo e intuitivo. 
-  - [ ] **ELIMINAR** todos los cards superiores (planilla total, asistencia promedio).
-  - [ ] Mejorar fuertemente la estética de los gráficos.
-- [ ] **9. Accesos:** 
-  - [x] Poder asignar un rol temporal por X cantidad de tiempo.
+- [x] **7. Eventos:** 
+  - [x] Checkbox para mostrar feriados oficiales de Perú + agregados.
+  - [x] **ELIMINAR** KPIs de totales. Reemplazado por card "Próximo evento".
+  - [x] SVG cumpleaños = Torta. Cada tipo de evento usa su SVG (`cake`, `calendar`, `sedes`).
+  - [x] Dropdowns Mes/Año.
+- [x] **8. Reportes:** 
+  - [x] Rediseño visual completo (LineChart con áreas, HBars, ingresos por sede, exportar).
+  - [x] **ELIMINAR** cards superiores. Solo selector de año + tarjetas analíticas.
+  - [x] Estética de gráficos mejorada (gradientes, gridlines, leyenda, etiquetas DM Mono).
+- [x] **9. Accesos:** 
+  - [x] Asignar rol temporal con duración (1h/4h/12h/1d/7d/custom).
+  - [x] Tabla de activos con tiempo restante y opción "Revocar".
+  - [x] Audit log con histórico completo.
 
 ### 👷 VISTA TRABAJADOR
-- [ ] **1. Asistencia:**
-  - [ ] Subpanel Multiverse exacto para que el trabajador cuadre ingresos.
-  - [ ] Subpanel de vista general.
+- [x] **1. Asistencia:**
+  - [x] Subpanel Multiverse exacto para que el trabajador cuadre ingresos.
+  - [x] Subpanel de vista general (historial mensual).
+- [x] **2. Mi Sueldo:** Desglose dinámico por tipo de día, tarifas, adelantos y detalle por día.
+- [x] **3. Mis Adelantos:** Solicitud, filtros por estado, KPIs y descuento del mes.
+- [x] **4. Mis Permisos:** Solicitud por tipo (personal/médico/vacaciones) con filtros y badges.
+- [x] **5. Mis Alertas:** Notificaciones agregadas (solicitudes, tardanzas, eventos próximos).
 
 ### ⚙️ GENERAL (Reglas Transversales)
 - [ ] Todo perfectamente cuadrado, centrado, bien diseñado.
 - [x] **Regla de Sueldo:** Nadie gana sueldo base, todo es cálculo diario por tipo de día / manual override.
-- [ ] **Sidebar/Menú:** Debajo del correo del Owner debe haber una línea divisora y botón SVG "Cerrar sesión".
+- [x] **Sidebar/Menú:** Línea divisora y botón SVG "Cerrar sesión" debajo del email/sede (admin y trabajador).
 - [x] **Preloader:** Bienvenida al iniciar sesión con Nombre o Apodo.
-- [ ] **Funcionalidad:** Todos los botones deben ser funcionales y afectar vistas de trabajador/encargado según sus permisos.
-- [ ] **Transiciones y Skeletons:** [x] Efecto suave (fade-in) implementado en layouts / [ ] Skeleton loaders pendientes.
+- [x] **Funcionalidad:** Botones del owner ya conectados al `DataProvider` (CRUD + aprobaciones + accesos temporales). Las vistas del trabajador reflejan los cambios en tiempo real al compartir el mismo store.
+- [ ] **Transiciones y Skeletons:** [x] Efecto suave (fade-in) implementado / [x] Skeleton (`Skeleton`, `SkeletonText`, `SkeletonCard`, `SkeletonTable`, `SkeletonStats`) disponible — falta cablearlo en pantallas con carga.

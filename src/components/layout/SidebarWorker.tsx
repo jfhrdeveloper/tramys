@@ -84,23 +84,58 @@ export function SidebarWorker({ collapsed, onCollapse, mobileOpen, onMobileClose
           })}
         </nav>
 
-        {/* ====== USUARIO & LOGOUT ====== */}
-        <div style={{ padding: isCollapsed ? "16px" : "16px 20px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, justifyContent: isCollapsed ? "center" : "flex-start" }}>
+        {/* ====== USUARIO ====== */}
+        <div style={{ padding: isCollapsed ? "14px" : "14px 16px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, justifyContent: isCollapsed ? "center" : "flex-start" }}>
           <Avatar initials={profile ? iniciales(profile.nombre) : "?"} size={32} color={colSede} />
-          
+
           {!isCollapsed && profile && (
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              <div style={{ fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.nombre}</div>
-              <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>{profile.sede?.nombre}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.nombre}</div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {profile.sede?.nombre ?? profile.rol}
+              </div>
             </div>
           )}
-          
-          {!isCollapsed && (
-            <button onClick={signOut} title="Cerrar sesión" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex", alignItems: "center", justifyContent: "center", padding: 4 }}>
-              <Icon name="logout" size={16} />
-            </button>
-          )}
         </div>
+
+        {/* ====== SEPARADOR + CERRAR SESIÓN ====== */}
+        {!isCollapsed && (
+          <>
+            <div style={{ height: 1, background: "var(--border)", margin: "0 16px" }} />
+            <button
+              onClick={signOut}
+              style={{
+                background: "transparent", border: "none", cursor: "pointer",
+                padding: "12px 16px 16px",
+                display: "flex", alignItems: "center", gap: 10,
+                width: "100%", color: "var(--text-muted)",
+                fontSize: 13, fontWeight: 600,
+                fontFamily: "'Bricolage Grotesque',sans-serif",
+                transition: "color 0.15s",
+              }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--brand)"}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"}
+            >
+              <Icon name="logout" size={16} />
+              <span>Cerrar sesión</span>
+            </button>
+          </>
+        )}
+        {isCollapsed && (
+          <button
+            onClick={signOut}
+            title="Cerrar sesión"
+            style={{
+              background: "transparent", border: "none",
+              borderTop: "1px solid var(--border)", cursor: "pointer",
+              padding: "14px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--text-muted)",
+            }}
+          >
+            <Icon name="logout" size={16} />
+          </button>
+        )}
       </div>
     );
   };
