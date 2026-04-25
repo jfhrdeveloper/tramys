@@ -610,3 +610,54 @@ on conflict do nothing;
 - El campo `caja_*` en `sedes` está como `jsonb` para mantener la forma `{ ingresos, material }` que usa el `DataProvider`.
 - `accesos_temporales`: el cliente debe escribir `rol_original` con el rol vigente del worker, aplicar `rol_otorgado` en `profiles.rol`, y al expirar (cron / acción manual) restaurar `rol_original`. La vista `Accesos` ya implementa este flujo en localStorage; al migrar a Supabase, replicar la misma lógica con un `update profiles set rol = at.rol_original ...`.
 - Si decides **no usar el bucket `avatars`**, deja `profiles.avatar_base64` y guarda la imagen en base64 (igual que el modo demo actual).
+
+### 6.10 Caducidad de accesos temporales en backend (pg_cron)
+
+```sql
+/* Requiere la extensión pg_cron habilitada en el proyecto Supabase
+   (Database → Extensions → pg_cron). */
+create extension if not exists pg_cron;
+
+create or replace function public.expirar_accesos_temporales()
+returns void language plpgsql security definer as $$
+begin
+  /* Restaura el rol original a todos los workers cuyo acceso ya venció */
+  update public.profiles p
+     set rol          = at.rol_original,
+         rol_original = null
+    from public.accesos_temporales at
+   where at.worker_id = p.id
+     and at.hasta    <= now();
+
+  /* Elimina los accesos vencidos */
+  delete from public.accesos_temporales where hasta <= now();
+end $$;
+
+/* Programa la ejecución cada minuto */
+select cron.schedule(
+  'tramys_expirar_accesos',
+  '* * * * *',
+  $$ select public.expirar_accesos_temporales(); $$
+);
+```
+
+### 6.11 Toggle de backend en la app
+
+```bash
+# .env.local
+NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
+NEXT_PUBLIC_USE_SUPABASE=true   # activa providers Supabase + Realtime
+```
+
+- Sin la flag (o `false`), la app funciona en modo demo con `localStorage` (los providers locales originales).
+- Con `true`, se activan `DataProviderSupabase` + `SessionProviderSupabase`, suscripciones Realtime y sincronización de email/contraseña/avatar contra Supabase Auth + Storage.
+
+---
+
+## 🛠️ 7. Fases de migración a Supabase (E1–E4)
+
+- [x] **E1 Adapter & Providers conectados** — `src/lib/data/mappers.ts`, `DataProviderSupabase`, `SessionProviderSupabase`, wrapper `Providers` que conmuta por `NEXT_PUBLIC_USE_SUPABASE`. Los pages siguen usando `useData()` / `useSession()` sin cambios.
+- [x] **E2 Realtime** — `DataProviderSupabase` se suscribe a `postgres_changes` en todo el schema `public` y refresca el estado para mantener la interconexión Owner / Encargado / Trabajador.
+- [x] **E3 Caducidad backend** — Función `expirar_accesos_temporales()` programada con `pg_cron` cada minuto. El ticker del cliente queda como defensa-en-profundidad.
+- [x] **E4 Storage de avatares** — Helper `src/lib/storage/avatars.ts` con `subirAvatar`/`eliminarAvatar`. `MiPerfilModal` sube la foto al bucket `avatars/<uid>/avatar.png` y guarda la URL pública. Email y contraseña se sincronizan vía `supabase.auth.updateUser` cuando el modo Supabase está activo.
