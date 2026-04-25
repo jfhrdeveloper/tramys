@@ -43,11 +43,12 @@ export default function LoginPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const { data: profile } = await supabase
-        .from("profiles").select("rol, nombre").eq("id", user.id).single();
-      const nombre = (profile?.nombre as string | undefined) ?? (user.email?.split("@")[0] ?? "Usuario");
+        .from("profiles").select("rol, nombre, apodo").eq("id", user.id).single();
+      const nombre = (profile?.nombre as string | undefined) ?? "Usuario";
+      const apodo  = (profile?.apodo  as string | undefined) ?? undefined;
       const rol    = (profile?.rol    as string | undefined) ?? "trabajador";
       setLoading(false);
-      setWelcome({ nombre, rol });
+      setWelcome({ nombre, apodo, rol });
       setTimeout(() => {
         router.push(rol === "trabajador" ? "/mi-panel" : "/dashboard");
       }, 1700);
