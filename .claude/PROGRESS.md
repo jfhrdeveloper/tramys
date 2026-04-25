@@ -7,35 +7,38 @@
 ## 🎯 1. Reglas Globales del Proyecto
 
 ### 📝 Estándar Visual de Comentarios
+
 Para mantener una legibilidad impecable, aplica estrictamente esta jerarquía en todos los archivos `.ts` y `.tsx`:
 
-* **Nivel 1 (Bloques principales):** `/* ================= BLOQUE PRINCIPAL ================= */`
-* **Nivel 2 (Secciones lógicas):** `/* ====== Sección secundaria ====== */`
-* **Nivel 3 (Subsecciones):** `/* ==== Subsección ==== */`
-* **Nivel 4 (Notas de una línea):** `// Nota específica` o `/* Elemento adicional */`
+- **Nivel 1 (Bloques principales):** `/* ================= BLOQUE PRINCIPAL ================= */`
+- **Nivel 2 (Secciones lógicas):** `/* ====== Sección secundaria ====== */`
+- **Nivel 3 (Subsecciones):** `/* ==== Subsección ==== */`
+- **Nivel 4 (Notas de una línea):** `// Nota específica` o `/* Elemento adicional */`
 
 > **⚠️ Regla Crítica (React/JSX):** Dentro del JSX (en el `return`), usa **ÚNICA Y ESTRICTAMENTE** `{/* */}`. El uso de `//` dentro del JSX romperá la aplicación.
 
 ### 📱 Diseño Responsivo Adaptativo (Mobile-First)
+
 Todo componente y vista debe escalar correctamente siguiendo los breakpoints de Tailwind:
 
-| Nivel | Breakpoint | Dispositivo Objetivo | Reglas Base de Layout |
-| :--- | :--- | :--- | :--- |
-| **base** | `< 640px` | Móvil (360px–430px) | Layout 1 columna, bottom-nav / menú hamburguesa, touch targets ≥ 44px. |
-| **sm** | `≥ 640px` | Móvil grande / Paisaje | 1 columna con márgenes holgados. |
-| **md** | `≥ 768px` | Tablet (768px–1024px) | Grid de 2 columnas. Sidebar en overlay/colapsable. |
-| **lg** | `≥ 1024px` | Laptop 13–14" | Sidebar fijo. Grid de 2-3 columnas. |
-| **xl** | `≥ 1280px` | Laptop 15–16" estándar | Grid de ≥ 3 columnas sin scroll horizontal. |
-| **2xl** | `≥ 1536px` | Monitor / PC 17"+ | `max-w-screen-xl` o `max-w-[1440px]` centrado. Layouts no estirados al 100%. |
+| Nivel    | Breakpoint | Dispositivo Objetivo   | Reglas Base de Layout                                                        |
+| :------- | :--------- | :--------------------- | :--------------------------------------------------------------------------- |
+| **base** | `< 640px`  | Móvil (360px–430px)    | Layout 1 columna, bottom-nav / menú hamburguesa, touch targets ≥ 44px.       |
+| **sm**   | `≥ 640px`  | Móvil grande / Paisaje | 1 columna con márgenes holgados.                                             |
+| **md**   | `≥ 768px`  | Tablet (768px–1024px)  | Grid de 2 columnas. Sidebar en overlay/colapsable.                           |
+| **lg**   | `≥ 1024px` | Laptop 13–14"          | Sidebar fijo. Grid de 2-3 columnas.                                          |
+| **xl**   | `≥ 1280px` | Laptop 15–16" estándar | Grid de ≥ 3 columnas sin scroll horizontal.                                  |
+| **2xl**  | `≥ 1536px` | Monitor / PC 17"+      | `max-w-screen-xl` o `max-w-[1440px]` centrado. Layouts no estirados al 100%. |
 
-* **Anchos:** Nunca usar anchos fijos en px para contenedores. Usar `w-full` y `max-w-*`. El sidebar PC es fijo (`w-64`/`w-72`), el contenido usa `flex-1 min-w-0`.
-* **Imágenes:** Siempre `w-full h-auto` u `object-cover`.
-* **Tipografía:** Responsiva (`text-sm md:text-base xl:text-lg`), nunca tamaños fijos.
+- **Anchos:** Nunca usar anchos fijos en px para contenedores. Usar `w-full` y `max-w-*`. El sidebar PC es fijo (`w-64`/`w-72`), el contenido usa `flex-1 min-w-0`.
+- **Imágenes:** Siempre `w-full h-auto` u `object-cover`.
+- **Tipografía:** Responsiva (`text-sm md:text-base xl:text-lg`), nunca tamaños fijos.
 
 ### 🎨 Paleta TRAMYS y Tipografía
-* **Modo Claro:** Brand `#C41A3A` · Claro `#e8304d` · Oscuro `#a01530` · Fondo `#f8f7f4` · Card `#ffffff` · Texto `#1a1917`
-* **Modo Oscuro:** Fondo `#0e1117` · Card `#161b22` · Texto `#e8eaf0`
-* **Fuentes:** *Bricolage Grotesque* (UI General) + *DM Mono* (Código, Fechas, Etiquetas)
+
+- **Modo Claro:** Brand `#C41A3A` · Claro `#e8304d` · Oscuro `#a01530` · Fondo `#f8f7f4` · Card `#ffffff` · Texto `#1a1917`
+- **Modo Oscuro:** Fondo `#0e1117` · Card `#161b22` · Texto `#e8eaf0`
+- **Fuentes:** _Bricolage Grotesque_ (UI General) + _DM Mono_ (Código, Fechas, Etiquetas)
 
 ---
 
@@ -52,6 +55,7 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 ## 🚀 3. Estado de Desarrollo (Roadmap)
 
 ### ✅ Fases Completadas (Fundamentos y Core Admin)
+
 - [x] **A1** Store global (`DataProvider`)
 - [x] **A2** `PhotoUpload` + iconos (cake, money_bill)
 - [x] **A3** Preloader de login + cerrar sesión en footer
@@ -63,21 +67,25 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 - [x] **B6** Planilla (Cálculo ganancia empresa y días reales)
 
 ### ⏳ Fases Pendientes (Trabajador y Pulido)
+
 - [x] **B7** Eventos (Toggle feriados oficiales, próximo evento, vista calendario)
 - [x] **B8** Reportes (Rediseño visual completo y nuevos gráficos)
 - [x] **B9** Accesos temporales (Modal y gestión de caducidad)
 - [x] **C1** Trabajador: Panel `mi-asistencia` (Calendario multiverse)
 - [x] **C2** Trabajador: Páginas restantes conectadas al `DataProvider` (mi-sueldo, mis-adelantos, mis-permisos, mis-alertas)
-- [ ] **D1** Pulido final (Cuadratura, centrado, QA de Responsive)
+- [x] **D1** Pulido final (Cuadratura, centrado, QA de Responsive) — `page-main` centrado y con tope `max-width: 1440px` ≥2xl, `HydrationGate` cubre carga inicial.
 
 ---
 
 ## 📂 4. Referencias: Archivos Core Creados
+
 - `src/components/providers/DataProvider.tsx` (incluye ticker de caducidad de accesos temporales)
 - `src/components/providers/SessionProvider.tsx` (sesión activa local con `useSession`/`switchTo`/`signOut`)
 - `src/components/ui/PhotoUpload.tsx`
 - `src/components/ui/Preloader.tsx`
 - `src/components/ui/Skeleton.tsx` (Skeleton, SkeletonText, SkeletonCard, SkeletonTable, SkeletonStats)
+- `src/components/ui/HydrationGate.tsx` (gate global que cubre la hidratación inicial con skeleton unificado)
+- `src/components/ui/MiPerfilModal.tsx` (modal global de edición del usuario activo: foto, Nombres + Apellidos, apodo, email, teléfono, DNI, contraseña)
 - `src/lib/utils/peruHolidays.ts`
 
 ---
@@ -85,9 +93,10 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 ## 🧠 5. Memoria de Requerimientos Detallados (Backlog Operativo)
 
 ### 👑 VISTA ADMINISTRADOR / OWNER
+
 - [x] **1. Dashboard:** Rediseño completo, hero unificado, métricas correctas. Cards de KPI superiores eliminadas (todo dentro del hero).
 - [x] **2. Sedes:** Cards apiladas, sede Lima, "Caja" unificada, color modificable, **selector de encargado** + checkbox activa en el modal.
-- [x] **3. Trabajadores:** 
+- [x] **3. Trabajadores:**
   - [x] Botón "Nuevo trabajador" funcional (incluye **apodo**).
   - [x] Agregar foto 1x1 cuadrable (Upload base64).
   - [x] **ELIMINAR** progreso del mes (no se muestra en el header del perfil).
@@ -96,31 +105,31 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
   - [x] "Mi sueldo": icono billete (`money_bill`), tarifas modificables desde "Perfil", todo derivado de la asistencia.
   - [x] Adelantos y permisos: modales propios (sin más prompt()) y aprobación inline.
   - [x] Perfil y Turnos completamente editables.
-- [x] **4. Jaladores:** 
+- [x] **4. Jaladores:**
   - [x] Subpanel de lista + vista de movimiento (cuadre semanal/mensual + perfil).
   - [x] Botón "Registrar ingreso" con modal editable.
   - [x] **ELIMINAR** "Captación" → "Comisiones" en toda la UI activa (queda solo en código Supabase legacy no montado).
   - [x] Perfil: Dashboard dinámico (KPIs, barras 14 días, mejor día, promedio).
   - [x] **ELIMINAR** KPIs superiores (sin StatCards arriba, sólo lista + cuadre).
-- [x] **5. Asistencia:** 
+- [x] **5. Asistencia:**
   - [x] Mejorar contraste (actualmente fondo y letras muy blancas).
   - [x] Mostrar **Apodo** (prioridad) o Nombre. NO mostrar cantidad de asistentes.
   - [x] Agregar Dropdown Mes/Año (manteniendo vista actual).
   - [x] **ELIMINAR** KPIs superiores (Presencias, Tardanzas, Ausencias).
-- [x] **6. Planilla:** 
+- [x] **6. Planilla:**
   - [x] Cálculo `Ingresos Sedes − Neto = Queda Empresa` visible como KPI.
   - [x] Días trabajados separados por tipo (Normal/Tarde/FdS/Feriado) en columnas + tfoot con totales.
   - [x] Eliminar Sueldo Base (ya es suma de días).
-- [x] **7. Eventos:** 
+- [x] **7. Eventos:**
   - [x] Checkbox para mostrar feriados oficiales de Perú + agregados.
   - [x] **ELIMINAR** KPIs de totales. Reemplazado por card "Próximo evento".
   - [x] SVG cumpleaños = Torta. Cada tipo de evento usa su SVG (`cake`, `calendar`, `sedes`).
   - [x] Dropdowns Mes/Año.
-- [x] **8. Reportes:** 
+- [x] **8. Reportes:**
   - [x] Rediseño visual completo (LineChart con áreas, HBars, ingresos por sede, exportar).
   - [x] **ELIMINAR** cards superiores. Solo selector de año + tarjetas analíticas.
   - [x] Estética de gráficos mejorada (gradientes, gridlines, leyenda, etiquetas DM Mono).
-- [x] **9. Accesos:** 
+- [x] **9. Accesos:**
   - [x] Asignar rol temporal con duración (1h/4h/12h/1d/7d/custom).
   - [x] **Caducidad real**: al crear se aplica `rolOtorgado` al worker; al expirar/revocar se restaura `rolOriginal` (ticker cada 30s en `DataProvider`).
   - [x] Tabla de activos con tiempo restante y opción "Revocar".
@@ -128,6 +137,7 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
   - [x] **Impersonar / "Ver como"** desde la tabla de Usuarios (cambia la sesión activa y redirige según el rol).
 
 ### 👷 VISTA TRABAJADOR
+
 - [x] **1. Asistencia:**
   - [x] Subpanel Multiverse exacto para que el trabajador cuadre ingresos.
   - [x] Subpanel de vista general (historial mensual).
@@ -137,9 +147,14 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 - [x] **5. Mis Alertas:** Notificaciones agregadas (solicitudes, tardanzas, eventos próximos).
 
 ### ⚙️ GENERAL (Reglas Transversales)
-- [ ] Todo perfectamente cuadrado, centrado, bien diseñado.
+
+- [x] Todo perfectamente cuadrado, centrado, bien diseñado. (`page-main` centrado con `max-width: 1440px` ≥2xl, paddings escalados por breakpoint, doble candado anti-overflow horizontal.)
 - [x] **Regla de Sueldo:** Nadie gana sueldo base, todo es cálculo diario por tipo de día / manual override.
 - [x] **Sidebar/Menú:** Línea divisora y botón SVG "Cerrar sesión" debajo del email/sede (admin y trabajador).
+- [x] **Mi Perfil (acceso global):** En todas las sesiones (Owner, Encargado, Trabajador) y en ambas vistas (sidebar PC + bottom-nav móvil), justo **arriba de "Cerrar sesión"** debe haber un acceso "Mi perfil" que abra una vista editable del usuario activo (foto, **Nombres + Apellidos** en columnas, apodo, email, teléfono, DNI, contraseña). Los cambios se reflejan en el `DataProvider` y se ven en toda la app.
+- [x] **Cerrar sesión robusto:** Los bottom-navs (admin y worker) usan `useSession().signOut` (limpia `tramys_session_id` y redirige a `/login`), no `useAuth` de Supabase, para que el cierre realmente surta efecto en el modo demo.
+- [x] **Interconexión total:** Owner / Encargado / Trabajador comparten el mismo `DataProvider` + `SessionProvider`. Cualquier cambio (perfil, asistencia, adelanto, permiso, tarifa, sede, acceso temporal) impacta inmediatamente a las demás vistas. Sin estado paralelo por rol.
+- [x] **Preloader saluda con Apodo o Nombre, nunca con email.** El login fetchea `nombre` + `apodo` desde `profiles`; el `Preloader` prefiere `apodo` y cae al primer nombre como fallback.
 - [x] **Preloader:** Bienvenida al iniciar sesión con Nombre o Apodo.
 - [x] **Funcionalidad:** Owner / Encargado / Trabajador conectados al `DataProvider` y al `SessionProvider`. El "Marcar" del trabajador escribe en el store. La impersonación desde Accesos cambia la sesión y redirige al panel correspondiente. Los accesos temporales aplican y restauran el rol automáticamente.
-- [ ] **Transiciones y Skeletons:** [x] Efecto suave (fade-in) implementado / [x] Skeleton (`Skeleton`, `SkeletonText`, `SkeletonCard`, `SkeletonTable`, `SkeletonStats`) disponible — falta cablearlo en pantallas con carga.
+- [x] **Transiciones y Skeletons:** Fade-in global implementado y `HydrationGate` aplicado en ambos layouts (admin/trabajador) — muestra `SkeletonStats` + `SkeletonCard` + `SkeletonTable` mientras `DataProvider.ready` y `SessionProvider.ready` no estén listos.
