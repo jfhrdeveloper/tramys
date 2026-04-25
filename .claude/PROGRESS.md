@@ -73,7 +73,8 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 ---
 
 ## 📂 4. Referencias: Archivos Core Creados
-- `src/components/providers/DataProvider.tsx`
+- `src/components/providers/DataProvider.tsx` (incluye ticker de caducidad de accesos temporales)
+- `src/components/providers/SessionProvider.tsx` (sesión activa local con `useSession`/`switchTo`/`signOut`)
 - `src/components/ui/PhotoUpload.tsx`
 - `src/components/ui/Preloader.tsx`
 - `src/components/ui/Skeleton.tsx` (Skeleton, SkeletonText, SkeletonCard, SkeletonTable, SkeletonStats)
@@ -85,7 +86,7 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 
 ### 👑 VISTA ADMINISTRADOR / OWNER
 - [x] **1. Dashboard:** Rediseño completo, hero unificado, métricas correctas. Cards de KPI superiores eliminadas (todo dentro del hero).
-- [x] **2. Sedes:** Mostrar en 2 cards apiladas (abrir al click). Reestructurado. Agregada sede Lima. Juntar "Caja". Color modificable.
+- [x] **2. Sedes:** Cards apiladas, sede Lima, "Caja" unificada, color modificable, **selector de encargado** + checkbox activa en el modal.
 - [x] **3. Trabajadores:** 
   - [x] Botón "Nuevo trabajador" funcional (incluye **apodo**).
   - [x] Agregar foto 1x1 cuadrable (Upload base64).
@@ -121,8 +122,10 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
   - [x] Estética de gráficos mejorada (gradientes, gridlines, leyenda, etiquetas DM Mono).
 - [x] **9. Accesos:** 
   - [x] Asignar rol temporal con duración (1h/4h/12h/1d/7d/custom).
+  - [x] **Caducidad real**: al crear se aplica `rolOtorgado` al worker; al expirar/revocar se restaura `rolOriginal` (ticker cada 30s en `DataProvider`).
   - [x] Tabla de activos con tiempo restante y opción "Revocar".
   - [x] Audit log con histórico completo.
+  - [x] **Impersonar / "Ver como"** desde la tabla de Usuarios (cambia la sesión activa y redirige según el rol).
 
 ### 👷 VISTA TRABAJADOR
 - [x] **1. Asistencia:**
@@ -138,5 +141,5 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 - [x] **Regla de Sueldo:** Nadie gana sueldo base, todo es cálculo diario por tipo de día / manual override.
 - [x] **Sidebar/Menú:** Línea divisora y botón SVG "Cerrar sesión" debajo del email/sede (admin y trabajador).
 - [x] **Preloader:** Bienvenida al iniciar sesión con Nombre o Apodo.
-- [x] **Funcionalidad:** Botones del owner ya conectados al `DataProvider` (CRUD + aprobaciones + accesos temporales). Las vistas del trabajador reflejan los cambios en tiempo real al compartir el mismo store.
+- [x] **Funcionalidad:** Owner / Encargado / Trabajador conectados al `DataProvider` y al `SessionProvider`. El "Marcar" del trabajador escribe en el store. La impersonación desde Accesos cambia la sesión y redirige al panel correspondiente. Los accesos temporales aplican y restauran el rol automáticamente.
 - [ ] **Transiciones y Skeletons:** [x] Efecto suave (fade-in) implementado / [x] Skeleton (`Skeleton`, `SkeletonText`, `SkeletonCard`, `SkeletonTable`, `SkeletonStats`) disponible — falta cablearlo en pantallas con carga.

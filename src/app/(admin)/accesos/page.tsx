@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icons";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { useData, type Rol, type Worker } from "@/components/providers/DataProvider";
+import { useSession } from "@/components/providers/SessionProvider";
 
 type Tab = "usuarios" | "temporales" | "auditlog";
 
@@ -174,11 +175,23 @@ function ModalAccesoTemp({
 /* ================= PÁGINA ================= */
 export default function AccesosPage() {
   const d = useData();
+  const { worker: actual, switchTo } = useSession();
   const [tab, setTab] = useState<Tab>("usuarios");
   const [editW, setEditW] = useState<Worker | null>(null);
   const [modalTemp, setModalTemp] = useState(false);
 
   const ahora = Date.now();
+
+  function impersonar(w: Worker) {
+    if (w.id === actual?.id) return;
+    switchTo(w.id);
+    /* Si la sesión nueva es trabajador, lo enviamos a su panel */
+    if (w.rol === "trabajador" && typeof window !== "undefined") {
+      window.location.href = "/mi-panel";
+    } else if (typeof window !== "undefined") {
+      window.location.href = "/dashboard";
+    }
+  }
 
   const activos = d.accesosTemporales.filter(a => new Date(a.hasta).getTime() > ahora);
   const expirados = d.accesosTemporales.filter(a => new Date(a.hasta).getTime() <= ahora);
@@ -214,17 +227,21 @@ export default function AccesosPage() {
           <div className="card" style={{ padding: 0, overflow:"hidden" }}>
             <div className="table-wrap">
               <table className="tramys-table">
-                <thead><tr><th>Usuario</th><th>Email</th><th>Rol</th><th>Sede</th><th>Estado</th><th></th></tr></thead>
+                <thead><tr><th>Usuario</th><th>Email</th><th>Rol</th><th>Sede</th><th>Estado</th><th>Acciones</th></tr></thead>
                 <tbody>
                   {d.workers.map(w => {
                     const sede = d.sedes.find(s => s.id === w.sedeId);
+                    const esActual = w.id === actual?.id;
                     return (
-                      <tr key={w.id}>
+                      <tr key={w.id} style={{ background: esActual ? "rgba(196,26,58,0.04)" : undefined }}>
                         <td>
                           <div style={{ display:"flex", alignItems:"center", gap: 10 }}>
                             <PhotoAvatar src={w.avatarBase64} initials={(w.apodo||w.nombre)[0]} size={30} color={sede?.color ?? "#C41A3A"} />
                             <div>
-                              <div style={{ fontWeight: 600, fontSize: 13 }}>{w.nombre}</div>
+                              <div style={{ fontWeight: 600, fontSize: 13, display:"flex", alignItems:"center", gap: 6 }}>
+                                {w.nombre}
+                                {esActual && <span style={{ fontSize: 9, fontWeight: 700, background:"rgba(196,26,58,0.12)", color:"var(--brand)", padding:"2px 6px", borderRadius: 99 }}>SESIÓN ACTUAL</span>}
+                              </div>
                               <div style={{ fontSize: 10, color:"var(--text-muted)" }}>&quot;{w.apodo}&quot;</div>
                             </div>
                           </div>
@@ -234,7 +251,24 @@ export default function AccesosPage() {
                         <td><span style={{ fontSize: 12, fontWeight: 600, color: sede?.color }}>{sede?.nombre}</span></td>
                         <td><Badge variant={w.activo ? "activo" : "inactivo"} small /></td>
                         <td>
-                          <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px" }} onClick={()=>setEditW(w)}>Cambiar rol</button>
+                          <div style={{ display:"flex", gap: 4 }}>
+                            <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px" }} onClick={()=>setEditW(w)}>Cambiar rol</button>
+                            <button
+                              onClick={()=>impersonar(w)}
+                              disabled={esActual || !w.activo}
+                              title={esActual ? "Ya estás usando esta cuenta" : "Iniciar sesión como este usuario"}
+                              style={{
+                                fontSize: 11, padding:"3px 10px", borderRadius: 6,
+                                border:"none", cursor: esActual || !w.activo ? "not-allowed" : "pointer",
+                                background: esActual ? "var(--bg)" : "linear-gradient(135deg,#a01530,#C41A3A)",
+                                color: esActual ? "var(--text-muted)" : "#fff",
+                                fontWeight: 700, opacity: !w.activo ? 0.4 : 1,
+                                display:"inline-flex", alignItems:"center", gap: 4,
+                              }}>
+                              <Icon name="user_check" size={11} color={esActual ? "currentColor" : "#fff"} />
+                              {esActual ? "Activa" : "Ver como"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

@@ -1,36 +1,46 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@/hooks/useAuth";
-import { Avatar } from "@/components/ui/Avatar";
-import { Icon } from "@/components/ui/Icons"; // <-- Importamos los íconos
-import { iniciales } from "@/lib/utils/formatters";
+import { useSession } from "@/components/providers/SessionProvider";
+import { useData } from "@/components/providers/DataProvider";
+import { PhotoAvatar } from "@/components/ui/PhotoUpload";
+import { Icon } from "@/components/ui/Icons";
 
-interface Props { 
-  collapsed: boolean; 
-  onCollapse: () => void; 
-  mobileOpen: boolean; 
-  onMobileClose: () => void; 
+interface Props {
+  collapsed: boolean;
+  onCollapse: () => void;
+  mobileOpen: boolean;
+  onMobileClose: () => void;
 }
 
-// Agregamos los íconos correspondientes a cada ruta del trabajador
 const NAV = [
   { href: "/mi-panel",     label: "Mi Panel",   icon: "home" },
   { href: "/mi-asistencia",label: "Asistencia", icon: "clock" },
   { href: "/mi-sueldo",    label: "Mi Sueldo",  icon: "sueldo" },
   { href: "/mis-adelantos",label: "Adelantos",  icon: "hand_coin" },
   { href: "/mis-permisos", label: "Permisos",   icon: "file_check" },
-  { href: "/mis-alertas",  label: "Alertas",    icon: "bell", badge: 2 },
+  { href: "/mis-alertas",  label: "Alertas",    icon: "bell" },
 ];
 
 export function SidebarWorker({ collapsed, onCollapse, mobileOpen, onMobileClose }: Props) {
-  const { profile, signOut } = useAuth();
+  const { worker, sede, signOut } = useSession();
+  const d = useData();
   const pathname = usePathname();
 
-  // Componente interno con prop forceExpand para la versión móvil
+  /* Cuántas alertas no leídas mostrar como badge dinámico */
+  const alertasCount = worker
+    ? d.adelantos.filter(a => a.workerId === worker.id && a.estado === "pendiente").length
+      + d.permisos.filter(p => p.workerId === worker.id && p.estado === "pendiente").length
+    : 0;
+  const NAV_DYN = NAV.map(item =>
+    item.href === "/mis-alertas" && alertasCount > 0
+      ? { ...item, badge: alertasCount }
+      : item
+  );
+
   const Inner = ({ forceExpand = false }) => {
     const isCollapsed = forceExpand ? false : collapsed;
-    const colSede = profile?.sede?.nombre?.toLowerCase().includes("santa") ? "#C41A3A" : "#1d6fa4";
+    const colSede = sede?.color ?? "#C41A3A";
 
     return (
       <div style={{ width: isCollapsed ? 64 : 220, background: "var(--card)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", height: "100%", transition: "width 0.3s cubic-bezier(0.4, 0, 0.2, 1)", overflow: "hidden" }}>
@@ -60,7 +70,7 @@ export function SidebarWorker({ collapsed, onCollapse, mobileOpen, onMobileClose
         <nav style={{ flex: 1, padding: "12px 10px", overflowY: "auto", overflowX: "hidden" }}>
           {!isCollapsed && <div style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", letterSpacing: 1.5, textTransform: "uppercase", padding: "6px 10px 10px" }}>MI ESPACIO</div>}
           
-          {NAV.map(item => {
+          {NAV_DYN.map(item => {
             const isActive = pathname === item.href;
             return (
               <Link key={item.href} href={item.href} onClick={onMobileClose} style={{ textDecoration: "none" }}>
@@ -86,13 +96,18 @@ export function SidebarWorker({ collapsed, onCollapse, mobileOpen, onMobileClose
 
         {/* ====== USUARIO ====== */}
         <div style={{ padding: isCollapsed ? "14px" : "14px 16px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, justifyContent: isCollapsed ? "center" : "flex-start" }}>
-          <Avatar initials={profile ? iniciales(profile.nombre) : "?"} size={32} color={colSede} />
+          <PhotoAvatar
+            src={worker?.avatarBase64 ?? null}
+            initials={(worker?.apodo || worker?.nombre || "?")[0]?.toUpperCase() ?? "?"}
+            size={32}
+            color={colSede}
+          />
 
-          {!isCollapsed && profile && (
+          {!isCollapsed && worker && (
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.nombre}</div>
+              <div style={{ fontWeight: 700, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{worker.nombre}</div>
               <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {profile.sede?.nombre ?? profile.rol}
+                {sede?.nombre ?? worker.rol}
               </div>
             </div>
           )}

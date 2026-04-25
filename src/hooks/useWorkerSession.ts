@@ -1,23 +1,16 @@
 "use client";
 
 /* ================= WORKER SESSION ================= */
-/* Determina el worker "logueado" en la vista /worker. */
-/* Por ahora: primer trabajador activo. Puede leerse de */
-/* localStorage para simular sesiones distintas.        */
+/* Devuelve el worker activo según SessionProvider. Si la  */
+/* sesión activa no es trabajador, cae en el primer        */
+/* trabajador activo del store (modo demo).                */
 
 import { useData, type Worker } from "@/components/providers/DataProvider";
-
-const STORAGE_KEY = "tramys_worker_session";
+import { useSession } from "@/components/providers/SessionProvider";
 
 export function useWorkerSession(): Worker | null {
+  const { worker } = useSession();
   const d = useData();
-  let selId: string | null = null;
-  if (typeof window !== "undefined") {
-    try { selId = localStorage.getItem(STORAGE_KEY); } catch {}
-  }
-  if (selId) {
-    const found = d.workers.find(w => w.id === selId);
-    if (found) return found;
-  }
+  if (worker && worker.activo) return worker;
   return d.workers.find(w => w.rol === "trabajador" && w.activo) ?? null;
 }

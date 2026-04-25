@@ -1,10 +1,10 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@/hooks/useAuth";
+import { useSession } from "@/components/providers/SessionProvider";
+import { useData } from "@/components/providers/DataProvider";
 import { Icon } from "@/components/ui/Icons";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
-import { iniciales } from "@/lib/utils/formatters";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -20,7 +20,7 @@ const NAV_OWNER = [
   { href: "/jaladores",    label: "Jaladores",    icon: "jaladores" },
   { href: "/asistencia",   label: "Asistencia",   icon: "asistencia" },
   { href: "/planilla",     label: "Planilla",     icon: "planilla" },
-  { href: "/adelantos",    label: "Adelantos",    icon: "adelantos", badge: 3 },
+  { href: "/adelantos",    label: "Adelantos",    icon: "adelantos" },
   { href: "/eventos",      label: "Eventos",      icon: "calendar" },
   { href: "/reportes",     label: "Reportes",     icon: "reportes" },
   { href: "/accesos",      label: "Accesos",      icon: "accesos" },
@@ -30,16 +30,25 @@ const NAV_ENC = [
   { href: "/dashboard",    label: "Dashboard",    icon: "dashboard" },
   { href: "/trabajadores", label: "Trabajadores", icon: "trabajadores" },
   { href: "/asistencia",   label: "Asistencia",   icon: "asistencia" },
+  { href: "/adelantos",    label: "Adelantos",    icon: "adelantos" },
   { href: "/eventos",      label: "Eventos",      icon: "calendar" },
 ];
 
 export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: SidebarProps) {
-  const { profile, signOut } = useAuth();
+  const { worker, sede, signOut } = useSession();
+  const d = useData();
   const pathname = usePathname();
-  const nav = profile?.rol === "encargado" ? NAV_ENC : NAV_OWNER;
-  const colSede = profile?.sede?.nombre?.toLowerCase().includes("santa") ? "#C41A3A"
-               : profile?.sede?.nombre?.toLowerCase().includes("puente") ? "#1d6fa4"
-               : "#16a34a";
+
+  /* Pendientes en bandeja del owner */
+  const adelantosPend = d.adelantos.filter(a => a.estado === "pendiente").length;
+
+  const nav = (worker?.rol === "encargado" ? NAV_ENC : NAV_OWNER).map(item =>
+    item.href === "/adelantos" && adelantosPend > 0
+      ? { ...item, badge: adelantosPend }
+      : item
+  );
+  const colSede = sede?.color ?? "#C41A3A";
+  const titulo  = worker?.rol === "encargado" ? "PANEL ENCARGADO" : "PANEL OWNER";
 
   const Inner = ({ forceExpand = false }) => {
     const isCollapsed = forceExpand ? false : collapsed;
@@ -76,7 +85,7 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: -0.3 }}>TRAMYS</div>
               <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
-                {profile?.rol === "encargado" ? "ENCARGADO" : "PANEL OWNER"}
+                {titulo}
               </div>
             </div>
           )}
@@ -136,23 +145,22 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
           justifyContent: isCollapsed ? "center" : "flex-start",
         }}>
           <PhotoAvatar
-            src={null}
-            initials={profile ? iniciales(profile.nombre) : "?"}
+            src={worker?.avatarBase64 ?? null}
+            initials={(worker?.apodo || worker?.nombre || "?")[0]?.toUpperCase() ?? "?"}
             size={32}
             color={colSede}
           />
-          {!isCollapsed && profile && (
+          {!isCollapsed && worker && (
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {profile.nombre}
+                {worker.nombre}
               </div>
               <div style={{
                 fontSize: 10, color: "var(--text-muted)",
                 fontFamily: "'DM Mono',monospace",
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               }}>
-                {/* @ts-expect-error email agregado en runtime por supabase */}
-                {profile.email || profile.rol}
+                {worker.email || worker.rol}
               </div>
             </div>
           )}

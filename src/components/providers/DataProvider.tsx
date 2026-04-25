@@ -126,6 +126,7 @@ export interface AccesoTemporal {
   id: string;
   workerId: string;
   rolOtorgado: Rol;
+  rolOriginal?: Rol;                 // se guarda al crear; se restaura al expirar/revocar
   otorgadoPor: string;
   desde: string;                     // ISO datetime
   hasta: string;                     // ISO datetime
@@ -279,7 +280,7 @@ interface DataCtx extends DataState {
   updateIngreso: (id: string, patch: Partial<IngresoJalador>) => void;
   deleteIngreso: (id: string) => void;
   /* Accesos temporales */
-  addAccesoTemp:    (a: Omit<AccesoTemporal, "id">) => void;
+  addAccesoTemp:    (a: Omit<AccesoTemporal, "id" | "rolOriginal">) => void;
   removeAccesoTemp: (id: string) => void;
   /* Reset */
   resetAll: () => void;
@@ -404,12 +405,65 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, ingresosJaladores: s.ingresosJaladores.filter(x => x.id !== id) }));
   }, []);
 
-  const addAccesoTemp = useCallback((a: Omit<AccesoTemporal, "id">) => {
-    setState(s => ({ ...s, accesosTemporales: [...s.accesosTemporales, { ...a, id:`at_${Date.now().toString(36)}` }] }));
+  /* Concede acceso temporal y aplica el rol otorgado al worker */
+  const addAccesoTemp = useCallback((a: Omit<AccesoTemporal, "id" | "rolOriginal">) => {
+    setState(s => {
+      const w = s.workers.find(x => x.id === a.workerId);
+      const rolOriginal = w?.rol ?? "trabajador";
+      const nuevoAcceso: AccesoTemporal = {
+        ...a,
+        id: `at_${Date.now().toString(36)}`,
+        rolOriginal,
+      };
+      const workers = w
+        ? s.workers.map(x => x.id === w.id ? { ...x, rol: a.rolOtorgado } : x)
+        : s.workers;
+      return { ...s, accesosTemporales: [...s.accesosTemporales, nuevoAcceso], workers };
+    });
   }, []);
+
+  /* Revoca el acceso. Si seguía activo, restaura el rol original. */
   const removeAccesoTemp = useCallback((id: string) => {
-    setState(s => ({ ...s, accesosTemporales: s.accesosTemporales.filter(x => x.id !== id) }));
+    setState(s => {
+      const acceso = s.accesosTemporales.find(x => x.id === id);
+      if (!acceso) return s;
+      const ahora = Date.now();
+      const activo = new Date(acceso.hasta).getTime() > ahora;
+      const workers = activo && acceso.rolOriginal
+        ? s.workers.map(x => x.id === acceso.workerId ? { ...x, rol: acceso.rolOriginal! } : x)
+        : s.workers;
+      return {
+        ...s,
+        accesosTemporales: s.accesosTemporales.filter(x => x.id !== id),
+        workers,
+      };
+    });
   }, []);
+
+  /* Caducidad automática: cada 30s, expirados restauran el rol y se eliminan */
+  useEffect(() => {
+    if (!hydrated) return;
+    function tick() {
+      setState(s => {
+        const ahora = Date.now();
+        const expirados = s.accesosTemporales.filter(x => new Date(x.hasta).getTime() <= ahora);
+        if (expirados.length === 0) return s;
+        let workers = s.workers;
+        for (const e of expirados) {
+          if (!e.rolOriginal) continue;
+          workers = workers.map(w => w.id === e.workerId ? { ...w, rol: e.rolOriginal! } : w);
+        }
+        return {
+          ...s,
+          accesosTemporales: s.accesosTemporales.filter(x => new Date(x.hasta).getTime() > ahora),
+          workers,
+        };
+      });
+    }
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, [hydrated]);
 
   const resetAll = useCallback(() => {
     try { localStorage.removeItem(STORAGE_KEY); } catch {}

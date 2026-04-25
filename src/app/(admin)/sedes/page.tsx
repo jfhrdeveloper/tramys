@@ -104,6 +104,8 @@ function ModalEditarSede({
   const [direccion, setDireccion] = useState("");
   const [telefono, setTelefono]   = useState("");
   const [horario, setHorario]     = useState("");
+  const [encargadoId, setEncargadoId] = useState<string>("");
+  const [activa, setActiva]       = useState(true);
 
   useMemo(() => {
     if (sede) {
@@ -112,18 +114,29 @@ function ModalEditarSede({
       setDireccion(sede.direccion);
       setTelefono(sede.telefono);
       setHorario(sede.horario);
+      setEncargadoId(sede.encargadoId ?? "");
+      setActiva(sede.activa);
     }
   }, [sede?.id]); // eslint-disable-line
 
   if (!sede) return null;
 
+  /* Candidatos: encargados / owners actualmente activos. Si quien está
+     asignado ya no califica, lo conservamos como opción para no perderlo. */
+  const candidatos = d.workers.filter(w => w.activo && (w.rol === "encargado" || w.rol === "owner"));
+  const actual = sede.encargadoId ? d.workers.find(w => w.id === sede.encargadoId) : null;
+  if (actual && !candidatos.some(c => c.id === actual.id)) candidatos.unshift(actual);
+
   function guardar() {
-    d.updateSede(sede!.id, { nombre, color, direccion, telefono, horario });
+    d.updateSede(sede!.id, {
+      nombre, color, direccion, telefono, horario, activa,
+      encargadoId: encargadoId || undefined,
+    });
     onClose();
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Editar sede" width={440}>
+    <Modal open={open} onClose={onClose} title="Editar sede" width={460}>
       <div style={{ display:"flex", flexDirection:"column", gap: 14, marginBottom: 18 }}>
         <div>
           <div className="section-label">Nombre</div>
@@ -143,6 +156,28 @@ function ModalEditarSede({
             <input type="color" value={color} onChange={e=>setColor(e.target.value)} style={{ width: 50, height: 34, borderRadius: 8, border:"1px solid var(--border)", cursor:"pointer", background:"transparent" }} />
           </div>
         </div>
+
+        {/* Selector de encargado */}
+        <div>
+          <div className="section-label">Encargado</div>
+          <select
+            className="select-base"
+            style={{ width:"100%" }}
+            value={encargadoId}
+            onChange={e => setEncargadoId(e.target.value)}
+          >
+            <option value="">— Sin encargado asignado —</option>
+            {candidatos.map(w => (
+              <option key={w.id} value={w.id}>
+                {w.nombre} {w.apodo ? `“${w.apodo}”` : ""} · {w.rol}
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: 10, color:"var(--text-muted)", marginTop: 4, fontFamily:"'DM Mono',monospace" }}>
+            Solo se listan owners y encargados activos.
+          </div>
+        </div>
+
         <div>
           <div className="section-label">Dirección</div>
           <input className="input-base" value={direccion} onChange={e=>setDireccion(e.target.value)} />
@@ -157,6 +192,11 @@ function ModalEditarSede({
             <input className="input-base" value={horario} onChange={e=>setHorario(e.target.value)} />
           </div>
         </div>
+
+        <label style={{ display:"flex", alignItems:"center", gap: 8, cursor:"pointer" }}>
+          <input type="checkbox" checked={activa} onChange={e=>setActiva(e.target.checked)} />
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Sede activa</span>
+        </label>
       </div>
       <div style={{ display:"flex", gap: 10 }}>
         <button className="btn-outline" style={{ flex: 1 }} onClick={onClose}>Cancelar</button>
