@@ -21,6 +21,9 @@ export interface SessionCtx {
 const STORAGE_KEY = "tramys_session_id";
 
 const Ctx = createContext<SessionCtx | null>(null);
+/* Context compartido — el SessionProviderSupabase publica el mismo shape aquí */
+export const SessionContext = Ctx;
+export type SessionCtxValue = SessionCtx;
 
 /* ================= PROVIDER ================= */
 export function SessionProvider({ children }: { children: React.ReactNode }) {

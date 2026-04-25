@@ -288,7 +288,11 @@ interface DataCtx extends DataState {
   resetAll: () => void;
 }
 
+/* Context compartido — exportado para que un provider alternativo (Supabase) pueda inyectarlo */
 const Ctx = createContext<DataCtx | null>(null);
+export const DataContext = Ctx;
+/* Tipo expuesto para implementaciones alternativas */
+export type DataCtxValue = DataCtx;
 
 const STORAGE_KEY = "tramys_data_v1";
 

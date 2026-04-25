@@ -1,8 +1,5 @@
 "use client";
-import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import { PrivacyProvider } from "@/components/providers/PrivacyProvider";
-import { DataProvider } from "@/components/providers/DataProvider";
-import { SessionProvider } from "@/components/providers/SessionProvider";
+import { Providers } from "@/components/providers/Providers";
 import { SidebarWorker } from "@/components/layout/SidebarWorker";
 import { BottomNavWorker } from "@/components/layout/BottomNavWorker";
 import { HydrationGate } from "@/components/ui/HydrationGate";
@@ -13,23 +10,17 @@ export default function WorkerLayout({ children }: { children: React.ReactNode }
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <ThemeProvider>
-      <PrivacyProvider>
-        <DataProvider>
-          <SessionProvider>
-            <div className="app-shell">
-              <SidebarWorker
-                collapsed={collapsed}    onCollapse={()=>setCollapsed(!collapsed)}
-                mobileOpen={mobileOpen}  onMobileClose={()=>setMobileOpen(false)}
-              />
-              <div className="app-content">
-                <HydrationGate>{children}</HydrationGate>
-              </div>
-              <BottomNavWorker />
-            </div>
-          </SessionProvider>
-        </DataProvider>
-      </PrivacyProvider>
-    </ThemeProvider>
+    <Providers>
+      <div className="app-shell">
+        <SidebarWorker
+          collapsed={collapsed}    onCollapse={()=>setCollapsed(!collapsed)}
+          mobileOpen={mobileOpen}  onMobileClose={()=>setMobileOpen(false)}
+        />
+        <div className="app-content">
+          <HydrationGate>{children}</HydrationGate>
+        </div>
+        <BottomNavWorker />
+      </div>
+    </Providers>
   );
 }
