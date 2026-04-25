@@ -1,10 +1,12 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { useSession } from "@/components/providers/SessionProvider";
 import { useData } from "@/components/providers/DataProvider";
 import { Icon } from "@/components/ui/Icons";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
+import { MiPerfilModal } from "@/components/ui/MiPerfilModal";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -38,6 +40,12 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
   const { worker, sede, signOut } = useSession();
   const d = useData();
   const pathname = usePathname();
+  const [perfilOpen, setPerfilOpen] = useState(false);
+
+  function abrirPerfil() {
+    setPerfilOpen(true);
+    onMobileClose();
+  }
 
   /* Pendientes en bandeja del owner */
   const adelantosPend = d.adelantos.filter(a => a.estado === "pendiente").length;
@@ -166,7 +174,7 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
           )}
         </div>
 
-        {/* ====== SEPARADOR + CERRAR SESIÓN ====== */}
+        {/* ====== SEPARADOR + MI PERFIL + CERRAR SESIÓN ====== */}
         {!isCollapsed && (
           <>
             <div style={{
@@ -175,12 +183,34 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
               margin: "0 16px",
             }} />
             <button
+              onClick={abrirPerfil}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "12px 16px 6px",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                color: "var(--text-muted)",
+                fontSize: 13, fontWeight: 600,
+                fontFamily: "'Bricolage Grotesque',sans-serif",
+                transition: "color 0.15s",
+              }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--brand)"}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"}
+            >
+              <Icon name="user" size={16} />
+              <span>Mi perfil</span>
+            </button>
+            <button
               onClick={signOut}
               style={{
                 background: "transparent",
                 border: "none",
                 cursor: "pointer",
-                padding: "12px 16px 16px",
+                padding: "6px 16px 16px",
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
@@ -199,23 +229,40 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
           </>
         )}
         {isCollapsed && (
-          <button
-            onClick={signOut}
-            title="Cerrar sesión"
-            style={{
-              background: "transparent",
-              border: "none",
-              borderTop: "1px solid var(--border)",
-              cursor: "pointer",
-              padding: "14px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "var(--text-muted)",
-            }}
-          >
-            <Icon name="logout" size={16} />
-          </button>
+          <div style={{ borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column" }}>
+            <button
+              onClick={abrirPerfil}
+              title="Mi perfil"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "12px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-muted)",
+              }}
+            >
+              <Icon name="user" size={16} />
+            </button>
+            <button
+              onClick={signOut}
+              title="Cerrar sesión"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "12px 12px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-muted)",
+              }}
+            >
+              <Icon name="logout" size={16} />
+            </button>
+          </div>
         )}
       </div>
     );
@@ -238,6 +285,8 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
           <Inner forceExpand={true} />
         </div>
       )}
+
+      <MiPerfilModal open={perfilOpen} onClose={() => setPerfilOpen(false)} />
     </>
   );
 }
