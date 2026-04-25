@@ -251,6 +251,8 @@ function seed(): DataState {
 
 /* ================= CONTEXT ================= */
 interface DataCtx extends DataState {
+  /* Estado de hidratación (false hasta leer localStorage) */
+  ready: boolean;
   /* Sedes */
   updateSede:  (id: string, patch: Partial<Sede>) => void;
   /* Workers */
@@ -473,6 +475,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={{
       ...state,
+      ready: hydrated,
       updateSede,
       addWorker, updateWorker, deleteWorker,
       setAsistencia, getAsistencia,

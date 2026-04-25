@@ -6,6 +6,7 @@ import { DataProvider } from "@/components/providers/DataProvider";
 import { SessionProvider } from "@/components/providers/SessionProvider";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { HydrationGate } from "@/components/ui/HydrationGate";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [collapsed,   setCollapsed]   = useState(false);
@@ -22,7 +23,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 mobileOpen={mobileOpen}  onMobileClose={()=>setMobileOpen(false)}
               />
               <div className="app-content">
-                {children}
+                <HydrationGate>{children}</HydrationGate>
               </div>
               <BottomNav />
             </div>

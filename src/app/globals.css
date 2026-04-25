@@ -96,6 +96,16 @@
     overflow-x: hidden;
     padding: 20px 22px;
     min-width: 0;
+    /* ==== Centrado y tope a 1440px en pantallas muy anchas ==== */
+    width: 100%;
+    margin-inline: auto;
+  }
+
+  /* ==== Wrapper interno opcional para anchura controlada ==== */
+  .page-inner {
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
   }
 
   /* ====== Grids adaptativos ====== */
@@ -437,6 +447,7 @@
 
   .page-main {
     padding: 28px 36px;
+    max-width: 1440px;
   }
 }
 

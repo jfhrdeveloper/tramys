@@ -5,6 +5,7 @@ import { DataProvider } from "@/components/providers/DataProvider";
 import { SessionProvider } from "@/components/providers/SessionProvider";
 import { SidebarWorker } from "@/components/layout/SidebarWorker";
 import { BottomNavWorker } from "@/components/layout/BottomNavWorker";
+import { HydrationGate } from "@/components/ui/HydrationGate";
 import { useState } from "react";
 
 export default function WorkerLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +23,7 @@ export default function WorkerLayout({ children }: { children: React.ReactNode }
                 mobileOpen={mobileOpen}  onMobileClose={()=>setMobileOpen(false)}
               />
               <div className="app-content">
-                {children}
+                <HydrationGate>{children}</HydrationGate>
               </div>
               <BottomNavWorker />
             </div>
