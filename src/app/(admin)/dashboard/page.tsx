@@ -9,30 +9,37 @@ import { Icon } from "@/components/ui/Icons";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { money } from "@/lib/utils/formatters";
 import { useData, ingresoDia, isoToday, isWeekendISO } from "@/components/providers/DataProvider";
+import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import Link from "next/link";
 
 export default function DashboardPage() {
   const d = useData();
+  const { worker: actor, sede: sedeActor } = useSession();
+  const isEnc = actor?.rol === "encargado";
   const hoy = isoToday();
 
-  /* ==== Asistencia de hoy ==== */
+  /* ==== Asistencia de hoy (scoped por sede si es encargado) ==== */
   const hoyRecords = useMemo(() => {
     return d.workers
-      .filter(w => w.activo && w.rol === "trabajador")
+      .filter(w => w.activo && w.rol === "trabajador" && (!isEnc || !sedeActor || w.sedeId === sedeActor.id))
       .map(w => {
         const rec = d.asistencia.find(a => a.workerId === w.id && a.fecha === hoy);
         return { worker: w, rec };
       });
-  }, [d.workers, d.asistencia, hoy]);
+  }, [d.workers, d.asistencia, hoy, isEnc, sedeActor]);
 
   const presentes = hoyRecords.filter(x => x.rec?.estado === "presente").length;
   const tardanzas = hoyRecords.filter(x => x.rec?.estado === "tardanza").length;
   const ausentes  = hoyRecords.filter(x => !x.rec || x.rec.estado === "ausente").length;
   const pctAsist  = hoyRecords.length ? Math.round(((presentes + tardanzas) / hoyRecords.length) * 100) : 0;
 
-  /* ==== Adelantos pendientes ==== */
-  const pendientes = d.adelantos.filter(a => a.estado === "pendiente");
+  /* ==== Adelantos pendientes (scoped) ==== */
+  const idsScope = useMemo(
+    () => new Set(d.workers.filter(w => !isEnc || !sedeActor || w.sedeId === sedeActor.id).map(w => w.id)),
+    [d.workers, isEnc, sedeActor],
+  );
+  const pendientes = d.adelantos.filter(a => a.estado === "pendiente" && idsScope.has(a.workerId));
   const totalPend  = pendientes.reduce((a, x) => a + x.monto, 0);
 
   /* ==== Comisiones jaladores del mes ==== */

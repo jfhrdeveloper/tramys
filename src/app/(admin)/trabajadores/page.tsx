@@ -14,6 +14,7 @@ import {
   type Worker, type TarifasWorker, type Turno,
   type AsistenciaRec, type EstadoAsist, type TipoPerm,
 } from "@/components/providers/DataProvider";
+import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 
 type TabPerfil = "asistencia" | "sueldo" | "adelantos" | "permisos" | "perfil";
@@ -828,14 +829,19 @@ function PerfilEditor({ worker }: { worker: Worker }) {
 /* ================= PÁGINA PRINCIPAL ================= */
 export default function TrabajadoresPage() {
   const d = useData();
+  const { worker: actor, sede: sedeActor } = useSession();
+  const isEnc = actor?.rol === "encargado";
   const [perfilId, setPerfilId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editW, setEditW] = useState<Worker | null>(null);
   const [busqueda, setBusqueda] = useState("");
-  const [filtroSede, setFiltroSede] = useState("todas");
+  const [filtroSede, setFiltroSede] = useState(isEnc && sedeActor ? sedeActor.id : "todas");
   const [filtroEst, setFiltroEst] = useState("todos");
 
-  const workers = d.workers.filter(w => w.rol === "trabajador");
+  /* Si el actor es encargado, restringimos el universo a su sede asignada. */
+  const workers = d.workers.filter(w =>
+    w.rol === "trabajador" && (!isEnc || !sedeActor || w.sedeId === sedeActor.id)
+  );
 
   const filtrados = workers.filter(w => {
     const matchSede = filtroSede === "todas" || w.sedeId === filtroSede;

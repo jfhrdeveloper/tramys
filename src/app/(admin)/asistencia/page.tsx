@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icons";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { useData, type AsistenciaRec, type EstadoAsist } from "@/components/providers/DataProvider";
+import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -92,14 +93,18 @@ function ModalEditar({
 /* ================= PÁGINA ================= */
 export default function AsistenciaPage() {
   const d = useData();
+  const { worker: actor, sede: sedeActor } = useSession();
+  const isEnc = actor?.rol === "encargado";
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [selIso, setSelIso] = useState<string>(now.toISOString().slice(0,10));
-  const [filtroSede, setFiltroSede] = useState("todas");
+  const [filtroSede, setFiltroSede] = useState(isEnc && sedeActor ? sedeActor.id : "todas");
   const [modalEdit, setModalEdit] = useState<{ rec: AsistenciaRec; worker: string; iso: string } | null>(null);
 
+  /* Encargado: scope reducido a su sede asignada. */
   const trabajadores = d.workers.filter(w => w.rol === "trabajador" && w.activo
+    && (!isEnc || !sedeActor || w.sedeId === sedeActor.id)
     && (filtroSede === "todas" || w.sedeId === filtroSede));
 
   function dataDia(iso: string) {

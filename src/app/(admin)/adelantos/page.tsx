@@ -10,6 +10,7 @@ import { HideableAmount, StatCardHidden } from "@/components/ui/HideableAmount";
 import { StatCard } from "@/components/ui/StatCard";
 import { money } from "@/lib/utils/formatters";
 import { useData, type Adelanto } from "@/components/providers/DataProvider";
+import { useSession } from "@/components/providers/SessionProvider";
 
 type Filtro = "todos" | "pendiente" | "aprobado" | "rechazado";
 
@@ -110,17 +111,25 @@ function ModalNuevo({ open, onClose }: { open: boolean; onClose: () => void }) {
 /* ============ PÁGINA ============ */
 export default function AdelantosPage() {
   const d = useData();
+  const { worker: actor, sede: sedeActor } = useSession();
+  const isEnc = actor?.rol === "encargado";
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [modalDec, setModalDec] = useState<{ adelanto: Adelanto; tipo: "aprobar"|"rechazar" } | null>(null);
   const [modalNuevo, setModalNuevo] = useState(false);
 
-  const pendientes = d.adelantos.filter(a => a.estado === "pendiente");
-  const aprobados  = d.adelantos.filter(a => a.estado === "aprobado");
-  const rechazados = d.adelantos.filter(a => a.estado === "rechazado");
+  /* Encargado: solo adelantos de trabajadores de su sede. */
+  const idsEnSede = new Set(
+    d.workers.filter(w => !isEnc || !sedeActor || w.sedeId === sedeActor.id).map(w => w.id)
+  );
+  const adelantosScope = d.adelantos.filter(a => idsEnSede.has(a.workerId));
+
+  const pendientes = adelantosScope.filter(a => a.estado === "pendiente");
+  const aprobados  = adelantosScope.filter(a => a.estado === "aprobado");
+  const rechazados = adelantosScope.filter(a => a.estado === "rechazado");
   const totalEmit  = aprobados.reduce((s,a) => s + a.monto, 0);
   const totalPend  = pendientes.reduce((s,a) => s + a.monto, 0);
 
-  const filtrados = filtro === "todos" ? d.adelantos : d.adelantos.filter(a => a.estado === filtro);
+  const filtrados = filtro === "todos" ? adelantosScope : adelantosScope.filter(a => a.estado === filtro);
 
   return (
     <>
