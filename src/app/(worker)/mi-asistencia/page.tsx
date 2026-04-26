@@ -14,16 +14,10 @@ import {
   type AsistenciaRec,
 } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
+import { ESTADO_COLOR } from "@/lib/constants/estados";
 
 type Panel = "multiverse" | "general" | "calendario";
 const WEEKDAYS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
-const COLOR_ESTADO: Record<string, string> = {
-  presente: "#16a34a",
-  tardanza: "#f59e0b",
-  ausente:  "#8b8fa8",
-  permiso:  "#d97706",
-  feriado:  "#6366f1",
-};
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -229,7 +223,7 @@ export default function MiAsistenciaPage() {
                     const sedeId = rec ? sedeDelDia(rec, worker) : worker.sedeId;
                     const sede = d.sedes.find(s => s.id === sedeId);
                     const isVisita = !!(rec?.sedeIdDia && rec.sedeIdDia !== worker.sedeId);
-                    const color = rec ? COLOR_ESTADO[rec.estado] : "transparent";
+                    const color = rec ? ESTADO_COLOR[rec.estado].dot : "transparent";
                     const isToday = iso === todayIso;
                     return (
                       <div key={iso}
@@ -267,10 +261,10 @@ export default function MiAsistenciaPage() {
               );
             })()}
             <div style={{ marginTop: 12, fontSize: 11, color:"var(--text-muted)", display:"flex", gap: 14, flexWrap:"wrap" }}>
-              {Object.entries(COLOR_ESTADO).map(([k,c]) => (
-                <span key={k} style={{ display:"inline-flex", alignItems:"center", gap: 4, textTransform:"capitalize" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: c, display:"inline-block" }} />
-                  {k}
+              {Object.entries(ESTADO_COLOR).map(([k,s]) => (
+                <span key={k} style={{ display:"inline-flex", alignItems:"center", gap: 4 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: s.dot, display:"inline-block" }} />
+                  {s.label}
                 </span>
               ))}
               <span style={{ display:"inline-flex", alignItems:"center", gap: 4, color:"#d97706" }}>

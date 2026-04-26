@@ -86,6 +86,7 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 - `src/components/ui/Skeleton.tsx` (Skeleton, SkeletonText, SkeletonCard, SkeletonTable, SkeletonStats)
 - `src/components/ui/HydrationGate.tsx` (gate global que cubre la hidratación inicial con skeleton unificado)
 - `src/components/ui/MiPerfilModal.tsx` (modal global de edición del usuario activo: foto, Nombres + Apellidos, apodo, email, teléfono, DNI, contraseña)
+- `src/lib/constants/estados.ts` (paleta canónica `ESTADO_COLOR` para presente/tardanza/ausente/permiso/feriado, con `bg`, `fg`, `dot`, `label`)
 - `src/lib/utils/peruHolidays.ts`
 
 ---
