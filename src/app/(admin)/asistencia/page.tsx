@@ -151,6 +151,8 @@ export default function AsistenciaPage() {
   const [selIso, setSelIso] = useState<string>(now.toISOString().slice(0,10));
   const [filtroSede, setFiltroSede] = useState(isEnc && sedeActor ? sedeActor.id : "todas");
   const [modalEdit, setModalEdit] = useState<{ rec: AsistenciaRec | null; worker: Worker; iso: string } | null>(null);
+  const [modalAdd, setModalAdd]   = useState<{ iso: string } | null>(null);
+  const [addWorkerId, setAddWorkerId] = useState<string>("");
 
   /* Encargado: scope reducido a su sede. Acepta workers de planta de su sede
      O cualquier worker que tenga al menos un registro con sedeIdDia = su sede
@@ -208,13 +210,20 @@ export default function AsistenciaPage() {
                 fontFamily:"'Bricolage Grotesque',sans-serif",
               }}>{s.label}</button>
           ))}
-          <div style={{ marginLeft:"auto", display:"flex", gap: 8 }}>
+          <div style={{ marginLeft:"auto", display:"flex", gap: 8, alignItems:"center" }}>
             <select className="select-base" value={month} onChange={e=>setMonth(Number(e.target.value))}>
               {MESES.map((m,i) => <option key={m} value={i}>{m}</option>)}
             </select>
             <select className="select-base" value={year} onChange={e=>setYear(Number(e.target.value))}>
               {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
+            <button
+              className="btn-primary"
+              style={{ display:"inline-flex", alignItems:"center", gap: 6 }}
+              onClick={()=>{ setAddWorkerId(""); setModalAdd({ iso: selIso }); }}
+            >
+              <Icon name="plus" size={13} color="#fff" /> Añadir registro
+            </button>
           </div>
         </div>
 
@@ -244,6 +253,8 @@ export default function AsistenciaPage() {
               return (
                 <div key={iso}
                   onClick={()=>setSelIso(iso)}
+                  onDoubleClick={()=>{ setAddWorkerId(""); setModalAdd({ iso }); }}
+                  title="Doble click para registrar a alguien este día"
                   style={{
                     background: feriado ? "rgba(99,102,241,0.08)" : weekend ? "rgba(245,158,11,0.05)" : "var(--card)",
                     border: `1px solid ${isSel ? "var(--brand)" : isToday ? "#f59e0b" : "var(--border)"}`,
@@ -251,6 +262,7 @@ export default function AsistenciaPage() {
                     borderRadius: 10, padding: 7, minHeight: 100,
                     display:"flex", flexDirection:"column", gap: 4,
                     cursor:"pointer", transition:"all 0.15s",
+                    userSelect: "none",
                   }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                     <span style={{
@@ -352,6 +364,68 @@ export default function AsistenciaPage() {
           fechaISO={modalEdit.iso}
         />
       )}
+
+      {/* ====== Modal "Añadir registro": picker de trabajador para una fecha ====== */}
+      <Modal
+        open={!!modalAdd}
+        onClose={()=>setModalAdd(null)}
+        title={modalAdd ? `Añadir registro · ${modalAdd.iso}` : ""}
+        width={420}
+      >
+        {modalAdd && (
+          <div style={{ display:"flex", flexDirection:"column", gap: 12 }}>
+            <div>
+              <div className="section-label">Fecha</div>
+              <input
+                type="date"
+                className="input-base input-mono"
+                value={modalAdd.iso}
+                onChange={e=>setModalAdd({ iso: e.target.value })}
+              />
+            </div>
+            <div>
+              <div className="section-label">Trabajador</div>
+              <select
+                className="select-base"
+                value={addWorkerId}
+                onChange={e=>setAddWorkerId(e.target.value)}
+                style={{ width: "100%" }}
+              >
+                <option value="">Selecciona un trabajador…</option>
+                {trabajadores.map(w => (
+                  <option key={w.id} value={w.id}>
+                    {w.nombre}{w.apodo ? ` (${w.apodo})` : ""}
+                  </option>
+                ))}
+              </select>
+              {trabajadores.length === 0 && (
+                <div style={{ marginTop: 6, fontSize: 11, color:"var(--text-muted)" }}>
+                  No hay trabajadores en tu scope para asignar.
+                </div>
+              )}
+            </div>
+            <div style={{ display:"flex", gap: 10, marginTop: 4 }}>
+              <button className="btn-outline" style={{ flex: 1 }} onClick={()=>setModalAdd(null)}>Cancelar</button>
+              <button
+                className="btn-primary"
+                style={{ flex: 2 }}
+                disabled={!addWorkerId}
+                onClick={()=>{
+                  const w = trabajadores.find(x => x.id === addWorkerId);
+                  if (!w || !modalAdd) return;
+                  const recExist = d.asistencia.find(a => a.workerId === w.id && a.fecha === modalAdd.iso) ?? null;
+                  const iso = modalAdd.iso;
+                  setSelIso(iso);
+                  setModalAdd(null);
+                  setModalEdit({ rec: recExist, worker: w, iso });
+                }}
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </>
   );
 }
