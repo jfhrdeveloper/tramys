@@ -4,14 +4,26 @@ import { useMemo, useState } from "react";
 import { TopbarWorker } from "@/components/layout/TopbarWorker";
 import { Icon } from "@/components/ui/Icons";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
 import { MultiverseCalendar } from "@/components/ui/MultiverseCalendar";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { money } from "@/lib/utils/formatters";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
-import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
+import {
+  useData, ingresoDia, isWeekendISO, sedeDelDia, turnoDelDia,
+  type AsistenciaRec,
+} from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 
-type Panel = "multiverse" | "general";
+type Panel = "multiverse" | "general" | "calendario";
+const WEEKDAYS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+const COLOR_ESTADO: Record<string, string> = {
+  presente: "#16a34a",
+  tardanza: "#f59e0b",
+  ausente:  "#8b8fa8",
+  permiso:  "#d97706",
+  feriado:  "#6366f1",
+};
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -22,6 +34,7 @@ export default function MiAsistenciaPage() {
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [panel, setPanel] = useState<Panel>("multiverse");
+  const [verDia, setVerDia] = useState<{ iso: string; rec: AsistenciaRec | null } | null>(null);
 
   function isoFor(day: number) {
     return `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
@@ -102,8 +115,9 @@ export default function MiAsistenciaPage() {
         {/* Tabs */}
         <div style={{ display:"flex", gap: 4, background:"var(--card)", border:"1px solid var(--border)", borderRadius: 10, padding: 3, marginBottom: 14, width:"fit-content" }}>
           {([
-            { id:"multiverse" as Panel, label:"Cuadrar días", icon:"check" },
-            { id:"general" as Panel,    label:"Historial",   icon:"asistencia" },
+            { id:"multiverse" as Panel,  label:"Cuadrar días", icon:"check" },
+            { id:"calendario" as Panel,  label:"Calendario",   icon:"calendar" },
+            { id:"general" as Panel,     label:"Historial",    icon:"asistencia" },
           ]).map(t => (
             <button key={t.id} onClick={()=>setPanel(t.id)}
               style={{
@@ -191,6 +205,81 @@ export default function MiAsistenciaPage() {
           </div>
         )}
 
+        {panel === "calendario" && (
+          <div className="card" style={{ padding: "14px 18px" }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
+              Lo que se ha registrado — {MESES[month]} {year}
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap: 6, marginBottom: 6 }}>
+              {WEEKDAYS.map(w => (
+                <div key={w} style={{ textAlign:"center", fontSize: 10, fontWeight: 700, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .8, padding:"4px 0" }}>{w}</div>
+              ))}
+            </div>
+            {(() => {
+              const daysInMonth = new Date(year, month+1, 0).getDate();
+              const firstDay    = new Date(year, month, 1).getDay();
+              const offset      = firstDay === 0 ? 6 : firstDay - 1;
+              const todayIso    = now.toISOString().slice(0,10);
+              return (
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap: 6 }}>
+                  {Array.from({ length: offset }).map((_, i) => <div key={`e${i}`} />)}
+                  {Array.from({ length: daysInMonth }, (_,i)=>i+1).map(day => {
+                    const iso = isoFor(day);
+                    const rec = d.getAsistencia(worker.id, iso) ?? null;
+                    const sedeId = rec ? sedeDelDia(rec, worker) : worker.sedeId;
+                    const sede = d.sedes.find(s => s.id === sedeId);
+                    const isVisita = !!(rec?.sedeIdDia && rec.sedeIdDia !== worker.sedeId);
+                    const color = rec ? COLOR_ESTADO[rec.estado] : "transparent";
+                    const isToday = iso === todayIso;
+                    return (
+                      <div key={iso}
+                        onClick={()=>setVerDia({ iso, rec })}
+                        style={{
+                          background: rec ? `${color}14` : "var(--card)",
+                          border: `1px solid ${isToday ? "#f59e0b" : "var(--border)"}`,
+                          borderLeft: rec ? `4px solid ${color}` : "1px solid var(--border)",
+                          borderRadius: 10, padding: 7, minHeight: 78,
+                          display:"flex", flexDirection:"column", gap: 3,
+                          cursor:"pointer", transition:"all 0.15s",
+                        }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <span style={{ fontFamily:"'DM Mono',monospace", fontWeight: isToday?800:700, fontSize: 13, color: isToday ? "#f59e0b" : "var(--text)" }}>
+                            {String(day).padStart(2,"0")}
+                          </span>
+                          {isVisita && <span title={`Visita: ${sede?.nombre}`} style={{ fontSize: 9, color:"#d97706", fontWeight: 800 }}>⇄</span>}
+                        </div>
+                        {rec && (
+                          <>
+                            <span style={{ fontSize: 10, fontWeight: 700, color, textTransform:"capitalize", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                              {rec.estado}
+                            </span>
+                            {sede && (
+                              <span style={{ fontSize: 9, color: sede.color, fontWeight: 600, fontFamily:"'DM Mono',monospace", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                {sede.nombre}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            <div style={{ marginTop: 12, fontSize: 11, color:"var(--text-muted)", display:"flex", gap: 14, flexWrap:"wrap" }}>
+              {Object.entries(COLOR_ESTADO).map(([k,c]) => (
+                <span key={k} style={{ display:"inline-flex", alignItems:"center", gap: 4, textTransform:"capitalize" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: c, display:"inline-block" }} />
+                  {k}
+                </span>
+              ))}
+              <span style={{ display:"inline-flex", alignItems:"center", gap: 4, color:"#d97706" }}>
+                <span style={{ fontWeight: 800 }}>⇄</span> Visita a otra sede
+              </span>
+            </div>
+          </div>
+        )}
+
         {panel === "general" && (
           <div className="card" style={{ padding: 0, overflow:"hidden" }}>
             <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", fontWeight: 700, fontSize: 14 }}>
@@ -215,6 +304,67 @@ export default function MiAsistenciaPage() {
           </div>
         )}
       </main>
+
+      {/* ====== Modal detalle del día (solo lectura para el trabajador) ====== */}
+      <Modal open={!!verDia} onClose={()=>setVerDia(null)} title={verDia ? `Detalle · ${verDia.iso}` : ""} width={400}>
+        {verDia && (() => {
+          const rec = verDia.rec;
+          const sedeId = rec ? sedeDelDia(rec, worker) : worker.sedeId;
+          const sede = d.sedes.find(s => s.id === sedeId);
+          const turno = turnoDelDia(rec ?? undefined, worker);
+          const esFer = esFeriadoOficial(verDia.iso).es;
+          return (
+            <div style={{ display:"flex", flexDirection:"column", gap: 10 }}>
+              {!rec ? (
+                <div style={{ padding: 16, background:"var(--bg)", border:"1px dashed var(--border)", borderRadius: 10, color:"var(--text-muted)", fontSize: 13 }}>
+                  Aún no hay registro para este día.
+                </div>
+              ) : (
+                <>
+                  <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
+                    <span style={{ fontSize: 12, color:"var(--text-muted)" }}>Estado</span>
+                    <Badge variant={rec.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small />
+                  </div>
+                  <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
+                    <span style={{ fontSize: 12, color:"var(--text-muted)" }}>Sede del día</span>
+                    <span style={{ fontWeight: 700, color: sede?.color }}>
+                      {sede?.nombre}
+                      {rec.sedeIdDia && rec.sedeIdDia !== worker.sedeId && (
+                        <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color:"#d97706" }}>⇄ visita</span>
+                      )}
+                    </span>
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 8 }}>
+                    <div style={{ padding:"10px 12px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
+                      <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>Entrada</div>
+                      <div style={{ fontFamily:"'DM Mono',monospace", fontWeight: 700 }}>{rec.entrada ?? "—"}</div>
+                      <div style={{ fontSize: 10, color:"var(--text-muted)" }}>Esperada {turno.entrada}</div>
+                    </div>
+                    <div style={{ padding:"10px 12px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
+                      <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>Salida</div>
+                      <div style={{ fontFamily:"'DM Mono',monospace", fontWeight: 700 }}>{rec.salida ?? "—"}</div>
+                      <div style={{ fontSize: 10, color:"var(--text-muted)" }}>Esperada {turno.salida}</div>
+                    </div>
+                  </div>
+                  {rec.motivoEdit && (
+                    <div style={{ padding:"10px 14px", background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.25)", borderRadius: 9, fontSize: 12 }}>
+                      <span style={{ color:"#d97706", fontWeight: 700 }}>Nota: </span>{rec.motivoEdit}
+                    </div>
+                  )}
+                </>
+              )}
+              {esFer && (
+                <div style={{ padding:"8px 12px", borderRadius: 8, background:"rgba(99,102,241,0.08)", border:"1px solid rgba(99,102,241,0.25)", color:"#6366f1", fontSize: 12, fontWeight: 600 }}>
+                  Feriado oficial nacional
+                </div>
+              )}
+              <div style={{ fontSize: 11, color:"var(--text-muted)", textAlign:"center", marginTop: 4 }}>
+                Solo lectura — los cambios los realiza tu encargado.
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </>
   );
 }
