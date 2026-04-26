@@ -11,6 +11,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { money } from "@/lib/utils/formatters";
 import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
+import Link from "next/link";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -231,6 +232,24 @@ export default function PlanillaPage() {
               <span style={{ fontWeight: 700, color:"#16a34a" }}>Neto a pagar</span>
               <HideableAmount value={money(modalW.neto)} size={18} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
             </div>
+
+            {/* ====== Acciones ====== */}
+            <Link
+              href={`/trabajadores?perfil=${modalW.workerId}&tab=asistencia`}
+              onClick={() => setModalW(null)}
+              style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+                marginTop: 4,
+                background: "var(--bg)", border: "1px solid var(--border)",
+                borderRadius: 9, padding: "10px 14px",
+                color: "var(--text)", textDecoration: "none",
+                fontSize: 13, fontWeight: 600,
+                fontFamily: "'Bricolage Grotesque',sans-serif",
+              }}
+            >
+              <Icon name="calendar" size={14} />
+              Ver en calendario de {modalW.apodo || modalW.nombre.split(" ")[0]}
+            </Link>
           </div>
         )}
       </Modal>

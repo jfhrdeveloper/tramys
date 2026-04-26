@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Topbar } from "@/components/layout/Topbar";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -831,12 +832,19 @@ export default function TrabajadoresPage() {
   const d = useData();
   const { worker: actor, sede: sedeActor } = useSession();
   const isEnc = actor?.rol === "encargado";
+  const searchParams = useSearchParams();
   const [perfilId, setPerfilId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editW, setEditW] = useState<Worker | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [filtroSede, setFiltroSede] = useState(isEnc && sedeActor ? sedeActor.id : "todas");
   const [filtroEst, setFiltroEst] = useState("todos");
+
+  /* ====== Deep-link desde Planilla u otras vistas: ?perfil=<id>&tab=asistencia ====== */
+  useEffect(() => {
+    const qp = searchParams?.get("perfil");
+    if (qp) setPerfilId(qp);
+  }, [searchParams]);
 
   /* Si el actor es encargado, restringimos el universo a su sede asignada. */
   const workers = d.workers.filter(w =>
