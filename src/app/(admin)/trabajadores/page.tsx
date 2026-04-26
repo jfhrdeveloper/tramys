@@ -925,9 +925,9 @@ export default function TrabajadoresPage() {
                       <td style={{ fontSize: 12, color:"var(--text-muted)" }}>{w.cargo}</td>
                       <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 11, color:"var(--text-muted)" }}>{w.turno.entrada}–{w.turno.salida}</td>
                       <td><Badge variant={w.activo ? "activo" : "inactivo"} small /></td>
-                      <td onClick={e=>{ e.stopPropagation(); setEditW(w); setModalOpen(true); }}>
+                      <td onClick={e=>{ e.stopPropagation(); setPerfilId(w.id); }}>
                         <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px", display:"inline-flex", alignItems:"center", gap: 4 }}>
-                          <Icon name="edit" size={11} /> Editar
+                          <Icon name="user" size={11} /> Ver
                         </button>
                       </td>
                     </tr>
