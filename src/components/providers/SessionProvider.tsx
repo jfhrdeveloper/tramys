@@ -25,6 +25,31 @@ export interface SessionCtx {
 const STORAGE_KEY      = "tramys_session_id";       /* sesión efectiva (la que decide el rol activo) */
 const REAL_KEY         = "tramys_session_real_id";  /* sesión real del owner cuando está impersonando */
 
+/* Lee la sesión efectiva. sessionStorage tiene prioridad (modo "no recordarme":
+   muere al cerrar la pestaña) y cae a localStorage para sesiones persistentes. */
+function leerSesion(): string | null {
+  try {
+    return sessionStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(STORAGE_KEY);
+  } catch { return null; }
+}
+function escribirSesion(workerId: string) {
+  try {
+    /* Mantenemos el storage donde ya estaba; si no existía, por defecto a localStorage. */
+    if (sessionStorage.getItem(STORAGE_KEY) !== null) {
+      sessionStorage.setItem(STORAGE_KEY, workerId);
+    } else {
+      localStorage.setItem(STORAGE_KEY, workerId);
+    }
+  } catch {}
+}
+function borrarSesion() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(REAL_KEY);
+  } catch {}
+}
+
 const Ctx = createContext<SessionCtx | null>(null);
 /* Context compartido — el SessionProviderSupabase publica el mismo shape aquí */
 export const SessionContext = Ctx;
@@ -37,14 +62,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [realId, setRealId] = useState<string | null>(null);
   const [ready,  setReady]  = useState(false);
 
-  /* Hidratar desde localStorage. Si no hay sesión, redirigir a /login */
+  /* Hidratar desde sessionStorage > localStorage. Si no hay sesión, redirigir a /login */
   useEffect(() => {
-    let storedSel: string | null = null;
+    const storedSel = leerSesion();
     let storedReal: string | null = null;
-    try {
-      storedSel  = localStorage.getItem(STORAGE_KEY);
-      storedReal = localStorage.getItem(REAL_KEY);
-    } catch {}
+    try { storedReal = localStorage.getItem(REAL_KEY); } catch {}
     setSelId(storedSel);
     setRealId(storedReal);
     setReady(true);
@@ -64,17 +86,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  /* Cambiar a otro worker. Si todavía no hay sesión real registrada,
-     guarda la actual como "real" (origen de la impersonación). */
+  /* Cambiar a otro worker (impersonar). Si todavía no hay sesión real
+     registrada, guarda la actual como "real" (origen de la impersonación). */
   const switchTo = useCallback((workerId: string) => {
     try {
       const realActual = localStorage.getItem(REAL_KEY);
-      const sesionActual = localStorage.getItem(STORAGE_KEY);
+      const sesionActual = leerSesion();
       if (!realActual && sesionActual && sesionActual !== workerId) {
         localStorage.setItem(REAL_KEY, sesionActual);
         setRealId(sesionActual);
       }
-      localStorage.setItem(STORAGE_KEY, workerId);
+      escribirSesion(workerId);
     } catch {}
     setSelId(workerId);
   }, []);
@@ -84,7 +106,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     try {
       const real = localStorage.getItem(REAL_KEY);
       if (real) {
-        localStorage.setItem(STORAGE_KEY, real);
+        escribirSesion(real);
         localStorage.removeItem(REAL_KEY);
         setSelId(real);
         setRealId(null);
@@ -94,10 +116,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(() => {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(REAL_KEY);
-    } catch {}
+    borrarSesion();
     if (typeof window !== "undefined") window.location.href = "/login";
   }, []);
 

@@ -1,9 +1,29 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui/Icons";
 import { Preloader } from "@/components/ui/Preloader";
+
+const REMEMBER_KEY = "tramys_remember_email";
+const SESSION_KEY  = "tramys_session_id";
+const REAL_KEY     = "tramys_session_real_id";
+
+/* Persiste el id de sesión según preferencia del usuario.
+   Recuérdame ON  → localStorage (sobrevive al cierre de pestaña).
+   Recuérdame OFF → sessionStorage (muere al cerrar la pestaña). */
+function persistirSesion(workerId: string, recordar: boolean) {
+  try {
+    if (recordar) {
+      localStorage.setItem(SESSION_KEY, workerId);
+      sessionStorage.removeItem(SESSION_KEY);
+    } else {
+      sessionStorage.setItem(SESSION_KEY, workerId);
+      localStorage.removeItem(SESSION_KEY);
+    }
+    localStorage.removeItem(REAL_KEY);
+  } catch {}
+}
 
 /* ================= PÁGINA DE LOGIN ================= */
 export default function LoginPage() {
@@ -12,10 +32,23 @@ export default function LoginPage() {
   const [email,    setEmail]    = useState("");
   const [pass,     setPass]     = useState("");
   const [showPass, setShowPass] = useState(false);
+  const [recordar, setRecordar] = useState(true);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
   const [dark,     setDark]     = useState(true);
   const [welcome,  setWelcome]  = useState<{ nombre:string; apodo?:string; rol:string } | null>(null);
+
+  /* ====== Al montar: limpiar sesión efectiva (siempre comenzar deslogueado en /login)
+            y autorrellenar email si el usuario marcó "recuérdame" antes. ====== */
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(REAL_KEY);
+      const recordado = localStorage.getItem(REMEMBER_KEY);
+      if (recordado) setEmail(recordado);
+    } catch {}
+  }, []);
 
   const router   = useRouter();
   const supabase = createClient();
@@ -39,6 +72,12 @@ export default function LoginPage() {
       return;
     }
 
+    /* ==== Persistir preferencia de "recuérdame" para el email ==== */
+    try {
+      if (recordar) localStorage.setItem(REMEMBER_KEY, email);
+      else          localStorage.removeItem(REMEMBER_KEY);
+    } catch {}
+
     /* ==== Obtener rol y nombre para saludar + redirigir ==== */
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
@@ -47,6 +86,7 @@ export default function LoginPage() {
       const nombre = (profile?.nombre as string | undefined) ?? "Usuario";
       const apodo  = (profile?.apodo  as string | undefined) ?? undefined;
       const rol    = (profile?.rol    as string | undefined) ?? "trabajador";
+      persistirSesion(user.id, recordar);
       setLoading(false);
       setWelcome({ nombre, apodo, rol });
       setTimeout(() => {
@@ -67,9 +107,10 @@ export default function LoginPage() {
 
   /* En modo demo (sin Supabase) no hacemos auth real: escribimos la sesión y navegamos. */
   function entrarComoDemo(d: typeof DEMOS[number]) {
+    persistirSesion(d.workerId, recordar);
     try {
-      localStorage.setItem("tramys_session_id", d.workerId);
-      localStorage.removeItem("tramys_session_real_id");
+      if (recordar) localStorage.setItem(REMEMBER_KEY, d.email);
+      else          localStorage.removeItem(REMEMBER_KEY);
     } catch {}
     setWelcome({ nombre: d.nombre, apodo: d.apodo, rol: d.rol.toLowerCase() });
     setTimeout(() => { window.location.href = d.route; }, 1700);
@@ -291,6 +332,35 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
+
+            {/* ==== Recuérdame ==== */}
+            <label
+              className="flex items-center gap-2.5 cursor-pointer select-none"
+              style={{ fontSize: 13, color: t.text, fontFamily: "'Bricolage Grotesque',sans-serif" }}
+            >
+              <span
+                onClick={() => setRecordar(v => !v)}
+                style={{
+                  width: 18, height: 18, borderRadius: 5,
+                  border: `1.5px solid ${recordar ? RED.main : t.border}`,
+                  background: recordar ? RED.main : "transparent",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  transition: "all .15s",
+                }}
+              >
+                {recordar && (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12l5 5L20 7" />
+                  </svg>
+                )}
+              </span>
+              <input
+                type="checkbox" checked={recordar}
+                onChange={e => setRecordar(e.target.checked)}
+                style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
+              />
+              <span>Recuérdame en este dispositivo</span>
+            </label>
 
             {/* ==== Mensaje de error ==== */}
             {error && (
