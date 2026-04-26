@@ -99,6 +99,9 @@ export function rowToAsistencia(r: Record<string, unknown>): AsistenciaRec {
     estado:          (r.estado as EstadoAsist) ?? "presente",
     overrideIngreso: r.override_ingreso == null ? null : Number(r.override_ingreso),
     motivoEdit:      (r.motivo_edit as string | undefined) ?? undefined,
+    sedeIdDia:       (r.sede_id_dia   as string | undefined) ?? undefined,
+    turnoEntrada:    (r.turno_entrada as string | undefined) ?? undefined,
+    turnoSalida:     (r.turno_salida  as string | undefined) ?? undefined,
   };
 }
 export function asistenciaToRow(a: Partial<AsistenciaRec>): Record<string, unknown> {
@@ -110,6 +113,9 @@ export function asistenciaToRow(a: Partial<AsistenciaRec>): Record<string, unkno
   if (a.estado          !== undefined) out.estado           = a.estado;
   if (a.overrideIngreso !== undefined) out.override_ingreso = a.overrideIngreso;
   if (a.motivoEdit      !== undefined) out.motivo_edit      = a.motivoEdit;
+  if (a.sedeIdDia       !== undefined) out.sede_id_dia      = a.sedeIdDia ?? null;
+  if (a.turnoEntrada    !== undefined) out.turno_entrada    = a.turnoEntrada ?? null;
+  if (a.turnoSalida     !== undefined) out.turno_salida     = a.turnoSalida ?? null;
   return out;
 }
 

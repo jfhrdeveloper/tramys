@@ -68,6 +68,10 @@ export interface AsistenciaRec {
   /* Override manual de ingreso del día; si null, se calcula por tarifas */
   overrideIngreso: number | null;
   motivoEdit?: string;
+  /* ===== Multi-sede por día (opcional, fallback a worker.sedeId/turno) ===== */
+  sedeIdDia?:    string;             // sede donde marcó ese día específico
+  turnoEntrada?: string;             // horario esperado entrada del día (override)
+  turnoSalida?:  string;             // horario esperado salida del día (override)
 }
 
 export interface Adelanto {
@@ -526,4 +530,17 @@ export function dayOfWeekISO(iso: string): number {
 export function isWeekendISO(iso: string): boolean {
   const d = dayOfWeekISO(iso);
   return d === 0 || d === 6;
+}
+
+/* ====== Multi-sede por día: derivados ====== */
+/* Sede efectiva del día: override del registro o sede de planta del worker. */
+export function sedeDelDia(rec: AsistenciaRec | undefined, w: Worker): string {
+  return rec?.sedeIdDia ?? w.sedeId;
+}
+/* Horario esperado del día: override del registro o turno habitual. */
+export function turnoDelDia(rec: AsistenciaRec | undefined, w: Worker): Turno {
+  return {
+    entrada: rec?.turnoEntrada ?? w.turno.entrada,
+    salida:  rec?.turnoSalida  ?? w.turno.salida,
+  };
 }
