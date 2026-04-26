@@ -3,6 +3,7 @@ import { Providers } from "@/components/providers/Providers";
 import { SidebarWorker } from "@/components/layout/SidebarWorker";
 import { BottomNavWorker } from "@/components/layout/BottomNavWorker";
 import { HydrationGate } from "@/components/ui/HydrationGate";
+import { ImpersonationBanner } from "@/components/ui/ImpersonationBanner";
 import { useState } from "react";
 
 export default function WorkerLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +18,7 @@ export default function WorkerLayout({ children }: { children: React.ReactNode }
           mobileOpen={mobileOpen}  onMobileClose={()=>setMobileOpen(false)}
         />
         <div className="app-content">
+          <ImpersonationBanner />
           <HydrationGate>{children}</HydrationGate>
         </div>
         <BottomNavWorker />
