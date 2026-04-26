@@ -204,7 +204,7 @@ export default function PlanillaPage() {
               <PhotoAvatar src={modalW.avatar} initials={(modalW.apodo||modalW.nombre)[0]} size={40} color={modalW.sedeColor} />
               <div>
                 <div style={{ fontWeight: 700 }}>{modalW.nombre}</div>
-                <div style={{ fontSize: 12, color:"var(--text-muted)" }}>{modalW.sedeNombre} · {MESES[month]} {year}</div>
+                <div style={{ fontSize: 12, color:"var(--text-muted)" }}>{modalW.sedeNombre}</div>
               </div>
             </div>
 

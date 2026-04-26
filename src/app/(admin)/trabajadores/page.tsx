@@ -577,10 +577,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
         {/* ==== Tab: Asistencia ==== */}
         {tab === "asistencia" && (
           <div style={{ padding: 18 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>
-                {MESES[month]} {year}
-              </div>
+            <div style={{ display:"flex", justifyContent:"flex-end", alignItems:"center", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
               <div style={{ display:"flex", gap: 6 }}>
                 <select className="select-base" value={month} onChange={e=>setMonth(Number(e.target.value))}>
                   {MESES.map((m,i)=><option key={m} value={i}>{m}</option>)}
@@ -635,7 +632,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
         {/* ==== Tab: Sueldo ==== */}
         {tab === "sueldo" && (
           <div style={{ padding: 18 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Desglose — {MESES[month]} {year}</div>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Desglose</div>
             <div style={{ fontSize: 11, color:"var(--text-muted)", marginBottom: 16 }}>
               Nadie gana sueldo base. El total es la suma de días según tarifa. Puedes editar las tarifas desde &quot;Perfil&quot;.
             </div>

@@ -149,7 +149,7 @@ export default function MiAsistenciaPage() {
           <div className="grid-2" style={{ alignItems:"start" }}>
             <div className="card">
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
-                Marca tus días — {MESES[month]} {year}
+                Marca tus días
               </div>
               <MultiverseCalendar
                 year={year} month={month}
@@ -208,7 +208,7 @@ export default function MiAsistenciaPage() {
         {panel === "calendario" && (
           <div className="card" style={{ padding: "14px 18px" }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
-              Lo que se ha registrado — {MESES[month]} {year}
+              Lo que se ha registrado
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap: 6, marginBottom: 6 }}>
               {WEEKDAYS.map(w => (
@@ -283,7 +283,7 @@ export default function MiAsistenciaPage() {
         {panel === "general" && (
           <div className="card" style={{ padding: 0, overflow:"hidden" }}>
             <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", fontWeight: 700, fontSize: 14 }}>
-              Historial — {MESES[month]} {year}
+              Historial
             </div>
             <div className="table-wrap">
               <table className="tramys-table">

@@ -280,7 +280,7 @@ export default function MiSueldoPage() {
           <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div style={{ fontWeight: 700, fontSize: 14 }}>Días del mes</div>
             <span style={{ fontSize: 11, color:"var(--text-muted)" }}>
-              {desglose.registros.length} registros · {MESES[month]} {year}
+              {desglose.registros.length} registros
             </span>
           </div>
           <div className="table-wrap">
