@@ -9,7 +9,7 @@ import { MiPerfilModal } from "@/components/ui/MiPerfilModal";
 const PRIMARY = [
   { href:"/mi-panel",      icon:"home",      label:"Inicio"     },
   { href:"/mi-asistencia", icon:"clock",     label:"Asistencia" },
-  { href:"/mi-sueldo",     icon:"sueldo",    label:"Sueldo"     },
+  { href:"/mi-sueldo",     icon:"money_bill", label:"Sueldo"    },
   { href:"/mis-adelantos", icon:"hand_coin", label:"Adelantos"  },
 ];
 const MORE = [

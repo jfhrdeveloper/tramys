@@ -18,7 +18,7 @@ interface Props {
 const NAV = [
   { href: "/mi-panel",     label: "Mi Panel",   icon: "home" },
   { href: "/mi-asistencia",label: "Asistencia", icon: "clock" },
-  { href: "/mi-sueldo",    label: "Mi Sueldo",  icon: "sueldo" },
+  { href: "/mi-sueldo",    label: "Mi Sueldo",  icon: "money_bill" },
   { href: "/mis-adelantos",label: "Adelantos",  icon: "hand_coin" },
   { href: "/mis-permisos", label: "Permisos",   icon: "file_check" },
   { href: "/mis-alertas",  label: "Alertas",    icon: "bell" },
