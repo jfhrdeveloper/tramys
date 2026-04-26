@@ -168,6 +168,56 @@ Todo componente y vista debe escalar correctamente siguiendo los breakpoints de 
 
 ---
 
+## 🔁 10. Multi-sede por día + Calendarios cross-vista
+
+### 10.1 Modelo: la sede y el horario son del registro de asistencia, no del worker
+- **Razón:** un trabajador puede asistir un día en su sede de planta y otro día en una sede distinta, con horarios distintos. `Worker.sedeId` y `Worker.turno` representan lo "habitual"; cambiarlos por día rompe planilla histórica y reportes. El día concreto vive en `AsistenciaRec`.
+- **Cambios en `AsistenciaRec`** (`src/components/providers/DataProvider.tsx`):
+  ```ts
+  sedeIdDia?:    string;  // override de worker.sedeId para ese día
+  turnoEntrada?: string;  // override de worker.turno.entrada
+  turnoSalida?:  string;  // override de worker.turno.salida
+  ```
+- **Helpers** (en el mismo archivo, con los demás derivados):
+  - `sedeDelDia(rec, worker)` → `rec.sedeIdDia ?? worker.sedeId`.
+  - `turnoDelDia(rec, worker)` → `{ entrada, salida }` con fallback al turno del worker.
+- **Mappers Supabase** (`src/lib/data/mappers.ts`): añadir `sede_id_dia`, `turno_entrada` (override), `turno_salida` (override) a `rowToAsistencia` / `asistenciaToRow`.
+- **SQL §6.2** — extender `public.asistencia`:
+  ```sql
+  alter table public.asistencia
+    add column if not exists sede_id_dia    uuid references public.sedes(id) on delete set null,
+    add column if not exists turno_entrada  text,
+    add column if not exists turno_salida   text;
+  create index if not exists idx_asist_sede_dia on public.asistencia(sede_id_dia);
+  ```
+
+### 10.2 UI: editar/agregar registros desde la vista Asistencia (admin/encargado)
+- Hoy `(admin)/asistencia/page.tsx` solo muestra los registros existentes, no permite **agregar** un día nuevo ni editar libremente. Hace falta:
+  - **Agregar** un registro en cualquier celda vacía (worker × fecha): abrir modal con estado por defecto `presente` y entrada/salida = turno del worker.
+  - **Editar** registros existentes con el modal actual + nuevos campos:
+    - **Sede del día** (dropdown con sedes activas, default = `worker.sedeId`).
+    - **Horario esperado entrada / salida** (inputs prepopulados con `worker.turno`, modificables).
+  - Indicador visual cuando `sedeIdDia && sedeIdDia !== worker.sedeId`: badge `🔁 Visita: <Sede>` en la fila.
+
+### 10.3 Encargado: scope con sede del día (no solo sede del worker)
+- El filtro actual `w.sedeId === sedeActor.id` se queda corto: si Ana es de Santa Anita pero hoy fue prestada a Lima, el encargado de Lima debería verla en su panel ese día y el de Santa Anita debería seguir viéndola en su lista habitual.
+- Regla a aplicar en `(admin)/asistencia` y vistas relacionadas: un encargado ve un registro si **`worker.sedeId === sedeActor.id`** O **`sedeDelDia(rec, worker) === sedeActor.id`**.
+
+### 10.4 Planilla: link "Ver en calendario" por trabajador
+- En el desglose por persona de `(admin)/planilla/page.tsx`, junto al nombre, agregar botón **"Ver en calendario"** que abra `/trabajadores?perfil=<workerId>&tab=asistencia` (la misma vista de perfil con el sub-panel Multiverse + historial). Reusa lo existente; no se duplica componente.
+- Alternativa: si el desglose es modal, abrir un sub-modal con `<MultiverseCalendar>` filtrado al worker.
+
+### 10.5 Vista trabajador: calendario propio en `mi-asistencia`
+- Hoy el trabajador ve el cuadre/multiverse. Añadir **debajo** un calendario mensual (reusar `MultiverseCalendar` o `CalendarMultiView`) que pinte cada día con el estado real (presente/tardanza/ausente/permiso/feriado) + sede del día como chip pequeño. Click sobre un día abre **modal de detalle de solo lectura** (sin permitir editar — el trabajador no edita su propio registro).
+
+### 10.6 Interconexión obligatoria
+- Lo que el admin agrega/edita en `(admin)/asistencia` se ve inmediatamente en:
+  - El perfil del trabajador (`/trabajadores → perfil → asistencia`).
+  - El calendario de `mi-asistencia` del trabajador afectado.
+  - El cuadre de planilla (totales, días por tipo, ingreso del mes).
+  - El dashboard del owner / encargado correspondiente.
+- Esto ya está garantizado por el `DataProvider` único + Realtime en modo Supabase.
+
 ## 🐘 6. Esquema Supabase (pegar en SQL Editor)
 
 > Script idempotente. Crea extensiones, enums, tablas, índices, trigger de `updated_at`, RLS y políticas. Está pensado para correr **una sola vez** en un proyecto nuevo. Re-ejecutarlo no rompe datos: usa `IF NOT EXISTS` y `CREATE OR REPLACE` donde aplica.
