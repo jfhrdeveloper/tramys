@@ -6,7 +6,10 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icons";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
-import { useData, type AsistenciaRec, type EstadoAsist } from "@/components/providers/DataProvider";
+import {
+  useData, sedeDelDia, turnoDelDia,
+  type AsistenciaRec, type EstadoAsist, type Worker,
+} from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 
@@ -17,51 +20,94 @@ function toISO(y: number, m: number, d: number): string {
   return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
 }
 
-/* ================= MODAL EDITAR REGISTRO ================= */
+/* ================= MODAL CREAR / EDITAR REGISTRO ================= */
 function ModalEditar({
-  open, onClose, rec, workerNombre, fechaISO,
+  open, onClose, rec, worker, fechaISO,
 }: {
   open: boolean; onClose: () => void;
   rec: AsistenciaRec | null;
-  workerNombre: string;
+  worker: Worker | null;
   fechaISO: string;
 }) {
   const d = useData();
+  const turnoBase = worker ? turnoDelDia(rec ?? undefined, worker) : { entrada: "", salida: "" };
+  const sedeBase  = rec?.sedeIdDia ?? worker?.sedeId ?? "";
+
   const [estado, setEstado]   = useState<EstadoAsist>(rec?.estado ?? "presente");
-  const [entrada, setEntrada] = useState(rec?.entrada ?? "");
-  const [salida, setSalida]   = useState(rec?.salida ?? "");
+  const [entrada, setEntrada] = useState(rec?.entrada ?? turnoBase.entrada);
+  const [salida, setSalida]   = useState(rec?.salida ?? turnoBase.salida);
+  const [sedeId, setSedeId]   = useState<string>(sedeBase);
+  const [tEntrada, setTEntrada] = useState<string>(turnoBase.entrada);
+  const [tSalida,  setTSalida]  = useState<string>(turnoBase.salida);
   const [motivo, setMotivo]   = useState("");
 
   useMemo(() => {
+    if (!worker) return;
+    const tBase = turnoDelDia(rec ?? undefined, worker);
     setEstado(rec?.estado ?? "presente");
-    setEntrada(rec?.entrada ?? "");
-    setSalida(rec?.salida ?? "");
+    setEntrada(rec?.entrada ?? tBase.entrada);
+    setSalida(rec?.salida ?? tBase.salida);
+    setSedeId(rec?.sedeIdDia ?? worker.sedeId);
+    setTEntrada(tBase.entrada);
+    setTSalida(tBase.salida);
     setMotivo("");
-  }, [rec?.id, open]); // eslint-disable-line
+  }, [rec?.id, fechaISO, open, worker?.id]); // eslint-disable-line
 
-  if (!rec) return null;
+  if (!worker) return null;
+  const esNuevo = !rec || rec.id === "";
   const ESTADOS: EstadoAsist[] = ["presente","tardanza","ausente","permiso","feriado"];
 
   function guardar() {
-    if (!motivo.trim()) return;
-    d.setAsistencia(rec!.workerId, fechaISO, {
+    if (!esNuevo && !motivo.trim()) return; // editar requiere motivo; crear no
+    const sinHoras = estado === "ausente" || estado === "permiso";
+    d.setAsistencia(worker!.id, fechaISO, {
       estado,
-      entrada: entrada || null,
-      salida:  salida  || null,
-      motivoEdit: motivo,
+      entrada: sinHoras ? null : (entrada || null),
+      salida:  sinHoras ? null : (salida  || null),
+      sedeIdDia:    sedeId && sedeId !== worker!.sedeId ? sedeId : undefined,
+      turnoEntrada: tEntrada !== worker!.turno.entrada ? tEntrada : undefined,
+      turnoSalida:  tSalida  !== worker!.turno.salida  ? tSalida  : undefined,
+      motivoEdit:   motivo.trim() || undefined,
     });
     onClose();
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Editar registro de asistencia" width={440}>
+    <Modal open={open} onClose={onClose} title={esNuevo ? "Registrar asistencia" : "Editar registro de asistencia"} width={460}>
       <div style={{ fontSize: 12, color:"var(--text-muted)", marginBottom: 14 }}>
-        {workerNombre} · {fechaISO}
+        {worker.nombre} · {fechaISO}
       </div>
+
+      {/* ====== Sede del día ====== */}
+      <div style={{ marginBottom: 12 }}>
+        <div className="section-label">Sede del día</div>
+        <select className="select-base" value={sedeId} onChange={e=>setSedeId(e.target.value)} style={{ width: "100%" }}>
+          {d.sedes.filter(s => s.activa).map(s => (
+            <option key={s.id} value={s.id}>
+              {s.nombre}{s.id === worker.sedeId ? " (planta)" : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* ====== Turno esperado del día ====== */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10, marginBottom: 12 }}>
+        <div>
+          <div className="section-label">Turno entrada</div>
+          <input type="time" className="input-base input-mono" value={tEntrada} onChange={e=>setTEntrada(e.target.value)} />
+        </div>
+        <div>
+          <div className="section-label">Turno salida</div>
+          <input type="time" className="input-base input-mono" value={tSalida} onChange={e=>setTSalida(e.target.value)} />
+        </div>
+      </div>
+
+      {/* ====== Marca real ====== */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10, marginBottom: 14 }}>
-        <div><div className="section-label">Entrada</div><input type="time" className="input-base input-mono" value={entrada} onChange={e=>setEntrada(e.target.value)} /></div>
-        <div><div className="section-label">Salida</div><input type="time" className="input-base input-mono" value={salida} onChange={e=>setSalida(e.target.value)} /></div>
+        <div><div className="section-label">Entrada real</div><input type="time" className="input-base input-mono" value={entrada} onChange={e=>setEntrada(e.target.value)} /></div>
+        <div><div className="section-label">Salida real</div><input type="time" className="input-base input-mono" value={salida} onChange={e=>setSalida(e.target.value)} /></div>
       </div>
+
       <div style={{ marginBottom: 14 }}>
         <div className="section-label">Estado</div>
         <div style={{ display:"flex", gap: 6, flexWrap:"wrap" }}>
@@ -78,13 +124,17 @@ function ModalEditar({
           ))}
         </div>
       </div>
+
       <div style={{ marginBottom: 18 }}>
-        <div className="section-label">Motivo *</div>
-        <textarea className="input-base" rows={3} value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Corrección..." />
+        <div className="section-label">Motivo {esNuevo ? "(opcional)" : "*"}</div>
+        <textarea className="input-base" rows={3} value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder={esNuevo ? "Nota o referencia..." : "Corrección..."} />
       </div>
+
       <div style={{ display:"flex", gap: 10 }}>
         <button className="btn-outline" style={{ flex: 1 }} onClick={onClose}>Cancelar</button>
-        <button className="btn-primary" style={{ flex: 2 }} onClick={guardar} disabled={!motivo.trim()}>Guardar</button>
+        <button className="btn-primary" style={{ flex: 2 }} onClick={guardar} disabled={!esNuevo && !motivo.trim()}>
+          {esNuevo ? "Registrar" : "Guardar"}
+        </button>
       </div>
     </Modal>
   );
@@ -100,11 +150,22 @@ export default function AsistenciaPage() {
   const [month, setMonth] = useState(now.getMonth());
   const [selIso, setSelIso] = useState<string>(now.toISOString().slice(0,10));
   const [filtroSede, setFiltroSede] = useState(isEnc && sedeActor ? sedeActor.id : "todas");
-  const [modalEdit, setModalEdit] = useState<{ rec: AsistenciaRec; worker: string; iso: string } | null>(null);
+  const [modalEdit, setModalEdit] = useState<{ rec: AsistenciaRec | null; worker: Worker; iso: string } | null>(null);
 
-  /* Encargado: scope reducido a su sede asignada. */
+  /* Encargado: scope reducido a su sede. Acepta workers de planta de su sede
+     O cualquier worker que tenga al menos un registro con sedeIdDia = su sede
+     (visitas/préstamos de otras sedes).                                       */
+  const idsEnSedeDelDia = useMemo(() => {
+    if (!isEnc || !sedeActor) return new Set<string>();
+    const ids = new Set<string>();
+    for (const a of d.asistencia) {
+      if (a.sedeIdDia === sedeActor.id) ids.add(a.workerId);
+    }
+    return ids;
+  }, [d.asistencia, isEnc, sedeActor]);
+
   const trabajadores = d.workers.filter(w => w.rol === "trabajador" && w.activo
-    && (!isEnc || !sedeActor || w.sedeId === sedeActor.id)
+    && (!isEnc || !sedeActor || w.sedeId === sedeActor.id || idsEnSedeDelDia.has(w.id))
     && (filtroSede === "todas" || w.sedeId === filtroSede));
 
   function dataDia(iso: string) {
@@ -234,27 +295,43 @@ export default function AsistenciaPage() {
           </div>
           <div className="table-wrap">
             <table className="tramys-table">
-              <thead><tr><th>Trabajador</th><th>Apodo</th><th>Sede</th><th>Entrada</th><th>Salida</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>Trabajador</th><th>Apodo</th><th>Sede del día</th><th>Entrada</th><th>Salida</th><th>Estado</th><th></th></tr></thead>
               <tbody>
                 {dataDia(selIso).map(x => {
-                  const sede = d.sedes.find(s => s.id === x.worker.sedeId);
+                  const sedePlanta = d.sedes.find(s => s.id === x.worker.sedeId);
+                  const sedeReal   = d.sedes.find(s => s.id === sedeDelDia(x.rec, x.worker));
+                  const tieneRegistro = !!x.rec.id;
+                  const visita = tieneRegistro && x.rec.sedeIdDia && x.rec.sedeIdDia !== x.worker.sedeId;
                   return (
                     <tr key={x.worker.id}>
                       <td>
                         <div style={{ display:"flex", alignItems:"center", gap: 8 }}>
-                          <PhotoAvatar src={x.worker.avatarBase64} initials={(x.worker.apodo||x.worker.nombre)[0]} size={28} color={sede?.color ?? "#C41A3A"} />
+                          <PhotoAvatar src={x.worker.avatarBase64} initials={(x.worker.apodo||x.worker.nombre)[0]} size={28} color={sedePlanta?.color ?? "#C41A3A"} />
                           <span style={{ fontWeight: 600, fontSize: 13 }}>{x.worker.nombre}</span>
                         </div>
                       </td>
-                      <td style={{ fontSize: 12, color: sede?.color, fontWeight: 700 }}>{x.worker.apodo}</td>
-                      <td><span style={{ fontSize: 12, fontWeight: 600, color: sede?.color }}>{sede?.nombre}</span></td>
+                      <td style={{ fontSize: 12, color: sedePlanta?.color, fontWeight: 700 }}>{x.worker.apodo}</td>
+                      <td>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: sedeReal?.color }}>{sedeReal?.nombre}</span>
+                        {visita && (
+                          <span style={{
+                            display:"inline-flex", alignItems:"center", gap:4,
+                            marginLeft:6, fontSize:9, fontWeight:700,
+                            padding:"2px 6px", borderRadius:99,
+                            background:"rgba(245,158,11,0.15)", color:"#d97706",
+                            fontFamily:"'DM Mono',monospace", textTransform:"uppercase",
+                          }} title={`Sede de planta: ${sedePlanta?.nombre}`}>
+                            ⇄ visita
+                          </span>
+                        )}
+                      </td>
                       <td style={{ fontFamily:"'DM Mono',monospace" }}>{x.rec.entrada ?? "—"}</td>
                       <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{x.rec.salida ?? "—"}</td>
                       <td><Badge variant={x.rec.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small /></td>
                       <td>
                         <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px", display:"inline-flex", alignItems:"center", gap: 4 }}
-                          onClick={()=>setModalEdit({ rec: x.rec, worker: x.worker.nombre, iso: selIso })}>
-                          <Icon name="edit" size={11} /> Editar
+                          onClick={()=>setModalEdit({ rec: tieneRegistro ? x.rec : null, worker: x.worker, iso: selIso })}>
+                          <Icon name={tieneRegistro ? "edit" : "plus"} size={11} /> {tieneRegistro ? "Editar" : "Registrar"}
                         </button>
                       </td>
                     </tr>
@@ -271,7 +348,7 @@ export default function AsistenciaPage() {
           open={true}
           onClose={()=>setModalEdit(null)}
           rec={modalEdit.rec}
-          workerNombre={modalEdit.worker}
+          worker={modalEdit.worker}
           fechaISO={modalEdit.iso}
         />
       )}
