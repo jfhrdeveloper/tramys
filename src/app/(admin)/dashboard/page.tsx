@@ -155,11 +155,13 @@ export default function DashboardPage() {
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Acumulado a hoy</span>
           </div>
 
+          {!isEnc && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>Comisiones jaladores</span>
             <HideableAmount value={money(comisionesMes)} size={22} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Abril · a pagar</span>
           </div>
+          )}
         </div>
 
         {/* ====== Alertas ====== */}
@@ -204,11 +206,13 @@ export default function DashboardPage() {
         {/* ====== Columna A: Sedes + Asistencia | Columna B: Jaladores + Actividad ====== */}
         <div className="grid-2" style={{ marginBottom: 16 }}>
 
-          {/* Presencia por sede */}
+          {/* Presencia por sede (encargado solo ve su propia sede) */}
           <div className="card">
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Presencia por sede</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14 }}>
+              {isEnc ? "Presencia de mi sede" : "Presencia por sede"}
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {d.sedes.filter(s => s.activa).map(s => {
+              {d.sedes.filter(s => s.activa && (!isEnc || !sedeActor || s.id === sedeActor.id)).map(s => {
                 const recs = hoyRecords.filter(r => r.worker.sedeId === s.id);
                 const p = recs.filter(r => r.rec?.estado === "presente").length;
                 const t = recs.filter(r => r.rec?.estado === "tardanza").length;
@@ -248,7 +252,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Ranking jaladores */}
+          {/* Ranking jaladores (oculto para encargado) */}
+          {!isEnc && (
           <div className="card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div>
@@ -284,6 +289,7 @@ export default function DashboardPage() {
               <HideableAmount value={money(totalIngresoJal)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
             </div>
           </div>
+          )}
         </div>
 
         {/* ====== Actividad reciente ====== */}
