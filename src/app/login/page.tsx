@@ -57,12 +57,23 @@ export default function LoginPage() {
     setLoading(false);
   }
 
-  /* ====== Demo rápido por rol ====== */
-  const DEMOS = [
-    { rol:"Owner",      nombre:"Dueña del negocio", sede:"Ambas sedes",  email:"owner@tramys.pe", color:"#f59e0b", avatar:"DU", acceso:"Acceso total al sistema"        },
-    { rol:"Encargado",  nombre:"Ricardo Palma",      sede:"Santa Anita",  email:"enc@tramys.pe",   color:"#6366f1", avatar:"RP", acceso:"Gestión de su sede únicamente"  },
-    { rol:"Trabajador", nombre:"Ana Torres",         sede:"Santa Anita",  email:"trab@tramys.pe",  color:"#16a34a", avatar:"AT", acceso:"Solo su información personal"   },
+  /* ====== Demo rápido por rol ======
+     workerId mapea exactamente al seed del DataProvider (modo demo). */
+  const DEMOS: { rol: string; nombre: string; apodo: string; sede: string; email: string; color: string; avatar: string; acceso: string; workerId: string; route: string }[] = [
+    { rol:"Owner",      nombre:"Dueña del Negocio", apodo:"Owner",    sede:"Todas las sedes", email:"owner@tramys.pe",   color:"#f59e0b", avatar:"DU", acceso:"Acceso total al sistema",       workerId:"w_du", route:"/dashboard" },
+    { rol:"Encargado",  nombre:"Ricardo Palma",     apodo:"Ricky",    sede:"Santa Anita",     email:"rpalma@tramys.pe",  color:"#6366f1", avatar:"RP", acceso:"Gestión solo de su sede",       workerId:"w_rp", route:"/dashboard" },
+    { rol:"Trabajador", nombre:"Ana Torres",        apodo:"Ani",      sede:"Santa Anita",     email:"atorres@tramys.pe", color:"#16a34a", avatar:"AT", acceso:"Solo su información personal",  workerId:"w_at", route:"/mi-panel"  },
   ];
+
+  /* En modo demo (sin Supabase) no hacemos auth real: escribimos la sesión y navegamos. */
+  function entrarComoDemo(d: typeof DEMOS[number]) {
+    try {
+      localStorage.setItem("tramys_session_id", d.workerId);
+      localStorage.removeItem("tramys_session_real_id");
+    } catch {}
+    setWelcome({ nombre: d.nombre, apodo: d.apodo, rol: d.rol.toLowerCase() });
+    setTimeout(() => { window.location.href = d.route; }, 1700);
+  }
 
   if (welcome) return <Preloader nombre={welcome.nombre} apodo={welcome.apodo} durationMs={1800} />;
 
@@ -332,7 +343,7 @@ export default function LoginPage() {
               {DEMOS.map(r=>(
                 <button
                   key={r.rol}
-                  onClick={()=>{ setEmail(r.email); setPass("demo1234"); }}
+                  onClick={()=>entrarComoDemo(r)}
                   className="w-full rounded-xl cursor-pointer transition-all flex items-center gap-4 text-left"
                   style={{
                     padding:"12px 16px",

@@ -52,12 +52,22 @@ export function SessionProviderSupabase({ children }: { children: React.ReactNod
     setImpersonate(workerId);
   }, []);
 
+  const restoreSession = useCallback(() => {
+    try { localStorage.removeItem(IMPERSONATE_KEY); } catch {}
+    setImpersonate(null);
+    if (typeof window !== "undefined") window.location.href = "/dashboard";
+  }, []);
+
   const signOut = useCallback(async () => {
     try { localStorage.removeItem(IMPERSONATE_KEY); } catch {}
     await supabase.auth.signOut();
     if (typeof window !== "undefined") window.location.href = "/login";
   }, [supabase]);
 
-  const value: SessionCtxValue = { worker, sede, signOut, switchTo, ready };
+  const isImpersonating = !!impersonate && impersonate !== authId;
+
+  const value: SessionCtxValue = {
+    worker, sede, signOut, switchTo, restoreSession, isImpersonating, ready,
+  };
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
