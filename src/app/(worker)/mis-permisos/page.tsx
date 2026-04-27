@@ -11,6 +11,7 @@ import { Icon } from "@/components/ui/Icons";
 import { Badge } from "@/components/ui/Badge";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
 import { useData, type TipoPerm } from "@/components/providers/DataProvider";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Filtro = "todos" | "pendiente" | "aprobado" | "rechazado";
 
@@ -134,6 +135,8 @@ export default function MisPermisosPage() {
   const countApr  = mios.filter(p => p.estado === "aprobado").length;
   const countRech = mios.filter(p => p.estado === "rechazado").length;
 
+  const pag = usePagination(filtrados);
+
   if (!worker) {
     return (
       <>
@@ -207,7 +210,7 @@ export default function MisPermisosPage() {
             </div>
           ) : (
             <div style={{ display:"flex", flexDirection:"column" }}>
-              {filtrados.map((p, i) => {
+              {pag.pageItems.map((p, i) => {
                 const t = infoTipo(p.tipo);
                 return (
                   <div key={p.id} style={{
@@ -231,6 +234,17 @@ export default function MisPermisosPage() {
                 );
               })}
             </div>
+          )}
+          {pag.needsPagination && (
+            <Pagination
+              page={pag.page}
+              totalPages={pag.totalPages}
+              total={pag.total}
+              rangeStart={pag.rangeStart}
+              rangeEnd={pag.rangeEnd}
+              onChange={pag.setPage}
+              label="permisos"
+            />
           )}
         </div>
       </main>

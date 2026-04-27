@@ -175,6 +175,15 @@ export default function EventosPage() {
   const firstDay    = new Date(year, month, 1).getDay();
   const offset      = firstDay === 0 ? 6 : firstDay - 1;
 
+  function cambiarMes(dir: -1 | 1) {
+    setMonth(m => {
+      const nx = m + dir;
+      if (nx < 0)  { setYear(y => y - 1); return 11; }
+      if (nx > 11) { setYear(y => y + 1); return 0; }
+      return nx;
+    });
+  }
+
   function abrirCrear(iso?: string) { setModal({ evento: null, fecha: iso }); }
   function abrirEditar(id: string) {
     if (id.startsWith("of_")) return;
@@ -233,7 +242,25 @@ export default function EventosPage() {
             Mostrar feriados oficiales Perú
           </label>
 
-          <div style={{ display:"flex", gap: 8 }}>
+          <div style={{ display:"flex", gap: 8, alignItems:"center" }}>
+            <div style={{ display:"inline-flex", gap: 4 }}>
+              <button
+                className="btn-outline"
+                onClick={()=>cambiarMes(-1)}
+                title="Mes anterior" aria-label="Mes anterior"
+                style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+              >
+                <span style={{ transform:"rotate(180deg)", display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+              </button>
+              <button
+                className="btn-outline"
+                onClick={()=>cambiarMes(1)}
+                title="Mes siguiente" aria-label="Mes siguiente"
+                style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+              >
+                <span style={{ display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+              </button>
+            </div>
             <select className="select-base" value={month} onChange={e=>setMonth(Number(e.target.value))}>
               {MESES.map((m, i) => <option key={m} value={i}>{m}</option>)}
             </select>

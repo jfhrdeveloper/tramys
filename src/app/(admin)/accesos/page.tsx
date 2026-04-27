@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icons";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { useData, type Rol, type Worker } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Tab = "usuarios" | "temporales" | "auditlog";
 
@@ -196,6 +197,11 @@ export default function AccesosPage() {
   const activos = d.accesosTemporales.filter(a => new Date(a.hasta).getTime() > ahora);
   const expirados = d.accesosTemporales.filter(a => new Date(a.hasta).getTime() <= ahora);
 
+  const pagUsers = usePagination(d.workers);
+  const pagActivos = usePagination(activos);
+  const pagExpirados = usePagination(expirados);
+  const pagAudit = usePagination(d.accesosTemporales);
+
   return (
     <>
       <Topbar title="Accesos" subtitle={`${d.workers.length} usuarios · ${activos.length} accesos temporales activos`} />
@@ -229,7 +235,7 @@ export default function AccesosPage() {
               <table className="tramys-table">
                 <thead><tr><th>Usuario</th><th>Email</th><th>Rol</th><th>Sede</th><th>Estado</th><th>Acciones</th></tr></thead>
                 <tbody>
-                  {d.workers.map(w => {
+                  {pagUsers.pageItems.map(w => {
                     const sede = d.sedes.find(s => s.id === w.sedeId);
                     const esActual = w.id === actual?.id;
                     return (
@@ -276,6 +282,17 @@ export default function AccesosPage() {
                 </tbody>
               </table>
             </div>
+            {pagUsers.needsPagination && (
+              <Pagination
+                page={pagUsers.page}
+                totalPages={pagUsers.totalPages}
+                total={pagUsers.total}
+                rangeStart={pagUsers.rangeStart}
+                rangeEnd={pagUsers.rangeEnd}
+                onChange={pagUsers.setPage}
+                label="usuarios"
+              />
+            )}
           </div>
         )}
 
@@ -298,7 +315,7 @@ export default function AccesosPage() {
                   <thead><tr><th>Usuario</th><th>Rol temporal</th><th>Desde</th><th>Hasta</th><th>Motivo</th><th></th></tr></thead>
                   <tbody>
                     {activos.length === 0 && <tr><td colSpan={6} style={{ textAlign:"center", padding: 30, color:"var(--text-muted)" }}>Sin accesos temporales activos</td></tr>}
-                    {activos.map(a => {
+                    {pagActivos.pageItems.map(a => {
                       const w = d.workers.find(x => x.id === a.workerId);
                       const faltante = new Date(a.hasta).getTime() - ahora;
                       const hrs = Math.max(0, Math.round(faltante / (60*60*1000)));
@@ -332,6 +349,17 @@ export default function AccesosPage() {
                   </tbody>
                 </table>
               </div>
+              {pagActivos.needsPagination && (
+                <Pagination
+                  page={pagActivos.page}
+                  totalPages={pagActivos.totalPages}
+                  total={pagActivos.total}
+                  rangeStart={pagActivos.rangeStart}
+                  rangeEnd={pagActivos.rangeEnd}
+                  onChange={pagActivos.setPage}
+                  label="accesos"
+                />
+              )}
             </div>
 
             {expirados.length > 0 && (
@@ -340,7 +368,7 @@ export default function AccesosPage() {
                 <div className="table-wrap">
                   <table className="tramys-table">
                     <tbody>
-                      {expirados.map(a => {
+                      {pagExpirados.pageItems.map(a => {
                         const w = d.workers.find(x => x.id === a.workerId);
                         return (
                           <tr key={a.id} style={{ opacity: 0.6 }}>
@@ -355,6 +383,17 @@ export default function AccesosPage() {
                     </tbody>
                   </table>
                 </div>
+                {pagExpirados.needsPagination && (
+                  <Pagination
+                    page={pagExpirados.page}
+                    totalPages={pagExpirados.totalPages}
+                    total={pagExpirados.total}
+                    rangeStart={pagExpirados.rangeStart}
+                    rangeEnd={pagExpirados.rangeEnd}
+                    onChange={pagExpirados.setPage}
+                    label="expirados"
+                  />
+                )}
               </div>
             )}
           </>
@@ -369,7 +408,7 @@ export default function AccesosPage() {
               <div style={{ textAlign:"center", padding: 30, color:"var(--text-muted)" }}>Sin registros</div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
-                {d.accesosTemporales.map(a => {
+                {pagAudit.pageItems.map(a => {
                   const w = d.workers.find(x => x.id === a.workerId);
                   const activo = new Date(a.hasta).getTime() > ahora;
                   return (
@@ -383,6 +422,17 @@ export default function AccesosPage() {
                     </div>
                   );
                 })}
+                {pagAudit.needsPagination && (
+                  <Pagination
+                    page={pagAudit.page}
+                    totalPages={pagAudit.totalPages}
+                    total={pagAudit.total}
+                    rangeStart={pagAudit.rangeStart}
+                    rangeEnd={pagAudit.rangeEnd}
+                    onChange={pagAudit.setPage}
+                    label="registros"
+                  />
+                )}
               </div>
             )}
           </div>

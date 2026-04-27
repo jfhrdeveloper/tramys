@@ -6,7 +6,8 @@
       "Bash(npx next *)",
       "Bash(npx eslint *)",
       "Bash(git -C \"C:/Users/usuario/Desktop/adsadas/tramys\" status --short)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

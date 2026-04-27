@@ -15,6 +15,7 @@ import {
 } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import { ESTADO_COLOR } from "@/lib/constants/estados";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Panel = "multiverse" | "general" | "calendario";
 const WEEKDAYS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -89,8 +90,10 @@ export default function MiAsistenciaPage() {
       else normal++;
     }
     hist.sort((a,b) => b.fecha.localeCompare(a.fecha));
-    return { resumen: { normal, tardanza, finSem, feriado, total }, historial: hist.slice(0, 15) };
+    return { resumen: { normal, tardanza, finSem, feriado, total }, historial: hist };
   }, [d.asistencia, worker, year, month]);
+
+  const pagHist = usePagination(historial);
 
   if (!worker) {
     return (
@@ -129,14 +132,30 @@ export default function MiAsistenciaPage() {
 
         {/* Selector mes/año */}
         <div style={{ display:"flex", gap: 8, alignItems:"center", marginBottom: 14, flexWrap:"wrap" }}>
-          <button className="btn-outline" onClick={()=>cambiarMes(-1)}><span style={{ transform:"rotate(180deg)", display:"inline-flex" }}><Icon name="chevron_right" size={12} /></span></button>
+          <div style={{ display:"inline-flex", gap: 4 }}>
+            <button
+              className="btn-outline"
+              onClick={()=>cambiarMes(-1)}
+              title="Mes anterior" aria-label="Mes anterior"
+              style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+            >
+              <span style={{ transform:"rotate(180deg)", display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+            </button>
+            <button
+              className="btn-outline"
+              onClick={()=>cambiarMes(1)}
+              title="Mes siguiente" aria-label="Mes siguiente"
+              style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+            >
+              <span style={{ display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+            </button>
+          </div>
           <select className="select-base" value={month} onChange={e=>setMonth(Number(e.target.value))}>
             {MESES.map((m,i)=><option key={m} value={i}>{m}</option>)}
           </select>
           <select className="select-base" value={year} onChange={e=>setYear(Number(e.target.value))}>
             {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          <button className="btn-outline" onClick={()=>cambiarMes(1)}><Icon name="chevron_right" size={12} /></button>
         </div>
 
         {panel === "multiverse" && (
@@ -284,7 +303,7 @@ export default function MiAsistenciaPage() {
                 <thead><tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Estado</th></tr></thead>
                 <tbody>
                   {historial.length === 0 && <tr><td colSpan={4} style={{ textAlign:"center", padding: 30, color:"var(--text-muted)" }}>Sin registros</td></tr>}
-                  {historial.map((h, i) => (
+                  {pagHist.pageItems.map((h, i) => (
                     <tr key={i}>
                       <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>{h.fecha}</td>
                       <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.entrada ?? "—"}</td>
@@ -295,6 +314,17 @@ export default function MiAsistenciaPage() {
                 </tbody>
               </table>
             </div>
+            {pagHist.needsPagination && (
+              <Pagination
+                page={pagHist.page}
+                totalPages={pagHist.totalPages}
+                total={pagHist.total}
+                rangeStart={pagHist.rangeStart}
+                rangeEnd={pagHist.rangeEnd}
+                onChange={pagHist.setPage}
+                label="registros"
+              />
+            )}
           </div>
         )}
       </main>

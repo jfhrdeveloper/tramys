@@ -15,6 +15,7 @@ import { money } from "@/lib/utils/formatters";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
 import { useData } from "@/components/providers/DataProvider";
 import { feriadosParaAnio } from "@/lib/utils/peruHolidays";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Filtro = "todos" | "solicitudes" | "asistencia" | "eventos";
 
@@ -216,6 +217,8 @@ export default function MisAlertasPage() {
     eventos:     alertas.filter(a => a.categoria === "eventos").length,
   };
 
+  const pag = usePagination(filtradas);
+
   if (!worker) {
     return (
       <>
@@ -280,7 +283,7 @@ export default function MisAlertasPage() {
             </div>
           ) : (
             <div style={{ display:"flex", flexDirection:"column" }}>
-              {filtradas.map((a, i) => (
+              {pag.pageItems.map((a, i) => (
                 <div key={a.id} style={{
                   display:"flex", alignItems:"center", gap: 12,
                   padding:"14px 18px",
@@ -304,6 +307,17 @@ export default function MisAlertasPage() {
                 </div>
               ))}
             </div>
+          )}
+          {pag.needsPagination && (
+            <Pagination
+              page={pag.page}
+              totalPages={pag.totalPages}
+              total={pag.total}
+              rangeStart={pag.rangeStart}
+              rangeEnd={pag.rangeEnd}
+              onChange={pag.setPage}
+              label="alertas"
+            />
           )}
         </div>
       </main>

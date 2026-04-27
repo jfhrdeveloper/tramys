@@ -13,6 +13,7 @@ import { money } from "@/lib/utils/formatters";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
 import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -70,6 +71,9 @@ export default function MiSueldoPage() {
   const totalAdelantos = misAdelantos.reduce((a, x) => a + x.monto, 0);
   const neto = Math.max(0, desglose.bruto - totalAdelantos);
 
+  const pagAdel = usePagination(misAdelantos);
+  const pagDias = usePagination(desglose.registros);
+
   function cambiarMes(dir: -1 | 1) {
     setMonth(m => {
       const nx = m + dir;
@@ -105,20 +109,30 @@ export default function MiSueldoPage() {
 
         {/* ====== Selector mes/año ====== */}
         <div style={{ display:"flex", gap: 8, alignItems:"center", marginBottom: 14, flexWrap:"wrap" }}>
-          <button className="btn-outline" onClick={()=>cambiarMes(-1)} aria-label="Mes anterior">
-            <span style={{ transform:"rotate(180deg)", display:"inline-flex" }}>
-              <Icon name="chevron_right" size={12} />
-            </span>
-          </button>
+          <div style={{ display:"inline-flex", gap: 4 }}>
+            <button
+              className="btn-outline"
+              onClick={()=>cambiarMes(-1)}
+              title="Mes anterior" aria-label="Mes anterior"
+              style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+            >
+              <span style={{ transform:"rotate(180deg)", display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+            </button>
+            <button
+              className="btn-outline"
+              onClick={()=>cambiarMes(1)}
+              title="Mes siguiente" aria-label="Mes siguiente"
+              style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+            >
+              <span style={{ display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+            </button>
+          </div>
           <select className="select-base" value={month} onChange={e=>setMonth(Number(e.target.value))}>
             {MESES.map((m,i)=><option key={m} value={i}>{m}</option>)}
           </select>
           <select className="select-base" value={year} onChange={e=>setYear(Number(e.target.value))}>
             {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          <button className="btn-outline" onClick={()=>cambiarMes(1)} aria-label="Mes siguiente">
-            <Icon name="chevron_right" size={12} />
-          </button>
         </div>
 
         {/* ====== Hero neto ====== */}
@@ -254,7 +268,7 @@ export default function MiSueldoPage() {
                 </div>
               ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
-                  {misAdelantos.map(a => (
+                  {pagAdel.pageItems.map(a => (
                     <div key={a.id} style={{
                       display:"flex", alignItems:"center", gap: 10,
                       padding:"9px 12px", background:"var(--bg)",
@@ -269,6 +283,17 @@ export default function MiSueldoPage() {
                       <Badge variant="aprobado" small />
                     </div>
                   ))}
+                  {pagAdel.needsPagination && (
+                    <Pagination
+                      page={pagAdel.page}
+                      totalPages={pagAdel.totalPages}
+                      total={pagAdel.total}
+                      rangeStart={pagAdel.rangeStart}
+                      rangeEnd={pagAdel.rangeEnd}
+                      onChange={pagAdel.setPage}
+                      label="adelantos"
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -294,7 +319,7 @@ export default function MiSueldoPage() {
                 {desglose.registros.length === 0 && (
                   <tr><td colSpan={6} style={{ textAlign:"center", padding: 30, color:"var(--text-muted)" }}>Sin registros</td></tr>
                 )}
-                {desglose.registros.map(r => {
+                {pagDias.pageItems.map(r => {
                   const esFer = esFeriadoOficial(r.fecha).es;
                   const esFds = isWeekendISO(r.fecha);
                   const ing   = ingresoDia(r, worker.tarifas, esFds, esFer);
@@ -318,6 +343,17 @@ export default function MiSueldoPage() {
               </tbody>
             </table>
           </div>
+          {pagDias.needsPagination && (
+            <Pagination
+              page={pagDias.page}
+              totalPages={pagDias.totalPages}
+              total={pagDias.total}
+              rangeStart={pagDias.rangeStart}
+              rangeEnd={pagDias.rangeEnd}
+              onChange={pagDias.setPage}
+              label="días"
+            />
+          )}
         </div>
       </main>
     </>

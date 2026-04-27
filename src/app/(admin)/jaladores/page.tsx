@@ -10,6 +10,7 @@ import { HideableAmount } from "@/components/ui/HideableAmount";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { money } from "@/lib/utils/formatters";
 import { useData, type Jalador, type IngresoJalador, isoToday } from "@/components/providers/DataProvider";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Periodo = "semanal" | "mensual";
 
@@ -172,6 +173,8 @@ function CuadreCaja({ jaladores, ingresos }: {
   const totalCom = desglose.reduce((a, r) => a + r.comision, 0);
   const balance  = totalIng - totalCom;
 
+  const pagDesglose = usePagination(desglose);
+
   return (
     <div className="card">
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
@@ -213,7 +216,7 @@ function CuadreCaja({ jaladores, ingresos }: {
         <table className="tramys-table">
           <thead><tr><th>Jalador</th><th>Ingresos</th><th>Comisión</th><th>Balance</th><th></th></tr></thead>
           <tbody>
-            {desglose.map(r => (
+            {pagDesglose.pageItems.map(r => (
               <tr key={r.j.id}>
                 <td>
                   <div style={{ display:"flex", alignItems:"center", gap: 8 }}>
@@ -235,6 +238,17 @@ function CuadreCaja({ jaladores, ingresos }: {
           </tbody>
         </table>
       </div>
+      {pagDesglose.needsPagination && (
+        <Pagination
+          page={pagDesglose.page}
+          totalPages={pagDesglose.totalPages}
+          total={pagDesglose.total}
+          rangeStart={pagDesglose.rangeStart}
+          rangeEnd={pagDesglose.rangeEnd}
+          onChange={pagDesglose.setPage}
+          label="jaladores"
+        />
+      )}
 
       {modalIng && (
         <ModalIngreso
@@ -289,6 +303,8 @@ function PerfilJalador({ jalador, onBack }: { jalador: Jalador; onBack: () => vo
   }, [ingresos]); // eslint-disable-line
 
   const max = Math.max(...barras.map(b => b.monto), 1);
+
+  const pagIng = usePagination(ingresos);
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap: 14 }}>
@@ -380,7 +396,7 @@ function PerfilJalador({ jalador, onBack }: { jalador: Jalador; onBack: () => vo
               {ingresos.length === 0 && (
                 <tr><td colSpan={5} style={{ textAlign:"center", padding: 30, color:"var(--text-muted)" }}>Sin ingresos registrados</td></tr>
               )}
-              {ingresos.map(i => (
+              {pagIng.pageItems.map(i => (
                 <tr key={i.id}>
                   <td style={{ fontFamily:"'DM Mono',monospace" }}>{i.fecha}</td>
                   <td><HideableAmount value={money(i.monto)} size={13} color="#16a34a" weight={700} fontFamily="'DM Mono',monospace" /></td>
@@ -394,6 +410,17 @@ function PerfilJalador({ jalador, onBack }: { jalador: Jalador; onBack: () => vo
             </tbody>
           </table>
         </div>
+        {pagIng.needsPagination && (
+          <Pagination
+            page={pagIng.page}
+            totalPages={pagIng.totalPages}
+            total={pagIng.total}
+            rangeStart={pagIng.rangeStart}
+            rangeEnd={pagIng.rangeEnd}
+            onChange={pagIng.setPage}
+            label="ingresos"
+          />
+        )}
       </div>
 
       <ModalIngreso open={modalNuevo} onClose={()=>setModalNuevo(false)} jalador={jalador} ingreso={null} />
@@ -418,6 +445,8 @@ export default function JaladoresPage() {
     const matchS = filtroSede === "todas" || j.sedeId === filtroSede;
     return matchB && matchS;
   });
+
+  const pag = usePagination(filtrados);
 
   const sel = selId ? d.jaladores.find(j => j.id === selId) ?? null : null;
 
@@ -463,7 +492,7 @@ export default function JaladoresPage() {
                 <tr><th>Jalador</th><th>Apodo</th><th>Sede</th><th>Comisión</th><th>Estado</th><th></th></tr>
               </thead>
               <tbody>
-                {filtrados.map(j => {
+                {pag.pageItems.map(j => {
                   const sede = d.sedes.find(s => s.id === j.sedeId);
                   return (
                     <tr key={j.id} onClick={()=>setSelId(j.id)}>
@@ -489,6 +518,17 @@ export default function JaladoresPage() {
               </tbody>
             </table>
           </div>
+          {pag.needsPagination && (
+            <Pagination
+              page={pag.page}
+              totalPages={pag.totalPages}
+              total={pag.total}
+              rangeStart={pag.rangeStart}
+              rangeEnd={pag.rangeEnd}
+              onChange={pag.setPage}
+              label="jaladores"
+            />
+          )}
         </div>
 
         <CuadreCaja jaladores={d.jaladores.filter(j => j.activo)} ingresos={d.ingresosJaladores} />

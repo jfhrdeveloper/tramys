@@ -11,6 +11,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { money } from "@/lib/utils/formatters";
 import { useData, type Adelanto } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Filtro = "todos" | "pendiente" | "aprobado" | "rechazado";
 
@@ -130,6 +131,8 @@ export default function AdelantosPage() {
   const totalPend  = pendientes.reduce((s,a) => s + a.monto, 0);
 
   const filtrados = filtro === "todos" ? adelantosScope : adelantosScope.filter(a => a.estado === filtro);
+  const pag = usePagination(filtrados);
+  const pagPend = usePagination(pendientes);
 
   return (
     <>
@@ -153,7 +156,7 @@ export default function AdelantosPage() {
               {pendientes.length} solicitudes · <HideableAmount value={money(totalPend)} size={11} color="var(--brand)" weight={700} fontFamily="'DM Mono',monospace" />
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
-              {pendientes.map(a => {
+              {pagPend.pageItems.map(a => {
                 const w = d.workers.find(x => x.id === a.workerId);
                 const sede = d.sedes.find(s => s.id === w?.sedeId);
                 return (
@@ -175,6 +178,17 @@ export default function AdelantosPage() {
                 );
               })}
             </div>
+            {pagPend.needsPagination && (
+              <Pagination
+                page={pagPend.page}
+                totalPages={pagPend.totalPages}
+                total={pagPend.total}
+                rangeStart={pagPend.rangeStart}
+                rangeEnd={pagPend.rangeEnd}
+                onChange={pagPend.setPage}
+                label="pendientes"
+              />
+            )}
           </div>
         )}
 
@@ -201,7 +215,7 @@ export default function AdelantosPage() {
                 <tr>{["Trabajador","Sede","Monto","Motivo","Fecha","Estado","Acciones"].map(h => <th key={h}>{h}</th>)}</tr>
               </thead>
               <tbody>
-                {filtrados.map(a => {
+                {pag.pageItems.map(a => {
                   const w = d.workers.find(x => x.id === a.workerId);
                   const sede = d.sedes.find(s => s.id === w?.sedeId);
                   return (
@@ -232,6 +246,17 @@ export default function AdelantosPage() {
               </tbody>
             </table>
           </div>
+          {pag.needsPagination && (
+            <Pagination
+              page={pag.page}
+              totalPages={pag.totalPages}
+              total={pag.total}
+              rangeStart={pag.rangeStart}
+              rangeEnd={pag.rangeEnd}
+              onChange={pag.setPage}
+              label="adelantos"
+            />
+          )}
         </div>
       </main>
 

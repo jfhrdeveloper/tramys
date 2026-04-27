@@ -12,6 +12,7 @@ import {
 } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WEEKDAYS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -189,6 +190,18 @@ export default function AsistenciaPage() {
   const offset      = firstDay === 0 ? 6 : firstDay - 1;
   const todayIso    = now.toISOString().slice(0,10);
 
+  function cambiarMes(dir: -1 | 1) {
+    setMonth(m => {
+      const nx = m + dir;
+      if (nx < 0)  { setYear(y => y - 1); return 11; }
+      if (nx > 11) { setYear(y => y + 1); return 0; }
+      return nx;
+    });
+  }
+
+  const detalleDia = dataDia(selIso);
+  const pagDetalle = usePagination(detalleDia);
+
   return (
     <>
       <Topbar title="Asistencia" subtitle={`${MESES[month]} ${year}`} />
@@ -211,6 +224,24 @@ export default function AsistenciaPage() {
               }}>{s.label}</button>
           ))}
           <div style={{ marginLeft:"auto", display:"flex", gap: 8, alignItems:"center" }}>
+            <div style={{ display:"inline-flex", gap: 4 }}>
+              <button
+                className="btn-outline"
+                onClick={()=>cambiarMes(-1)}
+                title="Mes anterior" aria-label="Mes anterior"
+                style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+              >
+                <span style={{ transform:"rotate(180deg)", display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+              </button>
+              <button
+                className="btn-outline"
+                onClick={()=>cambiarMes(1)}
+                title="Mes siguiente" aria-label="Mes siguiente"
+                style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+              >
+                <span style={{ display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+              </button>
+            </div>
             <select className="select-base" value={month} onChange={e=>setMonth(Number(e.target.value))}>
               {MESES.map((m,i) => <option key={m} value={i}>{m}</option>)}
             </select>
@@ -309,7 +340,7 @@ export default function AsistenciaPage() {
             <table className="tramys-table">
               <thead><tr><th>Trabajador</th><th>Apodo</th><th>Sede del día</th><th>Entrada</th><th>Salida</th><th>Estado</th><th></th></tr></thead>
               <tbody>
-                {dataDia(selIso).map(x => {
+                {pagDetalle.pageItems.map(x => {
                   const sedePlanta = d.sedes.find(s => s.id === x.worker.sedeId);
                   const sedeReal   = d.sedes.find(s => s.id === sedeDelDia(x.rec, x.worker));
                   const tieneRegistro = !!x.rec.id;
@@ -352,6 +383,17 @@ export default function AsistenciaPage() {
               </tbody>
             </table>
           </div>
+          {pagDetalle.needsPagination && (
+            <Pagination
+              page={pagDetalle.page}
+              totalPages={pagDetalle.totalPages}
+              total={pagDetalle.total}
+              rangeStart={pagDetalle.rangeStart}
+              rangeEnd={pagDetalle.rangeEnd}
+              onChange={pagDetalle.setPage}
+              label="trabajadores"
+            />
+          )}
         </div>
       </main>
 

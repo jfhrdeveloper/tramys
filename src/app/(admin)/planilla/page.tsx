@@ -12,6 +12,7 @@ import { money } from "@/lib/utils/formatters";
 import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import Link from "next/link";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -89,6 +90,8 @@ export default function PlanillaPage() {
 
   const togglePagado = (id: string) => setPagados(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
 
+  const pag = usePagination(rows);
+
   return (
     <>
       <Topbar title="Planilla" subtitle={`${MESES[month]} ${year} · ${rows.length} trabajadores`} />
@@ -136,10 +139,10 @@ export default function PlanillaPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => {
-                  const pag = pagados.includes(r.workerId);
+                {pag.pageItems.map(r => {
+                  const pagado = pagados.includes(r.workerId);
                   return (
-                    <tr key={r.workerId} style={{ opacity: pag ? 0.7 : 1 }}>
+                    <tr key={r.workerId} style={{ opacity: pagado ? 0.7 : 1 }}>
                       <td>
                         <div style={{ display:"flex", alignItems:"center", gap: 10 }}>
                           <PhotoAvatar src={r.avatar} initials={(r.apodo||r.nombre)[0]} size={28} color={r.sedeColor} />
@@ -161,19 +164,19 @@ export default function PlanillaPage() {
                           : <span style={{ color:"var(--text-muted)" }}>—</span>}
                       </td>
                       <td><HideableAmount value={money(r.neto)} size={14} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" /></td>
-                      <td><Badge variant={pag ? "pagado" : "pendiente"} small /></td>
+                      <td><Badge variant={pagado ? "pagado" : "pendiente"} small /></td>
                       <td>
                         <div style={{ display:"flex", gap: 4 }}>
                           <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px" }} onClick={()=>setModalW(r)}>Desglose</button>
                           <button onClick={()=>togglePagado(r.workerId)}
                             style={{
-                              background: pag ? "rgba(34,197,94,0.1)" : "transparent",
-                              border: `1px solid ${pag ? "rgba(34,197,94,0.3)" : "var(--border)"}`,
+                              background: pagado ? "rgba(34,197,94,0.1)" : "transparent",
+                              border: `1px solid ${pagado ? "rgba(34,197,94,0.3)" : "var(--border)"}`,
                               borderRadius: 6, padding:"3px 10px", fontSize: 11,
-                              color: pag ? "#16a34a" : "var(--text-muted)",
+                              color: pagado ? "#16a34a" : "var(--text-muted)",
                               cursor:"pointer", fontWeight: 600,
                             }}>
-                            {pag ? "✓ Pagado" : "Marcar"}
+                            {pagado ? "✓ Pagado" : "Marcar"}
                           </button>
                         </div>
                       </td>
@@ -193,6 +196,17 @@ export default function PlanillaPage() {
               </tfoot>
             </table>
           </div>
+          {pag.needsPagination && (
+            <Pagination
+              page={pag.page}
+              totalPages={pag.totalPages}
+              total={pag.total}
+              rangeStart={pag.rangeStart}
+              rangeEnd={pag.rangeEnd}
+              onChange={pag.setPage}
+              label="trabajadores"
+            />
+          )}
         </div>
       </main>
 

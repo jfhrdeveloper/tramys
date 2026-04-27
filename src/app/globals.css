@@ -45,6 +45,19 @@
     font-size: max(16px, 1em);
   }
 
+  /* ==== Quitar flechas (spinners) de inputs numéricos: ingreso manual ==== */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
   body {
     background: var(--bg);
     color: var(--text);

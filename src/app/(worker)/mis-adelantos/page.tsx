@@ -13,6 +13,7 @@ import { HideableAmount } from "@/components/ui/HideableAmount";
 import { money } from "@/lib/utils/formatters";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
 import { useData } from "@/components/providers/DataProvider";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Filtro = "todos" | "pendiente" | "aprobado" | "rechazado";
 
@@ -122,6 +123,8 @@ export default function MisAdelantosPage() {
     return y === now.getFullYear() && m - 1 === now.getMonth();
   }).reduce((acc, x) => acc + x.monto, 0);
 
+  const pag = usePagination(filtrados);
+
   if (!worker) {
     return (
       <>
@@ -195,7 +198,7 @@ export default function MisAdelantosPage() {
             </div>
           ) : (
             <div style={{ display:"flex", flexDirection:"column" }}>
-              {filtrados.map((a, i) => {
+              {pag.pageItems.map((a, i) => {
                 const color = a.estado === "aprobado" ? "#16a34a"
                             : a.estado === "rechazado" ? "#8b8fa8"
                             : "#d97706";
@@ -223,6 +226,17 @@ export default function MisAdelantosPage() {
                 );
               })}
             </div>
+          )}
+          {pag.needsPagination && (
+            <Pagination
+              page={pag.page}
+              totalPages={pag.totalPages}
+              total={pag.total}
+              rangeStart={pag.rangeStart}
+              rangeEnd={pag.rangeEnd}
+              onChange={pag.setPage}
+              label="solicitudes"
+            />
           )}
         </div>
       </main>

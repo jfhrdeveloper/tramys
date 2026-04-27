@@ -49,12 +49,10 @@ const ICONS: Record<string, (props: React.SVGProps<SVGSVGElement>) => React.Reac
     /* ==== Jaladores ==== */
     jaladores: (p) => (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...p}>
-            <circle cx="12" cy="12" r="9" strokeWidth={p.strokeWidth} />
-            <circle cx="12" cy="12" r="3" strokeWidth={p.strokeWidth} />
-            <line x1="12" y1="3" x2="12" y2="9" strokeWidth={p.strokeWidth} strokeLinecap="round" />
-            <line x1="12" y1="15" x2="12" y2="21" strokeWidth={p.strokeWidth} strokeLinecap="round" />
-            <line x1="3" y1="12" x2="9" y2="12" strokeWidth={p.strokeWidth} strokeLinecap="round" />
-            <line x1="15" y1="12" x2="21" y2="12" strokeWidth={p.strokeWidth} strokeLinecap="round" />
+            <path d="M14 21v-2a4 4 0 0 0-4-4H4a4 4 0 0 0-4 4v2" strokeWidth={p.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="7" cy="7" r="4" strokeWidth={p.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M15 10l5-2v6l-5-2z" strokeWidth={p.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M22 9a3 3 0 0 1 0 6" strokeWidth={p.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     ),
 

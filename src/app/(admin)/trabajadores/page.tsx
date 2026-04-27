@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icons";
 import { PhotoUpload, PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { MultiverseCalendar } from "@/components/ui/MultiverseCalendar";
 import { HideableAmount } from "@/components/ui/HideableAmount";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { money } from "@/lib/utils/formatters";
 import {
   useData, ingresoDia, isWeekendISO,
@@ -480,8 +481,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
   const historial = useMemo(() => {
     return d.asistencia
       .filter(a => a.workerId === worker.id)
-      .sort((a,b) => b.fecha.localeCompare(a.fecha))
-      .slice(0, 10);
+      .sort((a,b) => b.fecha.localeCompare(a.fecha));
   }, [d.asistencia, worker.id]);
 
   /* Sueldo del mes calculado */
@@ -509,6 +509,10 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
   /* Adelantos y permisos del trabajador */
   const adelantos = d.adelantos.filter(a => a.workerId === worker.id);
   const permisos  = d.permisos.filter(p => p.workerId === worker.id);
+
+  const pagHist = usePagination(historial);
+  const pagAdel = usePagination(adelantos);
+  const pagPerm = usePagination(permisos);
 
   function cambiarMes(dir: -1 | 1) {
     setMonth(m => {
@@ -578,15 +582,31 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
         {tab === "asistencia" && (
           <div style={{ padding: 18 }}>
             <div style={{ display:"flex", justifyContent:"flex-end", alignItems:"center", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
-              <div style={{ display:"flex", gap: 6 }}>
+              <div style={{ display:"flex", gap: 6, alignItems:"center" }}>
+                <div style={{ display:"inline-flex", gap: 4 }}>
+                  <button
+                    className="btn-outline"
+                    onClick={()=>cambiarMes(-1)}
+                    title="Mes anterior" aria-label="Mes anterior"
+                    style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+                  >
+                    <span style={{ transform:"rotate(180deg)", display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+                  </button>
+                  <button
+                    className="btn-outline"
+                    onClick={()=>cambiarMes(1)}
+                    title="Mes siguiente" aria-label="Mes siguiente"
+                    style={{ width: 40, height: 40, minHeight: 40, padding: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}
+                  >
+                    <span style={{ display:"inline-flex", lineHeight: 0 }}><Icon name="chevron_right" size={12} /></span>
+                  </button>
+                </div>
                 <select className="select-base" value={month} onChange={e=>setMonth(Number(e.target.value))}>
                   {MESES.map((m,i)=><option key={m} value={i}>{m}</option>)}
                 </select>
                 <select className="select-base" value={year} onChange={e=>setYear(Number(e.target.value))}>
                   {[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}
                 </select>
-                <button className="btn-outline" onClick={()=>cambiarMes(-1)}><span style={{ transform:"rotate(180deg)", display:"inline-flex" }}><Icon name="chevron_right" size={12} /></span></button>
-                <button className="btn-outline" onClick={()=>cambiarMes(1)}><Icon name="chevron_right" size={12} /></button>
               </div>
             </div>
 
@@ -608,7 +628,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
                     <tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Estado</th><th>Editar</th></tr>
                   </thead>
                   <tbody>
-                    {historial.map((h, i) => (
+                    {pagHist.pageItems.map((h, i) => (
                       <tr key={i}>
                         <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.fecha}</td>
                         <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.entrada ?? "—"}</td>
@@ -625,6 +645,17 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
                   </tbody>
                 </table>
               </div>
+              {pagHist.needsPagination && (
+                <Pagination
+                  page={pagHist.page}
+                  totalPages={pagHist.totalPages}
+                  total={pagHist.total}
+                  rangeStart={pagHist.rangeStart}
+                  rangeEnd={pagHist.rangeEnd}
+                  onChange={pagHist.setPage}
+                  label="registros"
+                />
+              )}
             </div>
           </div>
         )}
@@ -676,7 +707,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
               </div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
-                {adelantos.map(a => (
+                {pagAdel.pageItems.map(a => (
                   <div key={a.id} style={{ display:"flex", alignItems:"center", gap: 10, padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <HideableAmount value={money(a.monto)} size={14} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
@@ -691,6 +722,17 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
                     )}
                   </div>
                 ))}
+                {pagAdel.needsPagination && (
+                  <Pagination
+                    page={pagAdel.page}
+                    totalPages={pagAdel.totalPages}
+                    total={pagAdel.total}
+                    rangeStart={pagAdel.rangeStart}
+                    rangeEnd={pagAdel.rangeEnd}
+                    onChange={pagAdel.setPage}
+                    label="adelantos"
+                  />
+                )}
               </div>
             )}
           </div>
@@ -713,7 +755,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
               </div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
-                {permisos.map(p => (
+                {pagPerm.pageItems.map(p => (
                   <div key={p.id} style={{ display:"flex", alignItems:"center", gap: 10, padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, textTransform:"capitalize" }}>{p.tipo} — {p.fecha}</div>
@@ -728,6 +770,17 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
                     )}
                   </div>
                 ))}
+                {pagPerm.needsPagination && (
+                  <Pagination
+                    page={pagPerm.page}
+                    totalPages={pagPerm.totalPages}
+                    total={pagPerm.total}
+                    rangeStart={pagPerm.rangeStart}
+                    rangeEnd={pagPerm.rangeEnd}
+                    onChange={pagPerm.setPage}
+                    label="permisos"
+                  />
+                )}
               </div>
             )}
           </div>
@@ -856,6 +909,8 @@ export default function TrabajadoresPage() {
     return matchSede && matchEst && matchBusq;
   });
 
+  const pag = usePagination(filtrados);
+
   const perfil = perfilId ? d.workers.find(w => w.id === perfilId) : null;
 
   if (perfil) {
@@ -907,7 +962,7 @@ export default function TrabajadoresPage() {
                 <tr><th>Trabajador</th><th>Apodo</th><th>Sede</th><th>Cargo</th><th>Turno</th><th>Estado</th><th></th></tr>
               </thead>
               <tbody>
-                {filtrados.map(w => {
+                {pag.pageItems.map(w => {
                   const sede = d.sedes.find(s => s.id === w.sedeId);
                   return (
                     <tr key={w.id} onClick={()=>setPerfilId(w.id)}>
@@ -939,6 +994,17 @@ export default function TrabajadoresPage() {
               </tbody>
             </table>
           </div>
+          {pag.needsPagination && (
+            <Pagination
+              page={pag.page}
+              totalPages={pag.totalPages}
+              total={pag.total}
+              rangeStart={pag.rangeStart}
+              rangeEnd={pag.rangeEnd}
+              onChange={pag.setPage}
+              label="trabajadores"
+            />
+          )}
         </div>
       </main>
 

@@ -12,6 +12,7 @@ import { useData, ingresoDia, isoToday, isWeekendISO } from "@/components/provid
 import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import Link from "next/link";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 export default function DashboardPage() {
   const d = useData();
@@ -106,6 +107,8 @@ export default function DashboardPage() {
     }
     return items.slice(0, 6);
   }, [d.asistencia, d.workers, pendientes, hoy]);
+
+  const pagPresencia = usePagination(hoyRecords);
 
   return (
     <>
@@ -324,15 +327,15 @@ export default function DashboardPage() {
         </div>
 
         {/* Tabla rápida de últimos registros */}
-        <div className="card" style={{ marginTop: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Presencia en vivo</div>
+        <div className="card" style={{ marginTop: 16, padding: 0, overflow:"hidden" }}>
+          <div style={{ fontWeight: 700, fontSize: 15, padding:"16px 18px 12px" }}>Presencia en vivo</div>
           <div className="table-wrap">
             <table className="tramys-table">
               <thead>
                 <tr><th>Trabajador</th><th>Sede</th><th>Entrada</th><th>Estado</th></tr>
               </thead>
               <tbody>
-                {hoyRecords.slice(0, 8).map(r => {
+                {pagPresencia.pageItems.map(r => {
                   const s = d.sedes.find(s => s.id === r.worker.sedeId);
                   const est = r.rec?.estado ?? "ausente";
                   return (
@@ -355,6 +358,17 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
+          {pagPresencia.needsPagination && (
+            <Pagination
+              page={pagPresencia.page}
+              totalPages={pagPresencia.totalPages}
+              total={pagPresencia.total}
+              rangeStart={pagPresencia.rangeStart}
+              rangeEnd={pagPresencia.rangeEnd}
+              onChange={pagPresencia.setPage}
+              label="trabajadores"
+            />
+          )}
         </div>
 
       </main>

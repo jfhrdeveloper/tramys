@@ -10,6 +10,7 @@ import { HideableAmount } from "@/components/ui/HideableAmount";
 import { money } from "@/lib/utils/formatters";
 import { useData, ingresoDia, isWeekendISO, isoToday, type Sede } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Periodo = "diario" | "semanal" | "mensual";
 
@@ -218,6 +219,8 @@ function DetalleSede({ sede, onBack, onEditar }: { sede: Sede; onBack: () => voi
   const tardanzas = asistHoy.filter(a => a.estado === "tardanza").length;
   const encargado = d.workers.find(w => w.id === sede.encargadoId);
 
+  const pag = usePagination(workersSede);
+
   return (
     <div style={{ display:"flex", flexDirection:"column", gap: 16 }}>
       <button onClick={onBack} className="btn-outline" style={{ alignSelf:"flex-start", display:"flex", alignItems:"center", gap: 6 }}>
@@ -305,7 +308,7 @@ function DetalleSede({ sede, onBack, onEditar }: { sede: Sede; onBack: () => voi
           <table className="tramys-table">
             <thead><tr><th>Trabajador</th><th>Apodo</th><th>Cargo</th><th>Turno</th><th>Estado</th></tr></thead>
             <tbody>
-              {workersSede.map(w => {
+              {pag.pageItems.map(w => {
                 const rec = d.asistencia.find(a => a.workerId === w.id && a.fecha === hoy);
                 return (
                   <tr key={w.id}>
@@ -327,6 +330,17 @@ function DetalleSede({ sede, onBack, onEditar }: { sede: Sede; onBack: () => voi
             </tbody>
           </table>
         </div>
+        {pag.needsPagination && (
+          <Pagination
+            page={pag.page}
+            totalPages={pag.totalPages}
+            total={pag.total}
+            rangeStart={pag.rangeStart}
+            rangeEnd={pag.rangeEnd}
+            onChange={pag.setPage}
+            label="trabajadores"
+          />
+        )}
       </div>
     </div>
   );
@@ -337,6 +351,8 @@ export default function SedesPage() {
   const d = useData();
   const [selId, setSelId]   = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+
+  const pagSedes = usePagination(d.sedes);
 
   const seleccionada = selId ? d.sedes.find(s => s.id === selId) ?? null : null;
 
@@ -366,7 +382,7 @@ export default function SedesPage() {
       <main className="page-main">
 
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
-          {d.sedes.map(sede => {
+          {pagSedes.pageItems.map(sede => {
             const workers = d.workers.filter(w => w.sedeId === sede.id && w.activo);
             const hoy = isoToday();
             const asistHoy = d.asistencia.filter(a => a.fecha === hoy && workers.some(w => w.id === a.workerId));
@@ -436,6 +452,19 @@ export default function SedesPage() {
             );
           })}
         </div>
+        {pagSedes.needsPagination && (
+          <div className="card" style={{ marginTop: 14, padding: 0, overflow:"hidden" }}>
+            <Pagination
+              page={pagSedes.page}
+              totalPages={pagSedes.totalPages}
+              total={pagSedes.total}
+              rangeStart={pagSedes.rangeStart}
+              rangeEnd={pagSedes.rangeEnd}
+              onChange={pagSedes.setPage}
+              label="sedes"
+            />
+          </div>
+        )}
       </main>
 
       <ModalEditarSede
