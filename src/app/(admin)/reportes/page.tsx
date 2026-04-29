@@ -428,7 +428,7 @@ export default function ReportesPage() {
             <div key={k.label} className="card" style={{ padding: 12, borderLeft: `4px solid ${k.color}` }}>
               <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6 }}>{k.label}</div>
               {"monto" in k
-                ? <HideableAmount value={money(k.monto)} size={18} color={k.color} weight={800} fontFamily="'DM Mono',monospace" />
+                ? <HideableAmount value={money(k.monto ?? 0)} size={18} color={k.color} weight={800} fontFamily="'DM Mono',monospace" />
                 : <div style={{ fontWeight: 800, fontSize: 18, color: k.color, fontFamily:"'DM Mono',monospace" }}>{k.value}</div>}
               <div style={{ fontSize: 10, color:"var(--text-muted)", marginTop: 2 }}>{k.sub}</div>
             </div>
