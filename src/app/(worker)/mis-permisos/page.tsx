@@ -76,7 +76,7 @@ function ModalSolicitar({
     return Math.floor((b.getTime() - a.getTime()) / 86400000);
   })();
   const avisoCorto = diffHoy < 2;
-  const sugerencia = tipo === "vacaciones" ? 7 : tipo === "personal" ? 2 : 0;
+  const sugerencia: number = tipo === "vacaciones" ? 7 : tipo === "personal" ? 2 : 0;
 
   return (
     <Modal open={open} onClose={() => { reset(); onClose(); }} title="Solicitar permiso" width={460}>
