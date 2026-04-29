@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icons";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { HideableAmount, StatCardHidden } from "@/components/ui/HideableAmount";
 import { StatCard } from "@/components/ui/StatCard";
-import { money } from "@/lib/utils/formatters";
+import { money, formatFecha } from "@/lib/utils/formatters";
 import { useData, type Adelanto } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
@@ -40,7 +40,7 @@ function ModalDecision({
         <PhotoAvatar src={w?.avatarBase64 ?? null} initials={w ? (w.apodo||w.nombre)[0] : "?"} size={38} color={sede?.color ?? "#C41A3A"} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>{w?.nombre}</div>
-          <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{sede?.nombre} · {adelanto.fecha}</div>
+          <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{sede?.nombre} · {formatFecha(adelanto.fecha)}</div>
           <div style={{ fontSize: 12, marginTop: 2 }}>Motivo: <span style={{ fontWeight: 500 }}>{adelanto.motivo}</span></div>
         </div>
         <HideableAmount value={money(adelanto.monto)} size={18} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
@@ -164,7 +164,7 @@ export default function AdelantosPage() {
                     <PhotoAvatar src={w?.avatarBase64 ?? null} initials={w ? (w.apodo||w.nombre)[0] : "?"} size={36} color={sede?.color ?? "#C41A3A"} />
                     <div style={{ flex: 1, minWidth: 140 }}>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{w?.nombre}</div>
-                      <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{sede?.nombre} · {a.fecha}</div>
+                      <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{sede?.nombre} · {formatFecha(a.fecha)}</div>
                       <div style={{ fontSize: 12, marginTop: 2 }}>Motivo: <span style={{ fontWeight: 500 }}>{a.motivo}</span></div>
                     </div>
                     <div style={{ textAlign:"right" }}>
@@ -229,7 +229,7 @@ export default function AdelantosPage() {
                       <td><span style={{ fontSize: 11, fontWeight: 600, color: sede?.color }}>{sede?.nombre}</span></td>
                       <td><HideableAmount value={money(a.monto)} size={13} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" /></td>
                       <td style={{ fontSize: 12, color:"var(--text-muted)", maxWidth: 180 }}>{a.motivo}</td>
-                      <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 11, color:"var(--text-muted)" }}>{a.fecha}</td>
+                      <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 11, color:"var(--text-muted)" }}>{formatFecha(a.fecha)}</td>
                       <td><Badge variant={a.estado as "pendiente"|"aprobado"|"rechazado"} small /></td>
                       <td>
                         {a.estado === "pendiente" ? (

@@ -10,7 +10,7 @@ import { PhotoUpload, PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { MultiverseCalendar } from "@/components/ui/MultiverseCalendar";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
-import { money } from "@/lib/utils/formatters";
+import { money, formatFecha } from "@/lib/utils/formatters";
 import {
   useData, ingresoDia, isWeekendISO,
   type Worker, type TarifasWorker, type Turno,
@@ -18,6 +18,7 @@ import {
 } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
+import { esVacaciones } from "@/lib/constants/estados";
 
 type TabPerfil = "asistencia" | "sueldo" | "adelantos" | "permisos" | "perfil";
 
@@ -203,19 +204,22 @@ function ModalPermiso({
   open, onClose, workerId,
 }: { open: boolean; onClose: () => void; workerId: string }) {
   const d = useData();
-  const [fecha, setFecha]   = useState(new Date().toISOString().slice(0,10));
+  const hoyIso = new Date().toISOString().slice(0,10);
+  const [desde, setDesde]   = useState(hoyIso);
+  const [hasta, setHasta]   = useState(hoyIso);
   const [tipo, setTipo]     = useState<TipoPerm>("personal");
   const [motivo, setMotivo] = useState("");
+  const [pagado, setPagado] = useState(false);
 
   useMemo(() => {
-    setFecha(new Date().toISOString().slice(0,10));
-    setTipo("personal");
-    setMotivo("");
+    setDesde(hoyIso); setHasta(hoyIso);
+    setTipo("personal"); setMotivo(""); setPagado(false);
   }, [open]); // eslint-disable-line
 
   function guardar() {
-    if (!fecha) return;
-    d.addPermiso({ workerId, fecha, tipo, motivo: motivo.trim() || "—" });
+    if (!desde) return;
+    const finReal = (hasta && hasta >= desde) ? hasta : desde;
+    d.addPermiso({ workerId, fecha: desde, desde, hasta: finReal, tipo, motivo: motivo.trim() || "—", pagado });
     onClose();
   }
 
@@ -241,10 +245,23 @@ function ModalPermiso({
             ))}
           </div>
         </div>
-        <div>
-          <div className="section-label">Fecha</div>
-          <input type="date" className="input-base" value={fecha} onChange={e=>setFecha(e.target.value)} />
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+          <div>
+            <div className="section-label">Desde</div>
+            <input type="date" className="input-base" value={desde} onChange={e=>{
+              setDesde(e.target.value);
+              if (hasta && e.target.value > hasta) setHasta(e.target.value);
+            }} />
+          </div>
+          <div>
+            <div className="section-label">Hasta</div>
+            <input type="date" className="input-base" value={hasta} min={desde} onChange={e=>setHasta(e.target.value)} />
+          </div>
         </div>
+        <label style={{ display:"flex", alignItems:"center", gap: 8, cursor:"pointer", padding:"8px 10px", borderRadius: 8, background:"var(--bg)", border:"1px solid var(--border)" }}>
+          <input type="checkbox" checked={pagado} onChange={e=>setPagado(e.target.checked)} />
+          <span style={{ fontSize: 12, fontWeight: 600 }}>Se paga estos días (aplica tarifa al cuadre)</span>
+        </label>
         <div>
           <div className="section-label">Motivo</div>
           <textarea className="input-base" rows={3} value={motivo} onChange={e=>setMotivo(e.target.value)} style={{ resize:"none" }} />
@@ -252,7 +269,7 @@ function ModalPermiso({
       </div>
       <div style={{ display:"flex", gap: 10 }}>
         <button className="btn-outline" style={{ flex: 1 }} onClick={onClose}>Cancelar</button>
-        <button className="btn-primary" style={{ flex: 2 }} onClick={guardar} disabled={!fecha}>Crear</button>
+        <button className="btn-primary" style={{ flex: 2 }} onClick={guardar} disabled={!desde}>Crear</button>
       </div>
     </Modal>
   );
@@ -458,6 +475,8 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
     return {
       worked: rec ? (rec.estado === "presente" || rec.estado === "tardanza") : false,
       late: rec?.estado === "tardanza",
+      override: rec?.overrideIngreso ?? null,
+      vacaciones: esVacaciones(rec ?? undefined),
     };
   }
   function toggleWorked(day: number) {
@@ -492,18 +511,18 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
       return y === year && m-1 === month;
     });
     let totales = { normal: 0, tardanza: 0, finSem: 0, feriado: 0, override: 0 };
-    let total = 0;
+    let total = 0, totalOverride = 0;
     for (const r of mesRecs) {
       const feriado = esFeriadoOficial(r.fecha).es;
       const ing = ingresoDia(r, worker.tarifas, isWeekendISO(r.fecha), feriado);
       total += ing;
-      if (r.overrideIngreso !== null) totales.override += 1;
+      if (r.overrideIngreso !== null) { totales.override += 1; totalOverride += ing; }
       else if (r.estado === "feriado" || feriado) totales.feriado += 1;
       else if (isWeekendISO(r.fecha)) totales.finSem += 1;
       else if (r.estado === "tardanza") totales.tardanza += 1;
       else if (r.estado === "presente") totales.normal += 1;
     }
-    return { total, totales };
+    return { total, totales, totalOverride };
   }, [d.asistencia, worker, year, month]);
 
   /* Adelantos y permisos del trabajador */
@@ -550,7 +569,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
           </div>
           <div style={{ fontSize: 12, color:"var(--text-muted)" }}>
             {worker.cargo} · <span style={{ color: sede?.color, fontWeight: 600 }}>{sede?.nombre}</span>
-            {worker.fechaIngreso && ` · Desde ${new Date(worker.fechaIngreso).toLocaleDateString("es-PE", { month: "short", year: "numeric" })}`}
+            {worker.fechaIngreso && ` · Desde ${new Date(worker.fechaIngreso).toLocaleDateString("es-PE", { day: "numeric", month: "short", year: "numeric" })}`}
           </div>
         </div>
         <div style={{ textAlign:"right", background:"rgba(196,26,58,0.06)", border:"1px solid rgba(196,26,58,0.2)", borderRadius: 10, padding: "12px 16px" }}>
@@ -625,23 +644,50 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
               <div className="table-wrap">
                 <table className="tramys-table">
                   <thead>
-                    <tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Estado</th><th>Editar</th></tr>
+                    <tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Estado</th><th>Ingreso</th><th>Editar</th></tr>
                   </thead>
                   <tbody>
-                    {pagHist.pageItems.map((h, i) => (
-                      <tr key={i}>
-                        <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.fecha}</td>
-                        <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.entrada ?? "—"}</td>
-                        <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{h.salida ?? "—"}</td>
-                        <td><Badge variant={h.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small /></td>
-                        <td>
-                          <button className="btn-outline" style={{ fontSize: 11, padding: "3px 8px", display:"inline-flex", alignItems:"center", gap: 4 }}
-                            onClick={()=>setEditAsistFecha(h.fecha)}>
-                            <Icon name="edit" size={11} /> Editar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {pagHist.pageItems.map((h, i) => {
+                      const fer = esFeriadoOficial(h.fecha).es;
+                      const fds = isWeekendISO(h.fecha);
+                      const ing = ingresoDia(h, worker.tarifas, fds, fer);
+                      const tieneOverride = h.overrideIngreso !== null && h.overrideIngreso !== undefined;
+                      return (
+                        <tr key={i} title={tieneOverride && h.motivoEdit ? `Nota: ${h.motivoEdit}` : undefined}>
+                          <td style={{ fontFamily:"'DM Mono',monospace" }}>{formatFecha(h.fecha)}</td>
+                          <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.entrada ?? "—"}</td>
+                          <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{h.salida ?? "—"}</td>
+                          <td>
+                            <span style={{ display:"inline-flex", alignItems:"center", gap: 5 }}>
+                              <Badge variant={h.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small />
+                              {esVacaciones(h) && (
+                                <span style={{
+                                  fontSize: 9, fontWeight: 800, padding:"2px 6px", borderRadius: 99,
+                                  background:"rgba(6,182,212,0.14)", color:"#0891b2",
+                                  fontFamily:"'DM Mono',monospace", letterSpacing: .4,
+                                }} title={h.motivoEdit ?? "Vacaciones"}>VAC</span>
+                              )}
+                            </span>
+                          </td>
+                          <td>
+                            <span style={{ display:"inline-flex", alignItems:"center", gap: 6 }}>
+                              <HideableAmount value={money(ing)} size={12} color={tieneOverride ? "var(--brand)" : ing > 0 ? "#16a34a" : "var(--text-muted)"} weight={tieneOverride ? 800 : 700} fontFamily="'DM Mono',monospace" />
+                              {tieneOverride && (
+                                <span title={h.motivoEdit ? `Nota: ${h.motivoEdit}` : "Ingreso ajustado manualmente"} style={{ fontSize: 8, fontWeight: 800, color:"var(--brand)", background:"rgba(196,26,58,0.12)", padding:"1px 5px", borderRadius: 99, fontFamily:"'DM Mono',monospace", letterSpacing: .4 }}>
+                                  MANUAL
+                                </span>
+                              )}
+                            </span>
+                          </td>
+                          <td>
+                            <button className="btn-outline" style={{ fontSize: 11, padding: "3px 8px", display:"inline-flex", alignItems:"center", gap: 4 }}
+                              onClick={()=>setEditAsistFecha(h.fecha)}>
+                              <Icon name="edit" size={11} /> Editar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -683,6 +729,28 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
               ))}
             </div>
 
+            {sueldoMes.totales.override > 0 && (
+              <div style={{
+                marginBottom: 12,
+                padding:"12px 14px",
+                background:"rgba(196,26,58,0.06)",
+                border:"1px solid rgba(196,26,58,0.25)", borderLeft:"4px solid var(--brand)",
+                borderRadius: 10,
+                display:"flex", alignItems:"center", gap: 12,
+              }}>
+                <div style={{ width: 36, height: 36, borderRadius: 9, background:"rgba(196,26,58,0.12)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink: 0 }}>
+                  <Icon name="edit" size={16} color="var(--brand)" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color:"var(--brand)" }}>Ajustes manuales</div>
+                  <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
+                    {sueldoMes.totales.override} día{sueldoMes.totales.override === 1 ? "" : "s"} con monto fijo asignado
+                  </div>
+                </div>
+                <HideableAmount value={money(sueldoMes.totalOverride)} size={16} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
+              </div>
+            )}
+
             <div style={{ padding: 16, background:"rgba(34,197,94,0.08)", border:"1px solid rgba(34,197,94,0.3)", borderRadius: 10, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
               <span style={{ fontWeight: 700, fontSize: 14, color:"#16a34a" }}>Neto a pagar</span>
               <HideableAmount value={money(sueldoMes.total)} size={22} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
@@ -711,7 +779,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
                   <div key={a.id} style={{ display:"flex", alignItems:"center", gap: 10, padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <HideableAmount value={money(a.monto)} size={14} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
-                      <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{a.motivo} · {a.fecha}</div>
+                      <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{a.motivo} · {formatFecha(a.fecha)}</div>
                     </div>
                     <Badge variant={a.estado as "pendiente"|"aprobado"|"rechazado"} small />
                     {a.estado === "pendiente" && (
@@ -755,21 +823,43 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
               </div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
-                {pagPerm.pageItems.map(p => (
-                  <div key={p.id} style={{ display:"flex", alignItems:"center", gap: 10, padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, textTransform:"capitalize" }}>{p.tipo} — {p.fecha}</div>
-                      <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{p.motivo}</div>
-                    </div>
-                    <Badge variant={p.estado as "pendiente"|"aprobado"|"rechazado"} small />
-                    {p.estado === "pendiente" && (
-                      <div style={{ display:"flex", gap: 4 }}>
-                        <button className="btn-ghost" style={{ border:"1px solid var(--border)", padding:"4px 8px", fontSize: 11 }} onClick={()=>d.updatePermiso(p.id, { estado:"rechazado" })}>Rechazar</button>
-                        <button style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius: 6, padding:"4px 10px", cursor:"pointer", fontSize: 11, fontWeight: 700 }} onClick={()=>d.updatePermiso(p.id, { estado:"aprobado" })}>Aprobar</button>
+                {pagPerm.pageItems.map(p => {
+                  const desde = p.desde ?? p.fecha;
+                  const hasta = p.hasta ?? p.desde ?? p.fecha;
+                  const rango = desde === hasta ? formatFecha(desde) : `${formatFecha(desde)} → ${formatFecha(hasta)}`;
+                  const dias = (() => {
+                    const a = new Date(desde + "T00:00:00");
+                    const b = new Date(hasta + "T00:00:00");
+                    return Math.floor((b.getTime() - a.getTime()) / 86400000) + 1;
+                  })();
+                  return (
+                    <div key={p.id} style={{ display:"flex", alignItems:"center", gap: 10, padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9, flexWrap:"wrap" }}>
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, textTransform:"capitalize", display:"flex", alignItems:"center", gap: 6, flexWrap:"wrap" }}>
+                          {p.tipo} — <span style={{ fontFamily:"'DM Mono',monospace" }}>{rango}</span>
+                          <span style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>({dias} día{dias === 1 ? "" : "s"})</span>
+                        </div>
+                        <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{p.motivo}</div>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <Badge variant={p.estado as "pendiente"|"aprobado"|"rechazado"} small />
+                      {p.estado === "aprobado" && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 800, padding:"2px 6px", borderRadius: 99,
+                          fontFamily:"'DM Mono',monospace", letterSpacing: .4,
+                          background: p.pagado ? "rgba(22,163,74,0.14)" : "rgba(139,143,168,0.14)",
+                          color: p.pagado ? "#16a34a" : "#8b8fa8",
+                        }}>{p.pagado ? "PAGADO" : "SIN PAGO"}</span>
+                      )}
+                      {p.estado === "pendiente" && (
+                        <div style={{ display:"flex", gap: 4 }}>
+                          <button className="btn-ghost" style={{ border:"1px solid var(--border)", padding:"4px 8px", fontSize: 11 }} onClick={()=>d.updatePermiso(p.id, { estado:"rechazado" })}>Rechazar</button>
+                          <button className="btn-ghost" style={{ border:"1px solid var(--border)", padding:"4px 10px", fontSize: 11, color:"#16a34a" }} onClick={()=>d.updatePermiso(p.id, { pagado: false, estado:"aprobado" })}>Aprobar sin pago</button>
+                          <button style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius: 6, padding:"4px 10px", cursor:"pointer", fontSize: 11, fontWeight: 700 }} onClick={()=>d.updatePermiso(p.id, { pagado: true, estado:"aprobado" })}>Aprobar pagado</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
                 {pagPerm.needsPagination && (
                   <Pagination
                     page={pagPerm.page}

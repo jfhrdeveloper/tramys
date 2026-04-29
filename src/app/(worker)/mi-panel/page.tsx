@@ -87,9 +87,18 @@ export default function MiPanelPage() {
               {worker.cargo} · {sede?.nombre} · Turno {worker.turno.entrada}–{worker.turno.salida}
             </div>
           </div>
-          <div style={{ textAlign:"right" }}>
-            <div style={{ fontSize: 10, color:"rgba(255,255,255,0.65)", fontFamily:"'DM Mono',monospace" }}>HOY</div>
-            <div style={{ fontWeight: 800, fontSize: 16 }}>{now.toLocaleDateString("es-PE", { weekday:"short", day:"numeric", month:"short" })}</div>
+          <div style={{
+            display:"inline-flex", alignItems:"center", gap: 8,
+            background:"rgba(255,255,255,0.14)",
+            border:"1px solid rgba(255,255,255,0.18)",
+            padding:"6px 12px", borderRadius: 99,
+            flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 10, color:"rgba(255,255,255,0.75)", fontFamily:"'DM Mono',monospace", letterSpacing: .8 }}>HOY</span>
+            <span style={{ width: 1, height: 12, background:"rgba(255,255,255,0.25)" }} />
+            <span style={{ fontWeight: 700, fontSize: 13, whiteSpace:"nowrap" }}>
+              {now.toLocaleDateString("es-PE", { day:"numeric", month:"short", year:"numeric" })}
+            </span>
           </div>
         </div>
 

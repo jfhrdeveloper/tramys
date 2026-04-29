@@ -11,6 +11,7 @@ import { Icon } from "@/components/ui/Icons";
 import { Badge } from "@/components/ui/Badge";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
 import { useData, type TipoPerm } from "@/components/providers/DataProvider";
+import { formatFecha } from "@/lib/utils/formatters";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Filtro = "todos" | "pendiente" | "aprobado" | "rechazado";
@@ -37,26 +38,51 @@ function ModalSolicitar({
   open, onClose, workerId,
 }: { open: boolean; onClose: () => void; workerId: string }) {
   const d = useData();
-  const [fecha, setFecha]   = useState(new Date().toISOString().slice(0, 10));
+  const hoy = new Date().toISOString().slice(0,10);
+  const [desde, setDesde]   = useState(hoy);
+  const [hasta, setHasta]   = useState(hoy);
   const [tipo, setTipo]     = useState<TipoPerm>("personal");
   const [motivo, setMotivo] = useState("");
 
   function reset() {
-    setFecha(new Date().toISOString().slice(0, 10));
-    setTipo("personal");
-    setMotivo("");
+    setDesde(hoy); setHasta(hoy);
+    setTipo("personal"); setMotivo("");
   }
   function enviar() {
-    if (!fecha || !motivo.trim()) return;
-    d.addPermiso({ workerId, fecha, tipo, motivo: motivo.trim() });
-    reset();
-    onClose();
+    if (!desde || !motivo.trim()) return;
+    const finReal = (hasta && hasta >= desde) ? hasta : desde;
+    d.addPermiso({
+      workerId,
+      fecha: desde,                    // compat: día principal = desde
+      desde,
+      hasta: finReal,
+      tipo,
+      motivo: motivo.trim(),
+      pagado: false,                   // por defecto no se paga; el admin decide al aprobar
+    });
+    reset(); onClose();
   }
 
+  /* Días totales y aviso de antelación (informativo, no bloqueante) */
+  const finReal = (hasta && hasta >= desde) ? hasta : desde;
+  const dias = (() => {
+    const a = new Date(desde + "T00:00:00");
+    const b = new Date(finReal + "T00:00:00");
+    return Math.floor((b.getTime() - a.getTime()) / 86400000) + 1;
+  })();
+  const diffHoy = (() => {
+    const a = new Date(hoy + "T00:00:00");
+    const b = new Date(desde + "T00:00:00");
+    return Math.floor((b.getTime() - a.getTime()) / 86400000);
+  })();
+  const avisoCorto = diffHoy < 2;
+  const sugerencia = tipo === "vacaciones" ? 7 : tipo === "personal" ? 2 : 0;
+
   return (
-    <Modal open={open} onClose={() => { reset(); onClose(); }} title="Solicitar permiso" width={440}>
+    <Modal open={open} onClose={() => { reset(); onClose(); }} title="Solicitar permiso" width={460}>
       <div style={{ fontSize: 12, color:"var(--text-muted)", marginBottom: 14 }}>
         Tu solicitud quedará en estado <strong>pendiente</strong> hasta que tu encargado o el admin la revise.
+        Las vacaciones se descuentan del día por defecto; tu encargado decide al aprobar si se pagan.
       </div>
 
       <div style={{ display:"flex", flexDirection:"column", gap: 14, marginBottom: 18 }}>
@@ -80,10 +106,31 @@ function ModalSolicitar({
           </div>
         </div>
 
-        <div>
-          <div className="section-label">Fecha</div>
-          <input type="date" className="input-base" value={fecha} onChange={e=>setFecha(e.target.value)} />
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
+          <div>
+            <div className="section-label">Desde</div>
+            <input type="date" className="input-base" value={desde} onChange={e=>{
+              setDesde(e.target.value);
+              if (hasta && e.target.value > hasta) setHasta(e.target.value);
+            }} />
+          </div>
+          <div>
+            <div className="section-label">Hasta</div>
+            <input type="date" className="input-base" value={hasta} min={desde} onChange={e=>setHasta(e.target.value)} />
+          </div>
         </div>
+
+        <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 12px", borderRadius: 8, background:"var(--bg)", border:"1px solid var(--border)", fontSize: 12 }}>
+          <span style={{ color:"var(--text-muted)" }}>Total días</span>
+          <span style={{ fontWeight: 700, fontFamily:"'DM Mono',monospace", color: "var(--text)" }}>{dias} día{dias === 1 ? "" : "s"}</span>
+        </div>
+
+        {avisoCorto && sugerencia > 0 && (
+          <div style={{ padding:"9px 12px", borderRadius: 8, background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.3)", display:"flex", gap: 8, alignItems:"flex-start", fontSize: 11, color:"#d97706" }}>
+            <Icon name="alert_circle" size={14} color="#d97706" />
+            <span>Recomendamos avisar con al menos <strong>{sugerencia} día{sugerencia === 1 ? "" : "s"}</strong> de anticipación para que tu encargado pueda organizar la sede. La solicitud sigue siendo válida.</span>
+          </div>
+        )}
 
         <div>
           <div className="section-label">Motivo</div>
@@ -103,7 +150,7 @@ function ModalSolicitar({
         <button
           className="btn-primary"
           onClick={enviar}
-          disabled={!fecha || !motivo.trim()}
+          disabled={!desde || !motivo.trim()}
         >
           Enviar solicitud
         </button>
@@ -212,6 +259,9 @@ export default function MisPermisosPage() {
             <div style={{ display:"flex", flexDirection:"column" }}>
               {pag.pageItems.map((p, i) => {
                 const t = infoTipo(p.tipo);
+                const desde = p.desde ?? p.fecha;
+                const hasta = p.hasta ?? p.desde ?? p.fecha;
+                const rango = desde === hasta ? formatFecha(desde) : `${formatFecha(desde)} → ${formatFecha(hasta)}`;
                 return (
                   <div key={p.id} style={{
                     display:"flex", alignItems:"center", gap: 12,
@@ -225,8 +275,16 @@ export default function MisPermisosPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display:"flex", alignItems:"center", gap: 8, marginBottom: 2, flexWrap:"wrap" }}>
                         <span style={{ fontWeight: 700, fontSize: 13, color: t.color, textTransform:"capitalize" }}>{t.label}</span>
-                        <span style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>{p.fecha}</span>
+                        <span style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>{rango}</span>
                         <Badge variant={p.estado as "pendiente"|"aprobado"|"rechazado"} small />
+                        {p.estado === "aprobado" && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 800, padding:"1px 6px", borderRadius: 99,
+                            fontFamily:"'DM Mono',monospace", letterSpacing: .4,
+                            background: p.pagado ? "rgba(22,163,74,0.14)" : "rgba(139,143,168,0.14)",
+                            color: p.pagado ? "#16a34a" : "#8b8fa8",
+                          }}>{p.pagado ? "PAGADO" : "SIN PAGO"}</span>
+                        )}
                       </div>
                       <div style={{ fontSize: 12, color:"var(--text)" }}>{p.motivo}</div>
                     </div>

@@ -8,258 +8,478 @@ import { money } from "@/lib/utils/formatters";
 import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 
-const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
-/* ============ LINE CHART SVG ============ */
-function LineChart({
-  series, height = 180,
-}: {
-  series: { label: string; color: string; values: number[] }[];
-  height?: number;
-}) {
-  const W = 640;
-  const H = height;
-  const padT = 20, padB = 30, padL = 40, padR = 16;
-  const maxLen = Math.max(...series.map(s => s.values.length));
-  const allVals = series.flatMap(s => s.values);
-  const maxVal = Math.max(...allVals, 1);
-
-  const x = (i: number) => padL + (i / Math.max(maxLen - 1, 1)) * (W - padL - padR);
-  const y = (v: number) => H - padB - (v / maxVal) * (H - padT - padB);
-
-  const gridLines = 4;
-
-  return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
-      {/* grid */}
-      {Array.from({ length: gridLines+1 }).map((_, i) => {
-        const yy = padT + (i / gridLines) * (H - padT - padB);
-        const val = Math.round((1 - i/gridLines) * maxVal);
-        return (
-          <g key={i}>
-            <line x1={padL} x2={W-padR} y1={yy} y2={yy} stroke="var(--border)" strokeDasharray="3 3" />
-            <text x={padL-6} y={yy+3} fontSize="9" fill="var(--text-muted)" textAnchor="end" fontFamily="'DM Mono',monospace">{val}</text>
-          </g>
-        );
-      })}
-      {/* eje X labels */}
-      {Array.from({ length: maxLen }).map((_, i) => (
-        <text key={i} x={x(i)} y={H - 10} fontSize="9" fill="var(--text-muted)" textAnchor="middle" fontFamily="'DM Mono',monospace">
-          {MESES[i] ?? ""}
-        </text>
-      ))}
-      {/* lines + areas */}
-      {series.map((s, si) => {
-        const path = s.values.map((v, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(v)}`).join(" ");
-        const area = `${path} L${x(s.values.length-1)},${H-padB} L${padL},${H-padB} Z`;
-        return (
-          <g key={si}>
-            <path d={area} fill={s.color} opacity={0.12} />
-            <path d={path} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-            {s.values.map((v, i) => (
-              <circle key={i} cx={x(i)} cy={y(v)} r="3" fill={s.color} />
-            ))}
-          </g>
-        );
-      })}
-    </svg>
-  );
+/* ============ HELPERS DE EXPORT ============ */
+function csvEscape(v: string | number | null | undefined): string {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  if (/[",\n;]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
 }
-
-/* ============ BARRAS HORIZONTALES ============ */
-function HBars({ data, color }: { data: { label: string; value: number }[]; color: string }) {
-  const max = Math.max(...data.map(d => d.value), 1);
-  return (
-    <div style={{ display:"flex", flexDirection:"column", gap: 10 }}>
-      {data.map((d, i) => (
-        <div key={i} style={{ display:"flex", alignItems:"center", gap: 10 }}>
-          <span style={{ fontSize: 12, color:"var(--text-muted)", width: 90, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.label}</span>
-          <div style={{ flex: 1, height: 22, background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 6, overflow:"hidden", position:"relative" }}>
-            <div style={{
-              height: "100%",
-              width: `${(d.value/max)*100}%`,
-              background: `linear-gradient(90deg, ${color}88, ${color})`,
-              transition: "width 0.6s",
-            }} />
-          </div>
-          <span style={{ fontSize: 12, fontWeight: 700, fontFamily:"'DM Mono',monospace", minWidth: 48, textAlign:"right" }}>{d.value}</span>
-        </div>
-      ))}
-    </div>
-  );
+function buildCSV(headers: string[], rows: (string | number | null | undefined)[][]): string {
+  const head = headers.map(csvEscape).join(",");
+  const body = rows.map(r => r.map(csvEscape).join(",")).join("\n");
+  return `﻿${head}\n${body}\n`;
 }
+function downloadBlob(content: string, filename: string, mime: string) {
+  const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+const downloadCSV  = (h: string[], r: (string|number|null|undefined)[][], name: string) => downloadBlob(buildCSV(h, r), name, "text/csv");
+const downloadJSON = (data: unknown, name: string) => downloadBlob(JSON.stringify(data, null, 2), name, "application/json");
 
 /* ================= PÁGINA ================= */
 export default function ReportesPage() {
   const d = useData();
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
+  const [year,  setYear]  = useState(now.getFullYear());
+  const [month, setMonth] = useState<number | "all">(now.getMonth());
+  const [sedeId, setSedeId] = useState<string | "all">("all");
 
-  /* Planilla por mes del año */
-  const planillaPorMes = useMemo(() => {
-    const res: number[] = Array.from({ length: 12 }, () => 0);
-    for (const w of d.workers) {
-      if (w.rol !== "trabajador" || !w.activo) continue;
-      for (const a of d.asistencia) {
-        if (a.workerId !== w.id) continue;
-        const [y, m] = a.fecha.split("-").map(Number);
-        if (y !== year) continue;
-        res[m-1] += ingresoDia(a, w.tarifas, isWeekendISO(a.fecha), esFeriadoOficial(a.fecha).es);
+  /* ====== Filtrado base ====== */
+  const inRange = (iso: string) => {
+    const [y, m] = iso.split("-").map(Number);
+    if (y !== year) return false;
+    if (month !== "all" && (m - 1) !== month) return false;
+    return true;
+  };
+  const sedeOk = (sId: string) => sedeId === "all" || sId === sedeId;
+
+  const workersFiltrados = useMemo(
+    () => d.workers.filter(w => w.rol === "trabajador" && sedeOk(w.sedeId)),
+    [d.workers, sedeId]
+  );
+  const sedeMap   = useMemo(() => Object.fromEntries(d.sedes.map(s => [s.id, s.nombre])), [d.sedes]);
+  const workerMap = useMemo(() => Object.fromEntries(d.workers.map(w => [w.id, w])), [d.workers]);
+
+  /* ====== Totales y métricas resumidas ====== */
+  const resumen = useMemo(() => {
+    let totalAsistencias = 0, totalTard = 0, totalAus = 0, totalPerm = 0;
+    let bruto = 0;
+    for (const a of d.asistencia) {
+      if (!inRange(a.fecha)) continue;
+      const w = workerMap[a.workerId];
+      if (!w) continue;
+      if (!sedeOk(a.sedeIdDia ?? w.sedeId)) continue;
+      if (a.estado === "presente")  totalAsistencias++;
+      if (a.estado === "tardanza") { totalAsistencias++; totalTard++; }
+      if (a.estado === "ausente")   totalAus++;
+      if (a.estado === "permiso")   totalPerm++;
+      if (w.rol === "trabajador") {
+        bruto += ingresoDia(a, w.tarifas, isWeekendISO(a.fecha), esFeriadoOficial(a.fecha).es);
       }
     }
-    return res;
-  }, [d.workers, d.asistencia, year]);
-
-  /* Comisiones jaladores por mes */
-  const comisionesPorMes = useMemo(() => {
-    const res: number[] = Array.from({ length: 12 }, () => 0);
+    let comisiones = 0, ingresoJal = 0;
     for (const i of d.ingresosJaladores) {
+      if (!inRange(i.fecha)) continue;
       const j = d.jaladores.find(x => x.id === i.jaladorId);
       if (!j) continue;
-      const [y, m] = i.fecha.split("-").map(Number);
-      if (y !== year) continue;
-      res[m-1] += i.monto * j.porcentajeComision / 100;
+      if (!sedeOk(j.sedeId)) continue;
+      ingresoJal += i.monto;
+      comisiones += i.monto * j.porcentajeComision / 100;
     }
-    return res;
-  }, [d.ingresosJaladores, d.jaladores, year]);
+    let adelantos = 0, adelCount = 0;
+    for (const a of d.adelantos) {
+      if (!inRange(a.fecha) || a.estado !== "aprobado") continue;
+      const w = workerMap[a.workerId];
+      if (!w || !sedeOk(w.sedeId)) continue;
+      adelantos += a.monto; adelCount++;
+    }
+    return { totalAsistencias, totalTard, totalAus, totalPerm, bruto, comisiones, ingresoJal, adelantos, adelCount };
+  }, [d.asistencia, d.adelantos, d.ingresosJaladores, d.jaladores, workerMap, year, month, sedeId]);
 
-  /* Asistencia % por mes */
-  const asistenciaPorMes = useMemo(() => {
-    const res: number[] = Array.from({ length: 12 }, () => 0);
-    const trabajadores = d.workers.filter(w => w.rol === "trabajador" && w.activo);
-    for (let m = 0; m < 12; m++) {
-      const dim = new Date(year, m+1, 0).getDate();
-      let presencias = 0, total = 0;
-      for (let day = 1; day <= dim; day++) {
-        const iso = `${year}-${String(m+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-        for (const w of trabajadores) {
-          total += 1;
-          const rec = d.asistencia.find(a => a.workerId === w.id && a.fecha === iso);
-          if (rec && (rec.estado === "presente" || rec.estado === "tardanza")) presencias += 1;
+  /* ====== Sufijo de archivo ====== */
+  const suf = `${year}${month === "all" ? "" : `-${String(Number(month)+1).padStart(2,"0")}`}${sedeId === "all" ? "" : `_${sedeMap[sedeId] ?? sedeId}`}`.replace(/\s+/g, "-");
+
+  /* ====== EXPORTS ====== */
+  /* 1. Planilla resumida por trabajador */
+  const exportPlanilla = () => {
+    const rows = workersFiltrados.map(w => {
+      let dN = 0, dT = 0, dF = 0, dH = 0, bruto = 0;
+      for (const a of d.asistencia) {
+        if (a.workerId !== w.id || !inRange(a.fecha)) continue;
+        const fds = isWeekendISO(a.fecha);
+        const fer = esFeriadoOficial(a.fecha).es;
+        if (a.estado === "presente" || a.estado === "tardanza") {
+          if (fer) dH++; else if (fds) dF++; else if (a.estado === "tardanza") dT++; else dN++;
+          bruto += ingresoDia(a, w.tarifas, fds, fer);
         }
       }
-      res[m] = total ? Math.round((presencias/total) * 100) : 0;
+      const adel = d.adelantos
+        .filter(a => a.workerId === w.id && a.estado === "aprobado" && inRange(a.fecha))
+        .reduce((s, a) => s + a.monto, 0);
+      return [w.id, w.nombre, w.apodo, sedeMap[w.sedeId] ?? "", w.cargo,
+              dN, dT, dF, dH, dN + dT + dF + dH, bruto.toFixed(2), adel.toFixed(2), (bruto - adel).toFixed(2)];
+    });
+    downloadCSV(
+      ["WorkerID","Nombre","Apodo","Sede","Cargo","DiasNormales","DiasTardanza","DiasFinSemana","DiasFeriado","DiasTotal","Bruto","Adelantos","Neto"],
+      rows, `planilla_${suf}.csv`
+    );
+  };
+
+  /* 2. Asistencia detallada */
+  const exportAsistencia = () => {
+    const rows = d.asistencia
+      .filter(a => inRange(a.fecha))
+      .filter(a => { const w = workerMap[a.workerId]; return w && sedeOk(a.sedeIdDia ?? w.sedeId); })
+      .sort((a, b) => a.fecha.localeCompare(b.fecha))
+      .map(a => {
+        const w = workerMap[a.workerId];
+        return [a.fecha, w?.nombre ?? "—", w?.apodo ?? "", sedeMap[a.sedeIdDia ?? w?.sedeId ?? ""] ?? "",
+                a.estado, a.entrada ?? "", a.salida ?? "",
+                a.turnoEntrada ?? w?.turno.entrada ?? "", a.turnoSalida ?? w?.turno.salida ?? "",
+                a.overrideIngreso ?? "", a.motivoEdit ?? ""];
+      });
+    downloadCSV(
+      ["Fecha","Trabajador","Apodo","Sede","Estado","Entrada","Salida","TurnoEsperadoEntrada","TurnoEsperadoSalida","OverrideIngreso","MotivoEdicion"],
+      rows, `asistencia_${suf}.csv`
+    );
+  };
+
+  /* 3. Sueldo detallado por día */
+  const exportSueldoDetalle = () => {
+    const rows: (string|number)[][] = [];
+    for (const w of workersFiltrados) {
+      for (const a of d.asistencia) {
+        if (a.workerId !== w.id || !inRange(a.fecha)) continue;
+        const fds = isWeekendISO(a.fecha);
+        const fer = esFeriadoOficial(a.fecha).es;
+        const tipoDia = fer ? "Feriado" : fds ? "FinSemana" : a.estado === "tardanza" ? "Tardanza" : "Normal";
+        const ingreso = (a.estado === "presente" || a.estado === "tardanza")
+          ? ingresoDia(a, w.tarifas, fds, fer) : 0;
+        rows.push([a.fecha, w.nombre, w.apodo, sedeMap[a.sedeIdDia ?? w.sedeId] ?? "",
+                   a.estado, tipoDia, a.overrideIngreso ?? "", ingreso.toFixed(2)]);
+      }
     }
-    return res;
-  }, [d.workers, d.asistencia, year]);
+    downloadCSV(
+      ["Fecha","Trabajador","Apodo","Sede","Estado","TipoDia","Override","Ingreso"],
+      rows.sort((a,b) => String(a[0]).localeCompare(String(b[0]))),
+      `sueldo_detalle_${suf}.csv`
+    );
+  };
 
-  /* Top jaladores */
-  const topJaladores = useMemo(() => {
-    return d.jaladores
-      .filter(j => j.activo)
-      .map(j => {
-        const ing = d.ingresosJaladores
-          .filter(i => i.jaladorId === j.id)
-          .filter(i => i.fecha.startsWith(String(year)))
-          .reduce((a,i) => a + i.monto, 0);
-        return { label: j.apodo || j.nombre.split(" ")[0], value: ing };
-      })
-      .sort((a,b) => b.value - a.value)
-      .slice(0, 6);
-  }, [d.jaladores, d.ingresosJaladores, year]);
+  /* 4. Adelantos */
+  const exportAdelantos = () => {
+    const rows = d.adelantos
+      .filter(a => inRange(a.fecha))
+      .filter(a => { const w = workerMap[a.workerId]; return w && sedeOk(w.sedeId); })
+      .sort((a,b) => a.fecha.localeCompare(b.fecha))
+      .map(a => {
+        const w = workerMap[a.workerId];
+        return [a.fecha, w?.nombre ?? "—", w?.apodo ?? "", sedeMap[w?.sedeId ?? ""] ?? "",
+                a.monto.toFixed(2), a.estado, a.motivo, a.nota ?? ""];
+      });
+    downloadCSV(
+      ["Fecha","Trabajador","Apodo","Sede","Monto","Estado","Motivo","Nota"],
+      rows, `adelantos_${suf}.csv`
+    );
+  };
 
-  /* Ingresos por sede */
-  const ingresosPorSede = d.sedes.map(s => ({ label: s.nombre, value: s.cajaMes.ingresos, color: s.color }));
+  /* 5. Permisos */
+  const exportPermisos = () => {
+    const rows = d.permisos
+      .filter(p => inRange(p.fecha))
+      .filter(p => { const w = workerMap[p.workerId]; return w && sedeOk(w.sedeId); })
+      .sort((a,b) => a.fecha.localeCompare(b.fecha))
+      .map(p => {
+        const w = workerMap[p.workerId];
+        return [p.fecha, w?.nombre ?? "—", w?.apodo ?? "", sedeMap[w?.sedeId ?? ""] ?? "",
+                p.tipo, p.estado, p.motivo];
+      });
+    downloadCSV(
+      ["Fecha","Trabajador","Apodo","Sede","Tipo","Estado","Motivo"],
+      rows, `permisos_${suf}.csv`
+    );
+  };
 
-  /* Total bruto año */
-  const totalPlanillaAnio = planillaPorMes.reduce((a, x) => a + x, 0);
-  const totalComisionesAnio = comisionesPorMes.reduce((a, x) => a + x, 0);
+  /* 6. Jaladores — comisiones */
+  const exportJaladores = () => {
+    const rows = d.ingresosJaladores
+      .filter(i => inRange(i.fecha))
+      .filter(i => { const j = d.jaladores.find(x => x.id === i.jaladorId); return j && sedeOk(j.sedeId); })
+      .sort((a,b) => a.fecha.localeCompare(b.fecha))
+      .map(i => {
+        const j = d.jaladores.find(x => x.id === i.jaladorId)!;
+        const com = i.monto * j.porcentajeComision / 100;
+        return [i.fecha, j.nombre, j.apodo, sedeMap[j.sedeId] ?? "",
+                i.monto.toFixed(2), j.porcentajeComision, com.toFixed(2), i.nota ?? ""];
+      });
+    downloadCSV(
+      ["Fecha","Jalador","Apodo","Sede","IngresoBruto","%Comision","Comision","Nota"],
+      rows, `jaladores_${suf}.csv`
+    );
+  };
+
+  /* 7. Trabajadores activos (perfil) */
+  const exportTrabajadores = () => {
+    const rows = d.workers
+      .filter(w => sedeOk(w.sedeId))
+      .map(w => [w.id, w.nombre, w.apodo, w.dni ?? "", w.email, w.telefono ?? "",
+                 w.rol, sedeMap[w.sedeId] ?? "", w.cargo, w.fechaIngreso, w.activo ? "SI" : "NO",
+                 w.turno.entrada, w.turno.salida,
+                 w.tarifas.diaNormal, w.tarifas.tardanza, w.tarifas.finSemana, w.tarifas.feriado]);
+    downloadCSV(
+      ["ID","Nombre","Apodo","DNI","Email","Telefono","Rol","Sede","Cargo","FechaIngreso","Activo",
+       "TurnoEntrada","TurnoSalida","TarifaNormal","TarifaTardanza","TarifaFinSemana","TarifaFeriado"],
+      rows, `trabajadores_${suf}.csv`
+    );
+  };
+
+  /* 8. Sedes */
+  const exportSedes = () => {
+    const rows = d.sedes
+      .filter(s => sedeOk(s.id))
+      .map(s => {
+        const enc = s.encargadoId ? workerMap[s.encargadoId]?.nombre ?? "" : "";
+        return [s.id, s.nombre, s.direccion, s.telefono, s.horario, enc, s.activa ? "SI" : "NO",
+                s.cajaDia.ingresos, s.cajaSemana.ingresos, s.cajaMes.ingresos,
+                s.cajaDia.material, s.cajaSemana.material, s.cajaMes.material];
+      });
+    downloadCSV(
+      ["ID","Nombre","Direccion","Telefono","Horario","Encargado","Activa",
+       "IngresosDia","IngresosSemana","IngresosMes","MaterialDia","MaterialSemana","MaterialMes"],
+      rows, `sedes_${suf}.csv`
+    );
+  };
+
+  /* 9. Eventos */
+  const exportEventos = () => {
+    const rows = d.eventos
+      .filter(e => inRange(e.date))
+      .sort((a,b) => a.date.localeCompare(b.date))
+      .map(e => [e.date, e.nombre, e.tipo, e.pagado ? "SI" : "NO", e.descripcion ?? ""]);
+    downloadCSV(
+      ["Fecha","Nombre","Tipo","Pagado","Descripcion"],
+      rows, `eventos_${suf}.csv`
+    );
+  };
+
+  /* 10. Resumen mensual del año */
+  const exportResumenMensual = () => {
+    const rows = MESES.map((mLabel, m) => {
+      let bruto = 0, asis = 0, tard = 0, aus = 0;
+      for (const a of d.asistencia) {
+        const [y, mo] = a.fecha.split("-").map(Number);
+        if (y !== year || (mo - 1) !== m) continue;
+        const w = workerMap[a.workerId];
+        if (!w || !sedeOk(a.sedeIdDia ?? w.sedeId)) continue;
+        if (a.estado === "presente" || a.estado === "tardanza") {
+          asis++;
+          if (a.estado === "tardanza") tard++;
+          if (w.rol === "trabajador") bruto += ingresoDia(a, w.tarifas, isWeekendISO(a.fecha), esFeriadoOficial(a.fecha).es);
+        }
+        if (a.estado === "ausente") aus++;
+      }
+      let com = 0, ingJ = 0;
+      for (const i of d.ingresosJaladores) {
+        const [y, mo] = i.fecha.split("-").map(Number);
+        if (y !== year || (mo - 1) !== m) continue;
+        const j = d.jaladores.find(x => x.id === i.jaladorId);
+        if (!j || !sedeOk(j.sedeId)) continue;
+        ingJ += i.monto; com += i.monto * j.porcentajeComision / 100;
+      }
+      let adel = 0;
+      for (const a of d.adelantos) {
+        const [y, mo] = a.fecha.split("-").map(Number);
+        if (y !== year || (mo - 1) !== m || a.estado !== "aprobado") continue;
+        const w = workerMap[a.workerId];
+        if (!w || !sedeOk(w.sedeId)) continue;
+        adel += a.monto;
+      }
+      return [year, String(m+1).padStart(2,"0"), mLabel,
+              asis, tard, aus,
+              bruto.toFixed(2), ingJ.toFixed(2), com.toFixed(2), adel.toFixed(2),
+              (bruto - adel).toFixed(2)];
+    });
+    downloadCSV(
+      ["Anio","Mes","MesNombre","Asistencias","Tardanzas","Ausencias","BrutoPlanilla","IngresoJaladores","Comisiones","Adelantos","NetoPlanilla"],
+      rows, `resumen_mensual_${year}${sedeId === "all" ? "" : `_${sedeMap[sedeId]}`}.csv`
+    );
+  };
+
+  /* 11. Snapshot completo (JSON) */
+  const exportSnapshot = () => {
+    downloadJSON({
+      generado: new Date().toISOString(),
+      filtros: { year, month, sedeId },
+      sedes: d.sedes,
+      workers: d.workers,
+      asistencia: d.asistencia,
+      adelantos: d.adelantos,
+      permisos: d.permisos,
+      eventos: d.eventos,
+      jaladores: d.jaladores,
+      ingresosJaladores: d.ingresosJaladores,
+      accesosTemporales: d.accesosTemporales,
+    }, `snapshot_tramys_${suf}.json`);
+  };
+
+  /* 12. Auditoría de accesos temporales */
+  const exportAccesos = () => {
+    const rows = d.accesosTemporales
+      .filter(a => { const w = workerMap[a.workerId]; return w && sedeOk(w.sedeId); })
+      .sort((a,b) => a.desde.localeCompare(b.desde))
+      .map(a => {
+        const w = workerMap[a.workerId];
+        const otorgador = workerMap[a.otorgadoPor];
+        return [a.id, w?.nombre ?? "—", sedeMap[w?.sedeId ?? ""] ?? "",
+                a.rolOriginal ?? "", a.rolOtorgado, a.desde, a.hasta,
+                otorgador?.nombre ?? "", a.motivo];
+      });
+    downloadCSV(
+      ["ID","Trabajador","Sede","RolOriginal","RolOtorgado","Desde","Hasta","Otorgadopor","Motivo"],
+      rows, `accesos_temporales_${suf}.csv`
+    );
+  };
+
+  /* ====== Tarjetas de export ====== */
+  const grupos: { titulo: string; descripcion: string; items: { label: string; desc: string; icon: string; color: string; onClick: () => void; format: "CSV" | "JSON"; }[] }[] = [
+    {
+      titulo: "Operaciones · Asistencia y planilla",
+      descripcion: "Datos del periodo seleccionado",
+      items: [
+        { label:"Planilla resumida",     desc:"Días por tipo, bruto, adelantos y neto por trabajador", icon:"planilla",   color:"#C41A3A", onClick: exportPlanilla,      format:"CSV" },
+        { label:"Asistencia detallada",  desc:"Cada marca con sede del día, entrada/salida y override", icon:"asistencia", color:"#6366f1", onClick: exportAsistencia,    format:"CSV" },
+        { label:"Sueldo por día",        desc:"Detalle día por día del cálculo dinámico",              icon:"sueldo",     color:"#16a34a", onClick: exportSueldoDetalle, format:"CSV" },
+        { label:"Resumen mensual del año", desc:"12 filas con totales del año (sin filtro de mes)",     icon:"reportes",   color:"#0891b2", onClick: exportResumenMensual,format:"CSV" },
+      ],
+    },
+    {
+      titulo: "Solicitudes y eventos",
+      descripcion: "Adelantos, permisos y calendario",
+      items: [
+        { label:"Adelantos",  desc:"Estado, monto, motivo y nota",          icon:"adelantos", color:"#f59e0b", onClick: exportAdelantos, format:"CSV" },
+        { label:"Permisos",   desc:"Tipo, fecha y estado de cada solicitud", icon:"file_check", color:"#8b5cf6", onClick: exportPermisos,  format:"CSV" },
+        { label:"Eventos",    desc:"Cumpleaños, feriados de empresa y otros", icon:"cumpleanos", color:"#ec4899", onClick: exportEventos,   format:"CSV" },
+      ],
+    },
+    {
+      titulo: "Comerciales · Jaladores",
+      descripcion: "Ingresos generados y comisiones",
+      items: [
+        { label:"Comisiones jaladores", desc:"Ingreso bruto, % de comisión y comisión calculada", icon:"jaladores", color:"#dc2626", onClick: exportJaladores, format:"CSV" },
+      ],
+    },
+    {
+      titulo: "Maestros · Catálogo",
+      descripcion: "Información estructural (independiente del periodo)",
+      items: [
+        { label:"Trabajadores", desc:"Perfil completo, tarifas y turno",  icon:"trabajadores", color:"#0ea5e9", onClick: exportTrabajadores, format:"CSV" },
+        { label:"Sedes",        desc:"Datos de contacto, encargado y caja", icon:"sedes",      color:"#7c3aed", onClick: exportSedes,        format:"CSV" },
+      ],
+    },
+    {
+      titulo: "Auditoría y backup",
+      descripcion: "Para revisión y respaldo completo",
+      items: [
+        { label:"Accesos temporales", desc:"Histórico de impersonaciones con caducidad", icon:"accesos", color:"#475569", onClick: exportAccesos,   format:"CSV"  },
+        { label:"Snapshot completo",  desc:"Backup JSON con TODA la base de datos",     icon:"download", color:"#1e293b", onClick: exportSnapshot,  format:"JSON" },
+      ],
+    },
+  ];
+
+  /* ====== KPIs ====== */
+  const periodoLabel = month === "all" ? `Año ${year}` : `${MESES[Number(month)]} ${year}`;
+  const sedeLabel    = sedeId === "all" ? "Todas las sedes" : sedeMap[sedeId];
+  const totalRows    = d.asistencia.length + d.adelantos.length + d.permisos.length
+                     + d.eventos.length + d.ingresosJaladores.length + d.workers.length + d.sedes.length;
 
   return (
     <>
-      <Topbar title="Reportes" subtitle={`Vista analítica · ${year}`} />
+      <Topbar title="Reportes" subtitle={`Exportación de datos · ${periodoLabel}`} />
       <main className="page-main">
 
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
-          <div style={{ fontSize: 13, color:"var(--text-muted)" }}>Selecciona año para visualizar todos los datos</div>
+        {/* ====== Filtros ====== */}
+        <div className="card" style={{ marginBottom: 14, display:"flex", gap: 10, alignItems:"center", flexWrap:"wrap" }}>
+          <div style={{ display:"flex", alignItems:"center", gap: 8, flex:"1 1 auto" }}>
+            <Icon name="reportes" size={18} color="var(--brand)" />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Filtros del reporte</div>
+              <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>{periodoLabel} · {sedeLabel}</div>
+            </div>
+          </div>
+          <select className="select-base" value={String(month)} onChange={e=>setMonth(e.target.value === "all" ? "all" : Number(e.target.value))}>
+            <option value="all">Todo el año</option>
+            {MESES.map((m, i) => <option key={m} value={i}>{m}</option>)}
+          </select>
           <select className="select-base" value={year} onChange={e=>setYear(Number(e.target.value))}>
-            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+            {[2023, 2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select className="select-base" value={sedeId} onChange={e=>setSedeId(e.target.value)}>
+            <option value="all">Todas las sedes</option>
+            {d.sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
           </select>
         </div>
 
-        {/* Planilla + comisiones línea */}
-        <div className="card" style={{ marginBottom: 14 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 8, flexWrap:"wrap", gap: 8 }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>Planilla y comisiones del año</div>
-              <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>Tendencia mensual</div>
+        {/* ====== KPIs del periodo ====== */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 14 }}>
+          {[
+            { label:"Asistencias",  value: String(resumen.totalAsistencias), color:"#16a34a", sub:`${resumen.totalTard} tardanzas` },
+            { label:"Ausencias",    value: String(resumen.totalAus),         color:"#dc2626", sub:`${resumen.totalPerm} permisos` },
+            { label:"Bruto planilla", monto: resumen.bruto,                 color:"var(--brand)", sub:"Antes de adelantos" },
+            { label:"Adelantos aprobados", monto: resumen.adelantos,         color:"#f59e0b", sub:`${resumen.adelCount} solicitudes` },
+            { label:"Ingreso jaladores", monto: resumen.ingresoJal,          color:"#6366f1", sub:`Comisión ${money(resumen.comisiones)}` },
+          ].map(k => (
+            <div key={k.label} className="card" style={{ padding: 12, borderLeft: `4px solid ${k.color}` }}>
+              <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6 }}>{k.label}</div>
+              {"monto" in k
+                ? <HideableAmount value={money(k.monto)} size={18} color={k.color} weight={800} fontFamily="'DM Mono',monospace" />
+                : <div style={{ fontWeight: 800, fontSize: 18, color: k.color, fontFamily:"'DM Mono',monospace" }}>{k.value}</div>}
+              <div style={{ fontSize: 10, color:"var(--text-muted)", marginTop: 2 }}>{k.sub}</div>
             </div>
-            <div style={{ display:"flex", gap: 14 }}>
-              <div>
-                <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>Planilla total</div>
-                <HideableAmount value={money(totalPlanillaAnio)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>Comisiones total</div>
-                <HideableAmount value={money(totalComisionesAnio)} size={15} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
-              </div>
-            </div>
-          </div>
-          <LineChart
-            series={[
-              { label:"Planilla", color:"#C41A3A", values: planillaPorMes },
-              { label:"Comisiones", color:"#16a34a", values: comisionesPorMes },
-            ]}
-            height={200}
-          />
-          <div style={{ display:"flex", gap: 16, marginTop: 10 }}>
-            <div style={{ display:"flex", alignItems:"center", gap: 6, fontSize: 11, color:"var(--text-muted)" }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background:"#C41A3A" }} /> Planilla
-            </div>
-            <div style={{ display:"flex", alignItems:"center", gap: 6, fontSize: 11, color:"var(--text-muted)" }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background:"#16a34a" }} /> Comisiones
-            </div>
-          </div>
+          ))}
         </div>
 
-        {/* Asistencia % línea + top jaladores */}
-        <div className="grid-2">
-          <div className="card">
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Asistencia mensual (%)</div>
-            <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom: 12 }}>Promedio general</div>
-            <LineChart series={[{ label:"Asistencia", color:"#6366f1", values: asistenciaPorMes }]} height={180} />
-          </div>
-
-          <div className="card">
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Top jaladores del año</div>
-            <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom: 12 }}>Por ingresos totales</div>
-            <HBars data={topJaladores} color="#C41A3A" />
-          </div>
-        </div>
-
-        {/* Ingresos por sede */}
-        <div className="card" style={{ marginTop: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Ingresos por sede (mes)</div>
-          <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginBottom: 14 }}>Caja mensual</div>
-          <div style={{ display:"flex", gap: 12, flexWrap:"wrap" }}>
-            {ingresosPorSede.map(s => {
-              const max = Math.max(...ingresosPorSede.map(x => x.value), 1);
-              const pct = Math.round((s.value / max) * 100);
-              return (
-                <div key={s.label} style={{ flex:"1 1 220px", background:"var(--bg)", border:"1px solid var(--border)", borderLeft:`4px solid ${s.color}`, borderRadius: 10, padding: 12 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 6 }}>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{s.label}</span>
-                    <HideableAmount value={money(s.value)} size={13} color={s.color} weight={800} fontFamily="'DM Mono',monospace" />
+        {/* ====== Grupos de exportación ====== */}
+        {grupos.map(g => (
+          <div key={g.titulo} className="card" style={{ marginBottom: 14 }}>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{g.titulo}</div>
+              <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>{g.descripcion}</div>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
+              {g.items.map(it => (
+                <button key={it.label} onClick={it.onClick}
+                  style={{
+                    display:"flex", alignItems:"center", gap: 10, textAlign:"left",
+                    padding: 12, borderRadius: 10, cursor:"pointer",
+                    background:"var(--bg)",
+                    border: `1px solid ${it.color}33`,
+                    borderLeft: `4px solid ${it.color}`,
+                    transition: "transform .15s, box-shadow .15s",
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 14px rgba(0,0,0,0.06)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)";    (e.currentTarget as HTMLElement).style.boxShadow = "none"; }}
+                >
+                  <div style={{ width: 38, height: 38, borderRadius: 9, background: `${it.color}18`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink: 0 }}>
+                    <Icon name={it.icon} size={18} color={it.color} />
                   </div>
-                  <div style={{ height: 8, background:"var(--border)", borderRadius: 99, overflow:"hidden" }}>
-                    <div style={{ height:"100%", width: `${pct}%`, background: `linear-gradient(90deg, ${s.color}88, ${s.color})` }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, display:"flex", alignItems:"center", gap: 6, flexWrap:"wrap" }}>
+                      {it.label}
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, padding:"2px 6px", borderRadius: 99,
+                        fontFamily:"'DM Mono',monospace",
+                        background: `${it.color}18`, color: it.color,
+                      }}>{it.format}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color:"var(--text-muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{it.desc}</div>
                   </div>
-                </div>
-              );
-            })}
+                  <Icon name="download" size={14} color={it.color} />
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ))}
 
-        {/* Exportar */}
-        <div className="card" style={{ marginTop: 14, borderLeft:"4px solid var(--brand)" }}>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Exportar datos</div>
-          <div style={{ fontSize: 12, color:"var(--text-muted)", marginBottom: 14 }}>Descarga los reportes en los formatos disponibles</div>
-          <div style={{ display:"flex", gap: 10, flexWrap:"wrap" }}>
-            <button className="btn-primary" style={{ display:"inline-flex", alignItems:"center", gap: 6 }}><Icon name="download" size={13} color="#fff" /> Planilla PDF</button>
-            <button className="btn-outline" style={{ display:"inline-flex", alignItems:"center", gap: 6 }}><Icon name="download" size={13} /> Asistencia Excel</button>
-            <button className="btn-outline" style={{ display:"inline-flex", alignItems:"center", gap: 6 }}><Icon name="download" size={13} /> Jaladores Excel</button>
-            <button className="btn-outline" style={{ display:"inline-flex", alignItems:"center", gap: 6 }}><Icon name="download" size={13} /> Reporte completo ZIP</button>
-          </div>
+        {/* ====== Footer info ====== */}
+        <div style={{ fontSize: 11, color:"var(--text-muted)", textAlign:"center", padding:"8px 0 4px", fontFamily:"'DM Mono',monospace" }}>
+          {totalRows} registros disponibles · CSV con BOM (compatible con Excel) · Codificación UTF-8
         </div>
       </main>
     </>

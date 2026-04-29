@@ -10,10 +10,11 @@ const PRIMARY = [
   { href:"/mi-panel",      icon:"home",      label:"Inicio"     },
   { href:"/mi-asistencia", icon:"clock",     label:"Asistencia" },
   { href:"/mi-sueldo",     icon:"money_bill", label:"Sueldo"    },
-  { href:"/mis-adelantos", icon:"hand_coin", label:"Adelantos"  },
+  { href:"/mis-adelantos", icon:"adelantos", label:"Adelantos"  },
 ];
 const MORE = [
   { href:"/mis-permisos", icon:"file_check", label:"Permisos" },
+  { href:"/mis-eventos",  icon:"calendar",   label:"Eventos"  },
   { href:"/mis-alertas",  icon:"bell",       label:"Alertas"  },
 ];
 

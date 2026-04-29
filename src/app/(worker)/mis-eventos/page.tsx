@@ -31,119 +31,82 @@ function labelTipo(t: TipoEvento): string {
   return "Evento";
 }
 
-/* ================= MODAL CREAR/EDITAR ================= */
-function ModalEvento({
-  open, onClose, evento, fechaDefault,
+/* ================= MODAL DETALLE (solo lectura) ================= */
+function ModalDetalleEvento({
+  open, onClose, evento,
 }: {
   open: boolean; onClose: () => void;
   evento: Evento | null;
-  fechaDefault?: string;
 }) {
-  const d = useData();
-  const esNuevo = !evento;
-  const [nombre, setNombre]   = useState(evento?.nombre ?? "");
-  const [fecha, setFecha]     = useState(evento?.date ?? fechaDefault ?? new Date().toISOString().slice(0,10));
-  const [tipo, setTipo]       = useState<TipoEvento>(evento?.tipo ?? "otro");
-  const [pagado, setPagado]   = useState(evento?.pagado ?? true);
-  const [desc, setDesc]       = useState(evento?.descripcion ?? "");
-
-  useMemo(() => {
-    setNombre(evento?.nombre ?? "");
-    setFecha(evento?.date ?? fechaDefault ?? new Date().toISOString().slice(0,10));
-    setTipo(evento?.tipo ?? "otro");
-    setPagado(evento?.pagado ?? true);
-    setDesc(evento?.descripcion ?? "");
-  }, [evento?.id, fechaDefault, open]); // eslint-disable-line
-
-  function guardar() {
-    if (!nombre.trim() || !fecha) return;
-    const data = {
-      nombre: nombre.trim(), date: fecha, tipo,
-      ...(tipo === "cumpleanos" ? { } : { pagado }),
-      descripcion: desc.trim() || undefined,
-    };
-    if (evento) d.updateEvento(evento.id, data);
-    else d.addEvento(data);
-    onClose();
-  }
-
-  const TIPOS: TipoEvento[] = ["cumpleanos","feriado-nacional","feriado-empresa","otro"];
+  if (!evento) return null;
+  const fechaFmt = new Date(evento.date + "T00:00:00").toLocaleDateString("es-PE", {
+    day:"numeric", month:"long", year:"numeric",
+  });
 
   return (
-    <Modal open={open} onClose={onClose} title={esNuevo ? "Nuevo evento" : "Editar evento"} width={460}>
-      <div style={{ display:"flex", flexDirection:"column", gap: 14, marginBottom: 18 }}>
-        <div>
-          <div className="section-label">Tipo</div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
-            {TIPOS.map(t => (
-              <button key={t} type="button" onClick={()=>setTipo(t)}
-                style={{
-                  padding:"9px 8px", borderRadius: 9, cursor:"pointer",
-                  border: `2px solid ${tipo===t ? colorTipo(t) : "var(--border)"}`,
-                  background: tipo===t ? `${colorTipo(t)}14` : "var(--bg)",
-                  color:      tipo===t ? colorTipo(t) : "var(--text-muted)",
-                  fontWeight: tipo===t ? 700 : 500, fontSize: 12,
-                  display:"inline-flex", alignItems:"center", justifyContent:"center", gap: 6,
-                }}>
-                <Icon name={iconTipo(t)} size={13} color={tipo===t ? colorTipo(t) : "currentColor"} />
-                {labelTipo(t)}
-              </button>
-            ))}
+    <Modal open={open} onClose={onClose} title="Detalle de evento" width={420}>
+      <div style={{ display:"flex", flexDirection:"column", gap: 14 }}>
+        <div style={{
+          display:"flex", alignItems:"center", gap: 12, padding: 14,
+          borderRadius: 12, background: `${colorTipo(evento.tipo)}10`,
+          borderLeft: `4px solid ${colorTipo(evento.tipo)}`,
+        }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 12,
+            background: `${colorTipo(evento.tipo)}24`,
+            display:"flex", alignItems:"center", justifyContent:"center", flexShrink: 0,
+          }}>
+            <Icon name={iconTipo(evento.tipo)} size={24} color={colorTipo(evento.tipo)} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 16, color: colorTipo(evento.tipo) }}>{evento.nombre}</div>
+            <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{labelTipo(evento.tipo)}</div>
           </div>
         </div>
-        <div>
-          <div className="section-label">Nombre</div>
-          <input className="input-base" value={nombre} onChange={e=>setNombre(e.target.value)} placeholder={tipo==="cumpleanos"?"Ej: Ana Torres":"Ej: Día del Trabajo"} />
-        </div>
+
         <div>
           <div className="section-label">Fecha</div>
-          <input type="date" className="input-base" value={fecha} onChange={e=>setFecha(e.target.value)} />
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{fechaFmt}</div>
         </div>
-        {tipo !== "cumpleanos" && (
+
+        {evento.tipo !== "cumpleanos" && (
           <div>
-            <div className="section-label">¿Es día pagado?</div>
-            <div style={{ display:"flex", gap: 8 }}>
-              {[true, false].map(v => (
-                <button key={String(v)} type="button" onClick={()=>setPagado(v)}
-                  style={{
-                    flex: 1, padding:"9px 0", borderRadius: 9, cursor:"pointer",
-                    border: `2px solid ${pagado===v ? "var(--brand)" : "var(--border)"}`,
-                    background: pagado===v ? "rgba(196,26,58,0.08)" : "var(--bg)",
-                    color: pagado===v ? "var(--brand)" : "var(--text-muted)",
-                    fontWeight: pagado===v ? 700 : 500, fontSize: 12,
-                  }}>{v ? "Sí, pagado" : "No pagado"}</button>
-              ))}
+            <div className="section-label">Día pagado</div>
+            <div style={{
+              display:"inline-flex", alignItems:"center", gap: 6,
+              padding:"4px 10px", borderRadius: 99,
+              background: evento.pagado ? "rgba(34,197,94,0.12)" : "rgba(148,163,184,0.18)",
+              color: evento.pagado ? "#16a34a" : "var(--text-muted)",
+              fontSize: 12, fontWeight: 700,
+            }}>
+              {evento.pagado ? "Sí, pagado" : "No pagado"}
             </div>
           </div>
         )}
-        <div><div className="section-label">Descripción (opcional)</div><textarea className="input-base" rows={2} value={desc} onChange={e=>setDesc(e.target.value)} /></div>
-      </div>
-      <div style={{ display:"flex", gap: 10 }}>
-        {!esNuevo && (
-          <button className="btn-ghost" style={{ color:"var(--brand)", border:"1px solid rgba(196,26,58,0.25)" }}
-            onClick={()=>{ if (evento) { d.deleteEvento(evento.id); onClose(); } }}>
-            Eliminar
-          </button>
+
+        {evento.descripcion && (
+          <div>
+            <div className="section-label">Descripción</div>
+            <div style={{ fontSize: 13, color:"var(--text)" }}>{evento.descripcion}</div>
+          </div>
         )}
-        <div style={{ flex: 1 }} />
-        <button className="btn-outline" onClick={onClose}>Cancelar</button>
-        <button className="btn-primary" onClick={guardar} disabled={!nombre.trim() || !fecha}>
-          {esNuevo ? "Crear" : "Guardar"}
-        </button>
+      </div>
+      <div style={{ display:"flex", justifyContent:"flex-end", marginTop: 18 }}>
+        <button className="btn-outline" onClick={onClose}>Cerrar</button>
       </div>
     </Modal>
   );
 }
 
-/* ================= PÁGINA ================= */
-export default function EventosPage() {
+/* ================= PÁGINA TRABAJADOR ================= */
+export default function MisEventosPage() {
   const d = useData();
   const today = useMemo(() => { const x = new Date(); x.setHours(0,0,0,0); return x; }, []);
   const [year, setYear]   = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [filtro, setFiltro] = useState<FiltroTipo>("todos");
   const [selIso, setSelIso] = useState<string | null>(null);
-  const [modal, setModal] = useState<{ evento: Evento | null; fecha?: string } | null>(null);
+  const [detalle, setDetalle] = useState<Evento | null>(null);
 
   /* Feriados oficiales sintetizados como eventos (solo lectura) */
   const feriadosOf: Evento[] = useMemo(() => {
@@ -184,13 +147,6 @@ export default function EventosPage() {
     });
   }
 
-  function abrirCrear(iso?: string) { setModal({ evento: null, fecha: iso }); }
-  function abrirEditar(id: string) {
-    if (id.startsWith("of_")) return;
-    const ev = d.eventos.find(e => e.id === id);
-    if (ev) setModal({ evento: ev });
-  }
-
   const eventosDia = selIso ? filtrados.filter(e => e.date === selIso) : [];
 
   return (
@@ -198,7 +154,7 @@ export default function EventosPage() {
       <Topbar title="Eventos" subtitle={`${todos.length} eventos en ${year}`} />
       <main className="page-main">
 
-        {/* Próximo evento card */}
+        {/* Próximo evento */}
         {proximo && (
           <div className="card" style={{ marginBottom: 14, borderLeft: `4px solid ${colorTipo(proximo.tipo)}`, display:"flex", alignItems:"center", gap: 14, flexWrap:"wrap" }}>
             <div style={{ width: 48, height: 48, borderRadius: 12, background: `${colorTipo(proximo.tipo)}18`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink: 0 }}>
@@ -212,10 +168,17 @@ export default function EventosPage() {
                 {" · "}{labelTipo(proximo.tipo)}
               </div>
             </div>
+            <button
+              className="btn-outline"
+              onClick={()=>setDetalle(proximo)}
+              style={{ display:"inline-flex", alignItems:"center", gap: 6 }}
+            >
+              <Icon name="eye" size={12} /> Ver
+            </button>
           </div>
         )}
 
-        {/* Filtros + acciones */}
+        {/* Filtros + navegación */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 12, gap: 10, flexWrap:"wrap" }}>
           <div style={{ display:"flex", gap: 6, background:"var(--card)", border:"1px solid var(--border)", borderRadius: 10, padding: 3 }}>
             {([
@@ -236,11 +199,6 @@ export default function EventosPage() {
               </button>
             ))}
           </div>
-
-          <label style={{ display:"flex", alignItems:"center", gap: 8, cursor:"pointer", fontSize: 12, fontWeight: 600, color:"var(--text-muted)" }}>
-            <input type="checkbox" checked={d.mostrarFeriadosOficiales} onChange={e => d.toggleFeriadosOficiales(e.target.checked)} />
-            Mostrar feriados oficiales Perú
-          </label>
 
           <div style={{ display:"flex", gap: 8, alignItems:"center" }}>
             <div style={{ display:"inline-flex", gap: 4 }}>
@@ -267,20 +225,8 @@ export default function EventosPage() {
             <select className="select-base" value={year} onChange={e=>setYear(Number(e.target.value))}>
               {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
-            <button className="btn-primary hide-mobile" style={{ display:"inline-flex", alignItems:"center", gap: 6 }} onClick={()=>abrirCrear()}>
-              <Icon name="plus" size={13} color="#fff" /> Agregar
-            </button>
           </div>
         </div>
-
-        {/* Botón "Agregar" — solo en móvil, ancho completo abajo del filtro */}
-        <button
-          className="btn-primary show-mobile"
-          style={{ display:"none", alignItems:"center", justifyContent:"center", gap: 6, width:"100%", marginBottom: 14, padding:"12px 0", minHeight: 44 }}
-          onClick={()=>abrirCrear()}
-        >
-          <Icon name="plus" size={14} color="#fff" /> Agregar evento
-        </button>
 
         {/* Calendario */}
         <div className="card" style={{ padding:"14px 18px", marginBottom: 14 }}>
@@ -362,7 +308,7 @@ export default function EventosPage() {
                   return (
                     <button
                       key={e.id}
-                      onClick={()=>setSelIso(e.date)}
+                      onClick={()=>{ setSelIso(e.date); setDetalle(e); }}
                       style={{
                         display:"flex", alignItems:"center", gap: 12,
                         padding:"9px 6px",
@@ -410,9 +356,6 @@ export default function EventosPage() {
                 <div style={{ fontWeight: 700, fontSize: 14 }}>Eventos del {selIso.slice(8,10)} de {MESES[Number(selIso.slice(5,7))-1]}</div>
                 <div style={{ fontSize: 11, color:"var(--text-muted)" }}>{eventosDia.length} registros</div>
               </div>
-              <button className="btn-outline" style={{ display:"inline-flex", alignItems:"center", gap: 6 }} onClick={()=>abrirCrear(selIso)}>
-                <Icon name="plus" size={12} /> Agregar aquí
-              </button>
             </div>
 
             {eventosDia.length === 0 ? (
@@ -420,13 +363,18 @@ export default function EventosPage() {
             ) : (
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(240px, 1fr))", gap: 10 }}>
                 {eventosDia.map(e => (
-                  <div key={e.id} style={{
-                    display:"flex", alignItems:"center", gap: 10,
-                    padding: 12, borderRadius: 10,
-                    background: "var(--bg)",
-                    border: `1px solid ${colorTipo(e.tipo)}33`,
-                    borderLeft: `4px solid ${colorTipo(e.tipo)}`,
-                  }}>
+                  <button
+                    key={e.id}
+                    onClick={()=>setDetalle(e)}
+                    style={{
+                      display:"flex", alignItems:"center", gap: 10,
+                      padding: 12, borderRadius: 10,
+                      background: "var(--bg)",
+                      border: `1px solid ${colorTipo(e.tipo)}33`,
+                      borderLeft: `4px solid ${colorTipo(e.tipo)}`,
+                      cursor:"pointer", textAlign:"left", width:"100%",
+                    }}
+                  >
                     <div style={{ width: 38, height: 38, borderRadius: 9, background: `${colorTipo(e.tipo)}18`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink: 0 }}>
                       <Icon name={iconTipo(e.tipo)} size={20} color={colorTipo(e.tipo)} />
                     </div>
@@ -434,12 +382,8 @@ export default function EventosPage() {
                       <div style={{ fontWeight: 700, fontSize: 13 }}>{e.nombre}</div>
                       <div style={{ fontSize: 10, color:"var(--text-muted)" }}>{labelTipo(e.tipo)}</div>
                     </div>
-                    {!e.id.startsWith("of_") && (
-                      <button className="btn-ghost" onClick={()=>abrirEditar(e.id)} style={{ display:"inline-flex", alignItems:"center", gap: 4, fontSize: 11 }}>
-                        <Icon name="edit" size={11} /> Editar
-                      </button>
-                    )}
-                  </div>
+                    <Icon name="chevron_right" size={12} color="var(--text-muted)" />
+                  </button>
                 ))}
               </div>
             )}
@@ -447,14 +391,11 @@ export default function EventosPage() {
         )}
       </main>
 
-      {modal && (
-        <ModalEvento
-          open={true}
-          onClose={()=>setModal(null)}
-          evento={modal.evento}
-          fechaDefault={modal.fecha}
-        />
-      )}
+      <ModalDetalleEvento
+        open={!!detalle}
+        onClose={()=>setDetalle(null)}
+        evento={detalle}
+      />
     </>
   );
 }

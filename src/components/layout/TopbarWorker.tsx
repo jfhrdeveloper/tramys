@@ -2,8 +2,12 @@
 
 /* ================= IMPORTS ================= */
 import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useClock } from "@/hooks/useClock";
 import { useTheme } from "@/components/providers/ThemeProvider";
+import { useSession } from "@/components/providers/SessionProvider";
+import { useData } from "@/components/providers/DataProvider";
 import { ModalAsistencia } from "@/components/worker/ModalAsistencia";
 import { Icon } from "@/components/ui/Icons";
 
@@ -20,7 +24,17 @@ export function TopbarWorker({ title, subtitle, onMenuToggle }: Props) {
   /* ====== Estados y hooks ====== */
   const { horaCorta, fechaCorta } = useClock();
   const { theme, toggleTheme }    = useTheme();
+  const { worker }                = useSession();
+  const d                         = useData();
+  const pathname                  = usePathname();
   const [showAsist, setShowAsist] = useState(false);
+
+  /* Contador de notificaciones: solicitudes pendientes del propio trabajador. */
+  const alertasCount = worker
+    ? d.adelantos.filter(a => a.workerId === worker.id && a.estado === "pendiente").length
+      + d.permisos.filter(p => p.workerId === worker.id && p.estado === "pendiente").length
+    : 0;
+  const enAlertas = pathname === "/mis-alertas";
 
   return (
     <>
@@ -29,7 +43,7 @@ export function TopbarWorker({ title, subtitle, onMenuToggle }: Props) {
           minHeight: 60,
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: "flex-start",
           padding: "10px 14px",
           background: "var(--card)",
           borderBottom: "1px solid var(--border)",
@@ -37,168 +51,147 @@ export function TopbarWorker({ title, subtitle, onMenuToggle }: Props) {
           position: "sticky",
           top: 0,
           zIndex: 10,
-          gap: 10,
+          gap: 8,
           width: "100%",
           maxWidth: "100%",
         }}
       >
 
-        {/* ====== Lado izquierdo: título (solo visible ≥ md) ====== */}
+        {/* ====== Reloj — extremo izquierdo ====== */}
         <div
-          className="topbar-left"
-          style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}
+          className="topbar-clock"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 99,
+            padding: "6px 12px",
+            flexShrink: 0,
+          }}
         >
-          {/* ==== Título + subtítulo — ocultos en mobile ==== */}
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: "clamp(14px, 2.2vw, 16px)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                lineHeight: 1.15,
-              }}
-            >
-              {title}
-            </div>
-            {subtitle && (
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "var(--text-muted)",
-                  fontFamily: "'DM Mono',monospace",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  marginTop: 2,
-                }}
-              >
-                {subtitle}
-              </div>
-            )}
-          </div>
+          <div
+            style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }}
+            className="animate-pulse-dot"
+          />
+          <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 600, fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+            {fechaCorta}
+          </span>
+          <span style={{ color: "var(--text-muted)", fontSize: 12, lineHeight: 1, opacity: 0.5 }}>·</span>
+          <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 600, fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+            {horaCorta}
+          </span>
         </div>
 
-        {/* ====== Lado derecho ====== */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        {/* ====== 1) Botón marcar asistencia (extremo derecho) ====== */}
+        <button
+          onClick={() => setShowAsist(true)}
+          aria-label="Marcar asistencia"
+          className="topbar-marcar-btn"
+          style={{
+            background: "linear-gradient(135deg,#a01530,#C41A3A)",
+            color: "#fff",
+            border: "none",
+            borderRadius: 9,
+            padding: "8px 14px",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 700,
+            fontFamily: "'Bricolage Grotesque',sans-serif",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            boxShadow: "0 2px 10px rgba(196,26,58,0.3)",
+            whiteSpace: "nowrap",
+            minHeight: 38,
+            flexShrink: 0,
+            marginLeft: "auto",
+          }}
+        >
+          <Icon name="timer" size={14} color="#fff" />
+          <span className="marcar-label">Marcar</span>
+        </button>
 
-          {/* ==== Reloj (fecha + hora juntas) ==== */}
-          <div
-            className="topbar-clock"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              background: "var(--bg)",
-              border: "1px solid var(--border)",
-              borderRadius: 99,
-              padding: "6px 12px",
-              flexShrink: 0,
-            }}
-          >
-            <div
-              style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }}
-              className="animate-pulse-dot"
-            />
+        {/* ====== 2) Notificaciones / alertas ====== */}
+        <Link
+          href="/mis-alertas"
+          aria-label={alertasCount > 0 ? `${alertasCount} notificaciones nuevas` : "Ver notificaciones"}
+          style={{
+            background: enAlertas ? "rgba(196,26,58,0.1)" : "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            width: 38,
+            height: 38,
+            cursor: "pointer",
+            color: enAlertas ? "var(--brand)" : "var(--text-muted)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            padding: 0,
+            flexShrink: 0,
+            textDecoration: "none",
+          }}
+        >
+          <Icon name="bell" size={16} color={enAlertas ? "var(--brand)" : "var(--text-muted)"} />
+          {alertasCount > 0 && (
             <span
-              style={{
-                fontFamily: "'DM Mono',monospace",
-                fontWeight: 600,
-                fontSize: 12,
-                color: "var(--text-muted)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {fechaCorta}
-            </span>
-            <span style={{ color: "var(--text-muted)", fontSize: 12, lineHeight: 1, opacity: 0.5 }}>·</span>
-            <span
-              style={{
-                fontFamily: "'DM Mono',monospace",
-                fontWeight: 600,
-                fontSize: 12,
-                color: "var(--text-muted)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {horaCorta}
-            </span>
-          </div>
-
-          {/* ==== Botón marcar asistencia ==== */}
-          <button
-            onClick={() => setShowAsist(true)}
-            aria-label="Marcar asistencia"
-            className="topbar-marcar-btn"
-            style={{
-              background: "linear-gradient(135deg,#a01530,#C41A3A)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 9,
-              padding: "8px 14px",
-              cursor: "pointer",
-              fontSize: 12,
-              fontWeight: 700,
-              fontFamily: "'Bricolage Grotesque',sans-serif",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              boxShadow: "0 2px 10px rgba(196,26,58,0.3)",
-              whiteSpace: "nowrap",
-              minHeight: 38,
-              flexShrink: 0,
-            }}
-          >
-            <Icon name="timer" size={14} color="#fff" />
-            <span className="marcar-label">Marcar</span>
-          </button>
-
-          {/* ==== Toggle tema ==== */}
-          <div
-            onClick={toggleTheme}
-            role="button"
-            aria-label="Cambiar tema"
-            style={{
-              width: 48,
-              height: 26,
-              borderRadius: 99,
-              cursor: "pointer",
-              background: theme === "dark" ? "var(--brand)" : "var(--border)",
-              position: "relative",
-              transition: "background 0.3s",
-              flexShrink: 0,
-            }}
-          >
-            <div
+              aria-hidden
               style={{
                 position: "absolute",
-                top: 3,
-                left: theme === "dark" ? 25 : 3,
-                width: 20,
-                height: 20,
+                top: 6,
+                right: 6,
+                width: 8,
+                height: 8,
                 borderRadius: "50%",
-                background: "#fff",
-                transition: "left 0.3s",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                background: "var(--brand)",
+                border: "2px solid var(--card)",
               }}
-            >
-              {theme === "dark"
-                ? <Icon name="moon" size={12} color="var(--brand)" />
-                : <Icon name="sun"  size={13} color="#f59e0b" />}
-            </div>
+            />
+          )}
+        </Link>
+
+        {/* ====== 3) Toggle tema (día / noche) ====== */}
+        <div
+          onClick={toggleTheme}
+          role="button"
+          aria-label="Cambiar tema"
+          style={{
+            width: 48,
+            height: 26,
+            borderRadius: 99,
+            cursor: "pointer",
+            background: theme === "dark" ? "var(--brand)" : "var(--border)",
+            position: "relative",
+            transition: "background 0.3s",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: 3,
+              left: theme === "dark" ? 25 : 3,
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: "#fff",
+              transition: "left 0.3s",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {theme === "dark"
+              ? <Icon name="moon" size={12} color="var(--brand)" />
+              : <Icon name="sun"  size={13} color="#f59e0b" />}
           </div>
         </div>
 
         {/* ====== Estilos responsivos inline ====== */}
         <style jsx>{`
-          /* En mobile ocultamos título y subtítulo */
           @media (max-width: 767px) {
-            :global(.topbar-left) {
-              display: none !important;
-            }
             :global(.topbar-marcar-btn .marcar-label) {
               display: none !important;
             }

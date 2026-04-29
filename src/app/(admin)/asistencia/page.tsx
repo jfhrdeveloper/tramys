@@ -13,6 +13,7 @@ import {
 import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
+import { esVacaciones, estiloEstado } from "@/lib/constants/estados";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WEEKDAYS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -41,6 +42,8 @@ function ModalEditar({
   const [tEntrada, setTEntrada] = useState<string>(turnoBase.entrada);
   const [tSalida,  setTSalida]  = useState<string>(turnoBase.salida);
   const [motivo, setMotivo]   = useState("");
+  const [usaOverride, setUsaOver] = useState<boolean>(rec?.overrideIngreso !== null && rec?.overrideIngreso !== undefined);
+  const [override, setOverride]   = useState<number>(rec?.overrideIngreso ?? 0);
 
   useMemo(() => {
     if (!worker) return;
@@ -52,6 +55,8 @@ function ModalEditar({
     setTEntrada(tBase.entrada);
     setTSalida(tBase.salida);
     setMotivo("");
+    setUsaOver(rec?.overrideIngreso !== null && rec?.overrideIngreso !== undefined);
+    setOverride(rec?.overrideIngreso ?? 0);
   }, [rec?.id, fechaISO, open, worker?.id]); // eslint-disable-line
 
   if (!worker) return null;
@@ -68,6 +73,7 @@ function ModalEditar({
       sedeIdDia:    sedeId && sedeId !== worker!.sedeId ? sedeId : undefined,
       turnoEntrada: tEntrada !== worker!.turno.entrada ? tEntrada : undefined,
       turnoSalida:  tSalida  !== worker!.turno.salida  ? tSalida  : undefined,
+      overrideIngreso: usaOverride ? override : null,
       motivoEdit:   motivo.trim() || undefined,
     });
     onClose();
@@ -124,6 +130,25 @@ function ModalEditar({
               }}>{e}</button>
           ))}
         </div>
+      </div>
+
+      {/* ====== Override manual del ingreso del día ====== */}
+      <div style={{ marginBottom: 14, padding: 10, borderRadius: 9, background:"var(--bg)", border:"1px solid var(--border)" }}>
+        <label style={{ display:"flex", alignItems:"center", gap: 8, cursor:"pointer", marginBottom: 6 }}>
+          <input type="checkbox" checked={usaOverride} onChange={e=>setUsaOver(e.target.checked)} />
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Override manual del ingreso del día</span>
+        </label>
+        {usaOverride ? (
+          <input type="number" className="input-base input-mono"
+            value={override || ""}
+            onChange={e=>setOverride(Number(e.target.value))}
+            placeholder="Monto fijo (S/)"
+          />
+        ) : (
+          <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
+            Usa la tarifa correspondiente al tipo de día.
+          </div>
+        )}
       </div>
 
       <div style={{ marginBottom: 18 }}>
@@ -249,7 +274,7 @@ export default function AsistenciaPage() {
               {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
             <button
-              className="btn-primary"
+              className="btn-primary hide-mobile"
               style={{ display:"inline-flex", alignItems:"center", gap: 6 }}
               onClick={()=>{ setAddWorkerId(""); setModalAdd({ iso: selIso }); }}
             >
@@ -258,15 +283,24 @@ export default function AsistenciaPage() {
           </div>
         </div>
 
+        {/* Botón "Añadir registro" — solo en móvil, ancho completo abajo del filtro para no romper el layout */}
+        <button
+          className="btn-primary show-mobile"
+          style={{ display:"none", alignItems:"center", justifyContent:"center", gap: 6, width:"100%", marginBottom: 14, padding:"12px 0", minHeight: 44 }}
+          onClick={()=>{ setAddWorkerId(""); setModalAdd({ iso: selIso }); }}
+        >
+          <Icon name="plus" size={14} color="#fff" /> Añadir registro
+        </button>
+
         {/* ====== Calendario ====== */}
         <div className="card" style={{ padding:"14px 18px", marginBottom: 14 }}>
           {/* Weekdays */}
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap: 6, marginBottom: 6 }}>
+          <div className="cal-grid" style={{ marginBottom: 6 }}>
             {WEEKDAYS.map(w => (
               <div key={w} style={{ textAlign:"center", fontSize: 10, fontWeight: 700, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .8, padding:"4px 0" }}>{w}</div>
             ))}
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap: 6 }}>
+          <div className="cal-grid">
             {Array.from({ length: offset }).map((_, i) => <div key={`e${i}`} />)}
             {Array.from({ length: daysInMonth }, (_,i)=>i+1).map(day => {
               const iso = toISO(year, month, day);
@@ -276,53 +310,50 @@ export default function AsistenciaPage() {
               const weekend = ((offset + day - 1) % 7) >= 5;
               const feriado = esFeriadoOficial(iso).es;
 
-              const mostrar = data
-                .filter(x => x.rec.estado === "presente" || x.rec.estado === "tardanza")
-                .slice(0, 3);
-              const restantes = data.filter(x => x.rec.estado === "presente" || x.rec.estado === "tardanza").length - mostrar.length;
+              const visibles = data.filter(x =>
+                x.rec.estado === "presente" || x.rec.estado === "tardanza" || esVacaciones(x.rec)
+              );
+              const mostrar = visibles.slice(0, 3);
+              const restantes = visibles.length - mostrar.length;
 
               return (
                 <div key={iso}
                   onClick={()=>setSelIso(iso)}
                   onDoubleClick={()=>{ setAddWorkerId(""); setModalAdd({ iso }); }}
                   title="Doble click para registrar a alguien este día"
+                  className="cal-cell"
                   style={{
                     background: feriado ? "rgba(99,102,241,0.08)" : weekend ? "rgba(245,158,11,0.05)" : "var(--card)",
                     border: `1px solid ${isSel ? "var(--brand)" : isToday ? "#f59e0b" : "var(--border)"}`,
                     outline: isSel ? "2px solid var(--brand)" : "none",
-                    borderRadius: 10, padding: 7, minHeight: 100,
-                    display:"flex", flexDirection:"column", gap: 4,
-                    cursor:"pointer", transition:"all 0.15s",
-                    userSelect: "none",
+                    cursor:"pointer", userSelect: "none",
                   }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <span style={{
-                      fontFamily:"'DM Mono',monospace", fontWeight: isToday ? 800 : 700,
-                      fontSize: 13,
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", minWidth: 0 }}>
+                    <span className="cal-day-num" style={{
+                      fontWeight: isToday ? 800 : 700,
                       color: isToday ? "#f59e0b" : weekend ? "#d97706" : "var(--text)",
                     }}>{String(day).padStart(2,"0")}</span>
                     {feriado && <Icon name="calendar" size={10} color="#6366f1" />}
                   </div>
 
-                  {/* Apodos/nombres */}
-                  <div style={{ display:"flex", flexDirection:"column", gap: 2, overflow:"hidden" }}>
-                    {mostrar.map((x,i) => (
-                      <div key={i} style={{
-                        display:"flex", alignItems:"center", gap: 3,
-                        background: x.rec.estado === "tardanza" ? "rgba(245,158,11,0.12)" : "rgba(34,197,94,0.12)",
-                        color:      x.rec.estado === "tardanza" ? "#d97706" : "#16a34a",
-                        padding:"1px 5px", borderRadius: 99,
-                        fontSize: 10, fontWeight: 700,
-                        overflow:"hidden",
-                      }}>
-                        <span style={{ width: 4, height: 4, borderRadius:"50%", background:"currentColor", flexShrink: 0 }} />
-                        <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                          {x.worker.apodo || x.worker.nombre.split(" ")[0]}
-                        </span>
-                      </div>
-                    ))}
+                  {/* Apodos/nombres (en móvil se convierten en barritas/dots) */}
+                  <div style={{ display:"flex", flexDirection:"column", gap: 2, overflow:"hidden", minWidth: 0 }}>
+                    {mostrar.map((x,i) => {
+                      const est = estiloEstado(x.rec);
+                      return (
+                        <div key={i} className="cal-chip" style={{
+                          background: est.bg,
+                          color:      est.fg,
+                        }}>
+                          <span style={{ width: 4, height: 4, borderRadius:"50%", background:"currentColor", flexShrink: 0 }} />
+                          <span className="cal-btn-label" style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                            {x.worker.apodo || x.worker.nombre.split(" ")[0]}
+                          </span>
+                        </div>
+                      );
+                    })}
                     {restantes > 0 && (
-                      <span style={{ fontSize: 9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>+{restantes}</span>
+                      <span className="cal-tag-mini" style={{ fontSize: 9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>+{restantes}</span>
                     )}
                   </div>
                 </div>
@@ -334,7 +365,7 @@ export default function AsistenciaPage() {
         {/* ====== Detalle día seleccionado ====== */}
         <div className="card" style={{ padding: 0, overflow:"hidden" }}>
           <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", fontWeight: 700, fontSize: 14 }}>
-            Detalle de {selIso}
+            Detalle de {new Date(selIso + "T00:00:00").toLocaleDateString("es-PE", { day: "numeric", month: "long", year: "numeric" })}
           </div>
           <div className="table-wrap">
             <table className="tramys-table">
@@ -370,7 +401,18 @@ export default function AsistenciaPage() {
                       </td>
                       <td style={{ fontFamily:"'DM Mono',monospace" }}>{x.rec.entrada ?? "—"}</td>
                       <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{x.rec.salida ?? "—"}</td>
-                      <td><Badge variant={x.rec.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small /></td>
+                      <td>
+                        <span style={{ display:"inline-flex", alignItems:"center", gap: 5 }}>
+                          <Badge variant={x.rec.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small />
+                          {esVacaciones(x.rec) && (
+                            <span style={{
+                              fontSize: 9, fontWeight: 800, padding:"2px 6px", borderRadius: 99,
+                              background:"rgba(6,182,212,0.14)", color:"#0891b2",
+                              fontFamily:"'DM Mono',monospace", letterSpacing: .4,
+                            }} title={x.rec.motivoEdit ?? "Vacaciones"}>VAC</span>
+                          )}
+                        </span>
+                      </td>
                       <td>
                         <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px", display:"inline-flex", alignItems:"center", gap: 4 }}
                           onClick={()=>setModalEdit({ rec: tieneRegistro ? x.rec : null, worker: x.worker, iso: selIso })}>

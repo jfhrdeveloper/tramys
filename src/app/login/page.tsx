@@ -8,6 +8,7 @@ import { Preloader } from "@/components/ui/Preloader";
 const REMEMBER_KEY = "tramys_remember_email";
 const SESSION_KEY  = "tramys_session_id";
 const REAL_KEY     = "tramys_session_real_id";
+const THEME_KEY    = "tramys-theme";  // misma clave que ThemeProvider — login y panel comparten preferencia
 
 /* Persiste el id de sesión según preferencia del usuario.
    Recuérdame ON  → localStorage (sobrevive al cierre de pestaña).
@@ -36,6 +37,7 @@ export default function LoginPage() {
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
   const [dark,     setDark]     = useState(true);
+  const [themeUserSet, setThemeUserSet] = useState(false);
   const [welcome,  setWelcome]  = useState<{ nombre:string; apodo?:string; rol:string } | null>(null);
 
   /* ====== Al montar: limpiar sesión efectiva (siempre comenzar deslogueado en /login)
@@ -47,8 +49,42 @@ export default function LoginPage() {
       localStorage.removeItem(REAL_KEY);
       const recordado = localStorage.getItem(REMEMBER_KEY);
       if (recordado) setEmail(recordado);
+
+      /* ==== Tema: prioriza preferencia guardada por el usuario, si no, sigue al sistema ==== */
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === "light" || saved === "dark") {
+        setDark(saved === "dark");
+        setThemeUserSet(true);
+      } else {
+        const systemPrefersLight = window.matchMedia?.("(prefers-color-scheme: light)").matches;
+        setDark(!systemPrefersLight);
+        setThemeUserSet(false);
+      }
     } catch {}
   }, []);
+
+  /* ====== Aplicar la clase .dark al <html> para que toda la app respete el tema actual ====== */
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    if (themeUserSet) {
+      try { localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); } catch {}
+    }
+  }, [dark, themeUserSet]);
+
+  /* ====== Si el usuario NO ha elegido manualmente, seguir cambios del sistema ====== */
+  useEffect(() => {
+    if (themeUserSet) return;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const handler = (e: MediaQueryListEvent) => setDark(!e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [themeUserSet]);
+
+  /* ====== Toggle manual: marca la preferencia como del usuario y la persiste ====== */
+  function toggleTheme() {
+    setThemeUserSet(true);
+    setDark(d => !d);
+  }
 
   const router   = useRouter();
   const supabase = createClient();
@@ -242,7 +278,7 @@ export default function LoginPage() {
         {/* Toggle tema */}
         <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
           <div
-            onClick={()=>setDark(!dark)}
+            onClick={toggleTheme}
             className="relative cursor-pointer rounded-full transition-all"
             style={{ width:48, height:26, background:dark?RED.main:t.border }}
           >

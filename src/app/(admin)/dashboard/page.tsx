@@ -103,7 +103,7 @@ export default function DashboardPage() {
     for (const a of pendientes.slice(0, 2)) {
       const w = d.workers.find(x => x.id === a.workerId);
       if (!w) continue;
-      items.push({ text:`Solicitud adelanto — ${w.apodo || w.nombre.split(" ")[0]}`, hora:`${money(a.monto)}`, color:"#C41A3A", icon:"hand_coin" });
+      items.push({ text:`Solicitud adelanto — ${w.apodo || w.nombre.split(" ")[0]}`, hora:`${money(a.monto)}`, color:"#C41A3A", icon:"adelantos" });
     }
     return items.slice(0, 6);
   }, [d.asistencia, d.workers, pendientes, hoy]);
@@ -132,7 +132,7 @@ export default function DashboardPage() {
               Operación de hoy
             </div>
             <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.1, marginTop: 4 }}>
-              {new Date().toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" })}
+              {new Date().toLocaleDateString("es-PE", { day: "numeric", month: "long", year: "numeric" })}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
               {d.sedes.filter(s => s.activa).length} sedes · {d.workers.filter(w => w.activo && w.rol === "trabajador").length} trabajadores

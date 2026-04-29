@@ -14,7 +14,7 @@ import {
   type AsistenciaRec,
 } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
-import { ESTADO_COLOR } from "@/lib/constants/estados";
+import { ESTADO_COLOR, VACACIONES_COLOR, esVacaciones, estiloEstado } from "@/lib/constants/estados";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 
 type Panel = "multiverse" | "general" | "calendario";
@@ -41,6 +41,8 @@ export default function MiAsistenciaPage() {
     return {
       worked: rec ? (rec.estado === "presente" || rec.estado === "tardanza") : false,
       late: rec?.estado === "tardanza",
+      override: rec?.overrideIngreso ?? null,
+      vacaciones: esVacaciones(rec ?? undefined),
     };
   }
   function toggleWorked(day: number) {
@@ -159,7 +161,7 @@ export default function MiAsistenciaPage() {
         </div>
 
         {panel === "multiverse" && (
-          <div className="grid-2" style={{ alignItems:"start" }}>
+          <div className="grid-2-lg" style={{ alignItems:"start" }}>
             <div className="card">
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
                 Marca tus días
@@ -223,7 +225,7 @@ export default function MiAsistenciaPage() {
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
               Lo que se ha registrado
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap: 6, marginBottom: 6 }}>
+            <div className="cal-grid" style={{ marginBottom: 6 }}>
               {WEEKDAYS.map(w => (
                 <div key={w} style={{ textAlign:"center", fontSize: 10, fontWeight: 700, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .8, padding:"4px 0" }}>{w}</div>
               ))}
@@ -234,7 +236,7 @@ export default function MiAsistenciaPage() {
               const offset      = firstDay === 0 ? 6 : firstDay - 1;
               const todayIso    = now.toISOString().slice(0,10);
               return (
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap: 6 }}>
+                <div className="cal-grid">
                   {Array.from({ length: offset }).map((_, i) => <div key={`e${i}`} />)}
                   {Array.from({ length: daysInMonth }, (_,i)=>i+1).map(day => {
                     const iso = isoFor(day);
@@ -242,32 +244,49 @@ export default function MiAsistenciaPage() {
                     const sedeId = rec ? sedeDelDia(rec, worker) : worker.sedeId;
                     const sede = d.sedes.find(s => s.id === sedeId);
                     const isVisita = !!(rec?.sedeIdDia && rec.sedeIdDia !== worker.sedeId);
-                    const color = rec ? ESTADO_COLOR[rec.estado].dot : "transparent";
+                    const est = rec ? estiloEstado(rec) : null;
+                    const color = est ? est.dot : "transparent";
+                    const labelEst = est ? est.label : "";
+                    const esVac = esVacaciones(rec);
                     const isToday = iso === todayIso;
                     return (
                       <div key={iso}
                         onClick={()=>setVerDia({ iso, rec })}
+                        className="cal-cell"
                         style={{
                           background: rec ? `${color}14` : "var(--card)",
                           border: `1px solid ${isToday ? "#f59e0b" : "var(--border)"}`,
-                          borderLeft: rec ? `4px solid ${color}` : "1px solid var(--border)",
-                          borderRadius: 10, padding: 7, minHeight: 78,
-                          display:"flex", flexDirection:"column", gap: 3,
-                          cursor:"pointer", transition:"all 0.15s",
+                          cursor:"pointer",
+                          position:"relative",
                         }}>
-                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                          <span style={{ fontFamily:"'DM Mono',monospace", fontWeight: isToday?800:700, fontSize: 13, color: isToday ? "#f59e0b" : "var(--text)" }}>
+                        {rec && (
+                          <span aria-hidden style={{
+                            position:"absolute", left: 0, top: 0, bottom: 0, width: 3,
+                            background: color, borderTopLeftRadius: "inherit", borderBottomLeftRadius: "inherit",
+                            pointerEvents:"none",
+                          }} />
+                        )}
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", minWidth: 0, gap: 4 }}>
+                          <span className="cal-day-num" style={{ fontWeight: isToday?800:700, color: isToday ? "#f59e0b" : "var(--text)", flexShrink: 0 }}>
                             {String(day).padStart(2,"0")}
                           </span>
-                          {isVisita && <span title={`Visita: ${sede?.nombre}`} style={{ fontSize: 9, color:"#d97706", fontWeight: 800 }}>⇄</span>}
+                          <div style={{ display:"inline-flex", alignItems:"center", gap: 3, flexShrink: 0 }}>
+                            {esVac && (
+                              <span title={rec?.motivoEdit ?? "Vacaciones"} style={{ fontSize: 9, fontWeight: 800, color: VACACIONES_COLOR.fg, fontFamily:"'DM Mono',monospace" }}>VAC</span>
+                            )}
+                            {rec?.overrideIngreso !== null && rec?.overrideIngreso !== undefined && (
+                              <span title={`Ingreso ajustado: ${money(rec.overrideIngreso)}`} style={{ fontSize: 9, fontWeight: 800, color:"var(--brand)", fontFamily:"'DM Mono',monospace" }}>S/</span>
+                            )}
+                            {isVisita && <span title={`Visita: ${sede?.nombre}`} style={{ fontSize: 10, color:"#d97706", fontWeight: 800 }}>⇄</span>}
+                          </div>
                         </div>
                         {rec && (
                           <>
-                            <span style={{ fontSize: 10, fontWeight: 700, color, textTransform:"capitalize", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                              {rec.estado}
+                            <span className="cal-chip" style={{ background: `${color}1f`, color, textTransform:"capitalize" }}>
+                              {labelEst}
                             </span>
                             {sede && (
-                              <span style={{ fontSize: 9, color: sede.color, fontWeight: 600, fontFamily:"'DM Mono',monospace", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                              <span className="cal-tag-mini" style={{ fontSize: 9, color: sede.color, fontWeight: 600, fontFamily:"'DM Mono',monospace", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                                 {sede.nombre}
                               </span>
                             )}
@@ -280,6 +299,10 @@ export default function MiAsistenciaPage() {
               );
             })()}
             <div style={{ marginTop: 12, fontSize: 11, color:"var(--text-muted)", display:"flex", gap: 14, flexWrap:"wrap" }}>
+              <span style={{ display:"inline-flex", alignItems:"center", gap: 4 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: VACACIONES_COLOR.dot, display:"inline-block" }} />
+                {VACACIONES_COLOR.label}
+              </span>
               {Object.entries(ESTADO_COLOR).map(([k,s]) => (
                 <span key={k} style={{ display:"inline-flex", alignItems:"center", gap: 4 }}>
                   <span style={{ width: 8, height: 8, borderRadius: 2, background: s.dot, display:"inline-block" }} />
@@ -305,7 +328,9 @@ export default function MiAsistenciaPage() {
                   {historial.length === 0 && <tr><td colSpan={4} style={{ textAlign:"center", padding: 30, color:"var(--text-muted)" }}>Sin registros</td></tr>}
                   {pagHist.pageItems.map((h, i) => (
                     <tr key={i}>
-                      <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>{h.fecha}</td>
+                      <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>
+                        {new Date(h.fecha + "T00:00:00").toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                      </td>
                       <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.entrada ?? "—"}</td>
                       <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{h.salida ?? "—"}</td>
                       <td><Badge variant={h.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small /></td>
@@ -345,9 +370,18 @@ export default function MiAsistenciaPage() {
                 </div>
               ) : (
                 <>
-                  <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
                     <span style={{ fontSize: 12, color:"var(--text-muted)" }}>Estado</span>
-                    <Badge variant={rec.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small />
+                    <span style={{ display:"inline-flex", alignItems:"center", gap: 6 }}>
+                      <Badge variant={rec.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small />
+                      {esVacaciones(rec) && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 800, padding:"2px 7px", borderRadius: 99,
+                          background: VACACIONES_COLOR.bg, color: VACACIONES_COLOR.fg,
+                          fontFamily:"'DM Mono',monospace", letterSpacing: .4,
+                        }}>VACACIONES</span>
+                      )}
+                    </span>
                   </div>
                   <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
                     <span style={{ fontSize: 12, color:"var(--text-muted)" }}>Sede del día</span>
@@ -370,6 +404,14 @@ export default function MiAsistenciaPage() {
                       <div style={{ fontSize: 10, color:"var(--text-muted)" }}>Esperada {turno.salida}</div>
                     </div>
                   </div>
+                  {rec.overrideIngreso !== null && rec.overrideIngreso !== undefined && (
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:"rgba(196,26,58,0.06)", border:"1px solid rgba(196,26,58,0.25)", borderRadius: 9 }}>
+                      <span style={{ fontSize: 12, color:"var(--brand)", fontWeight: 700, display:"inline-flex", alignItems:"center", gap: 6 }}>
+                        <Icon name="edit" size={12} color="var(--brand)" /> Ingreso ajustado por encargado
+                      </span>
+                      <HideableAmount value={money(rec.overrideIngreso)} size={14} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
+                    </div>
+                  )}
                   {rec.motivoEdit && (
                     <div style={{ padding:"10px 14px", background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.25)", borderRadius: 9, fontSize: 12 }}>
                       <span style={{ color:"#d97706", fontWeight: 700 }}>Nota: </span>{rec.motivoEdit}

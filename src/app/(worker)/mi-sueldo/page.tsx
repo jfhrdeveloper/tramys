@@ -9,7 +9,7 @@ import { TopbarWorker } from "@/components/layout/TopbarWorker";
 import { Icon } from "@/components/ui/Icons";
 import { Badge } from "@/components/ui/Badge";
 import { HideableAmount } from "@/components/ui/HideableAmount";
-import { money } from "@/lib/utils/formatters";
+import { money, formatFecha } from "@/lib/utils/formatters";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
 import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
@@ -199,17 +199,20 @@ export default function MiSueldoPage() {
               {desglose.override > 0 && (
                 <div style={{
                   display:"flex", alignItems:"center", gap: 12,
-                  padding:"10px 14px", background:"var(--bg)",
-                  border:"1px solid var(--border)", borderLeft:"4px solid #8b8fa8",
+                  padding:"10px 14px", background:"rgba(196,26,58,0.06)",
+                  border:"1px solid rgba(196,26,58,0.25)", borderLeft:"4px solid var(--brand)",
                   borderRadius: 9,
                 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>Ajustes manuales</div>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background:"rgba(196,26,58,0.12)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink: 0 }}>
+                    <Icon name="edit" size={14} color="var(--brand)" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color:"var(--brand)" }}>Ajustes manuales del encargado</div>
                     <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
-                      {desglose.override} día{desglose.override === 1 ? "" : "s"} con monto fijo
+                      {desglose.override} día{desglose.override === 1 ? "" : "s"} con monto fijo asignado
                     </div>
                   </div>
-                  <HideableAmount value={money(desglose.brutoOverride)} size={14} color="#8b8fa8" weight={800} fontFamily="'DM Mono',monospace" />
+                  <HideableAmount value={money(desglose.brutoOverride)} size={14} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
                 </div>
               )}
             </div>
@@ -277,7 +280,7 @@ export default function MiSueldoPage() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <HideableAmount value={`−${money(a.monto)}`} size={13} color="#f59e0b" weight={800} fontFamily="'DM Mono',monospace" />
                         <div style={{ fontSize: 10, color:"var(--text-muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                          {a.fecha} · {a.motivo}
+                          {formatFecha(a.fecha)} · {a.motivo}
                         </div>
                       </div>
                       <Badge variant="aprobado" small />
@@ -323,20 +326,35 @@ export default function MiSueldoPage() {
                   const esFer = esFeriadoOficial(r.fecha).es;
                   const esFds = isWeekendISO(r.fecha);
                   const ing   = ingresoDia(r, worker.tarifas, esFds, esFer);
+                  const tieneOverride = r.overrideIngreso !== null && r.overrideIngreso !== undefined;
                   let tipo = "Normal", color = "#16a34a";
-                  if (r.overrideIngreso !== null) { tipo = "Ajuste"; color = "#8b8fa8"; }
+                  if (tieneOverride) { tipo = "Ajustado"; color = "var(--brand)"; }
                   else if (r.estado === "feriado" || esFer) { tipo = "Feriado"; color = "var(--brand)"; }
                   else if (esFds) { tipo = "Fin de semana"; color = "#6366f1"; }
                   else if (r.estado === "tardanza") { tipo = "Tardanza"; color = "#f59e0b"; }
                   else if (r.estado === "ausente" || r.estado === "permiso") { tipo = "—"; color = "#8b8fa8"; }
                   return (
-                    <tr key={r.id}>
-                      <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>{r.fecha}</td>
+                    <tr key={r.id} title={tieneOverride && r.motivoEdit ? `Nota: ${r.motivoEdit}` : undefined}>
+                      <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>{formatFecha(r.fecha)}</td>
                       <td><Badge variant={r.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small /></td>
                       <td style={{ fontFamily:"'DM Mono',monospace" }}>{r.entrada ?? "—"}</td>
                       <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{r.salida ?? "—"}</td>
-                      <td><span style={{ fontSize: 11, fontWeight: 700, color }}>{tipo}</span></td>
-                      <td><HideableAmount value={money(ing)} size={12} color={ing > 0 ? color : "var(--text-muted)"} weight={700} fontFamily="'DM Mono',monospace" /></td>
+                      <td>
+                        <span style={{ fontSize: 11, fontWeight: 700, color, display:"inline-flex", alignItems:"center", gap: 4 }}>
+                          {tieneOverride && <Icon name="edit" size={10} color="var(--brand)" />}
+                          {tipo}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ display:"inline-flex", alignItems:"center", gap: 6 }}>
+                          <HideableAmount value={money(ing)} size={12} color={ing > 0 ? color : "var(--text-muted)"} weight={tieneOverride ? 800 : 700} fontFamily="'DM Mono',monospace" />
+                          {tieneOverride && (
+                            <span style={{ fontSize: 8, fontWeight: 800, color:"var(--brand)", background:"rgba(196,26,58,0.12)", padding:"1px 5px", borderRadius: 99, fontFamily:"'DM Mono',monospace", letterSpacing: .4 }}>
+                              MANUAL
+                            </span>
+                          )}
+                        </span>
+                      </td>
                     </tr>
                   );
                 })}

@@ -13,6 +13,7 @@ export interface DayStatus {
   ausente?: boolean;
   permiso?: boolean;
   override?: number | null;   // monto manual
+  vacaciones?: boolean;       // día marcado como vacaciones (subtipo de permiso)
 }
 
 const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
@@ -44,7 +45,7 @@ export function MultiverseCalendar({
   return (
     <div style={{ display:"flex", flexDirection:"column", gap: 10 }}>
       {/* Cabecera días */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap: 6 }}>
+      <div className="cal-grid">
         {WEEKDAYS.map(w => (
           <div key={w} style={{
             textAlign:"center", fontSize: 10, fontWeight: 700,
@@ -55,7 +56,7 @@ export function MultiverseCalendar({
       </div>
 
       {/* Grid */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap: 6 }}>
+      <div className="cal-grid">
         {Array.from({ length: offset }).map((_, i) => <div key={`e${i}`} />)}
         {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
           const data = getDayData(day);
@@ -65,70 +66,70 @@ export function MultiverseCalendar({
             today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
 
           return (
-            <div key={day} style={{
-              background: holiday ? "rgba(99,102,241,0.08)" : weekend ? "rgba(245,158,11,0.06)" : "var(--card)",
-              border: `1px solid ${isToday ? "#f59e0b" : data.worked ? "rgba(34,197,94,0.5)" : "var(--border)"}`,
-              outline: data.worked ? "1px solid rgba(34,197,94,0.3)" : "none",
-              borderRadius: 10,
-              padding: "6px",
-              display:"flex", flexDirection:"column", gap: 4,
-              minHeight: 92,
-              cursor: onDayClick ? "pointer" : "default",
-              transition: "all 0.15s",
-            }}
-            onClick={() => onDayClick?.(day)}
+            <div key={day}
+              className="cal-cell"
+              style={{
+                background: holiday ? "rgba(99,102,241,0.08)" : weekend ? "rgba(245,158,11,0.06)" : "var(--card)",
+                border: `1px solid ${isToday ? "#f59e0b" : data.worked ? "rgba(34,197,94,0.5)" : "var(--border)"}`,
+                outline: data.worked ? "1px solid rgba(34,197,94,0.3)" : "none",
+                cursor: onDayClick ? "pointer" : "default",
+              }}
+              onClick={() => onDayClick?.(day)}
             >
               {/* Header día */}
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <span style={{
-                  fontFamily:"'DM Mono',monospace",
-                  fontSize: 12, fontWeight: isToday ? 800 : 700,
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", minWidth: 0, gap: 3 }}>
+                <span className="cal-day-num" style={{
+                  fontWeight: isToday ? 800 : 700,
                   color: isToday ? "#f59e0b" : weekend ? "#d97706" : "var(--text)",
+                  flexShrink: 0,
                 }}>{String(day).padStart(2, "0")}</span>
-                {holiday && (
-                  <span style={{ fontSize: 8, fontWeight: 800, color:"#6366f1", letterSpacing: .6 }}>FER</span>
-                )}
-                {weekend && !holiday && (
-                  <span style={{ fontSize: 8, fontWeight: 800, color:"#d97706", opacity:.6, letterSpacing: .6 }}>FDS</span>
-                )}
+                <div style={{ display:"inline-flex", alignItems:"center", gap: 3, flexShrink: 0 }}>
+                  {data.vacaciones && (
+                    <span title="Vacaciones" style={{ fontSize: 9, fontWeight: 800, color:"#0891b2", fontFamily:"'DM Mono',monospace", background:"rgba(6,182,212,0.14)", padding:"1px 5px", borderRadius: 99, letterSpacing: .4 }}>VAC</span>
+                  )}
+                  {data.override !== null && data.override !== undefined && (
+                    <span title={`Ingreso ajustado: S/ ${data.override}`} style={{ fontSize: 9, fontWeight: 800, color:"var(--brand)", fontFamily:"'DM Mono',monospace" }}>S/</span>
+                  )}
+                  {holiday && (
+                    <span className="cal-tag-mini" style={{ fontSize: 8, fontWeight: 800, color:"#6366f1", letterSpacing: .6 }}>FER</span>
+                  )}
+                  {weekend && !holiday && (
+                    <span className="cal-tag-mini" style={{ fontSize: 8, fontWeight: 800, color:"#d97706", opacity:.6, letterSpacing: .6 }}>FDS</span>
+                  )}
+                </div>
               </div>
 
               {/* Botón Trabajé */}
               <button
                 disabled={readonly}
                 onClick={(e) => { e.stopPropagation(); onToggleWorked(day); }}
+                className="cal-btn"
+                title={data.worked ? "Trabajé" : "Sin marcar"}
                 style={{
-                  width: "100%",
-                  display:"flex", alignItems:"center", justifyContent:"center", gap: 3,
                   background: data.worked ? "#16a34a" : "var(--bg)",
                   color: data.worked ? "#fff" : "var(--text-muted)",
                   border: data.worked ? "none" : "1px solid var(--border)",
-                  borderRadius: 6, padding: "3px 4px",
-                  fontSize: 9, fontWeight: 700, cursor: readonly ? "default" : "pointer",
-                  transition: "all 0.15s",
+                  cursor: readonly ? "default" : "pointer",
                 }}>
-                <Icon name="check" size={9} color={data.worked ? "#fff" : "var(--text-muted)"} />
-                <span>{data.worked ? "Trabajé" : "—"}</span>
+                <Icon name="check" size={10} color={data.worked ? "#fff" : "var(--text-muted)"} />
+                <span className="cal-btn-label">{data.worked ? "Trabajé" : "—"}</span>
               </button>
 
               {/* Botón Tardanza */}
               <button
                 disabled={readonly || !data.worked}
                 onClick={(e) => { e.stopPropagation(); onToggleLate(day); }}
+                className="cal-btn"
+                title={data.late ? "Tarde" : "A tiempo"}
                 style={{
-                  width: "100%",
-                  display:"flex", alignItems:"center", justifyContent:"center", gap: 3,
                   background: data.late ? "#f59e0b" : "var(--bg)",
                   color: data.late ? "#fff" : "var(--text-muted)",
                   border: data.late ? "none" : "1px solid var(--border)",
-                  borderRadius: 6, padding: "3px 4px",
-                  fontSize: 9, fontWeight: 700,
                   cursor: (readonly || !data.worked) ? "default" : "pointer",
                   opacity: data.worked ? 1 : 0.35,
-                  transition: "all 0.15s",
                 }}>
-                <Icon name="clock" size={9} color={data.late ? "#fff" : "var(--text-muted)"} />
-                <span>{data.late ? "Tarde" : "A tiempo"}</span>
+                <Icon name="clock" size={10} color={data.late ? "#fff" : "var(--text-muted)"} />
+                <span className="cal-btn-label">{data.late ? "Tarde" : "A tiempo"}</span>
               </button>
             </div>
           );

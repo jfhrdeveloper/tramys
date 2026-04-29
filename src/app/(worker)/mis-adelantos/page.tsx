@@ -10,7 +10,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icons";
 import { Badge } from "@/components/ui/Badge";
 import { HideableAmount } from "@/components/ui/HideableAmount";
-import { money } from "@/lib/utils/formatters";
+import { money, formatFecha } from "@/lib/utils/formatters";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
 import { useData } from "@/components/providers/DataProvider";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
@@ -184,7 +184,7 @@ export default function MisAdelantosPage() {
           {filtrados.length === 0 ? (
             <div style={{ padding:"48px 24px", textAlign:"center" }}>
               <div style={{ width: 56, height: 56, borderRadius:"50%", background:"rgba(196,26,58,0.08)", display:"inline-flex", alignItems:"center", justifyContent:"center", marginBottom: 12 }}>
-                <Icon name="hand_coin" size={26} color="var(--brand)" />
+                <Icon name="adelantos" size={26} color="var(--brand)" />
               </div>
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
                 {filtro === "todos" ? "Sin solicitudes" : `Sin solicitudes ${filtro}s`}
@@ -210,7 +210,7 @@ export default function MisAdelantosPage() {
                     borderLeft: `4px solid ${color}`,
                   }}>
                     <div style={{ width: 38, height: 38, borderRadius: 9, background: `${color}18`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink: 0 }}>
-                      <Icon name="hand_coin" size={18} color={color} />
+                      <Icon name="adelantos" size={18} color={color} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display:"flex", alignItems:"center", gap: 8, marginBottom: 2, flexWrap:"wrap" }}>
@@ -219,7 +219,7 @@ export default function MisAdelantosPage() {
                       </div>
                       <div style={{ fontSize: 12, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis" }}>{a.motivo}</div>
                       <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 2 }}>
-                        Solicitado: {a.fecha}
+                        Solicitado: {formatFecha(a.fecha)}
                       </div>
                     </div>
                   </div>

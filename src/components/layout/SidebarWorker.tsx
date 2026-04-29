@@ -19,8 +19,9 @@ const NAV = [
   { href: "/mi-panel",     label: "Mi Panel",   icon: "home" },
   { href: "/mi-asistencia",label: "Asistencia", icon: "clock" },
   { href: "/mi-sueldo",    label: "Mi Sueldo",  icon: "money_bill" },
-  { href: "/mis-adelantos",label: "Adelantos",  icon: "hand_coin" },
+  { href: "/mis-adelantos",label: "Adelantos",  icon: "adelantos" },
   { href: "/mis-permisos", label: "Permisos",   icon: "file_check" },
+  { href: "/mis-eventos",  label: "Eventos",    icon: "calendar" },
   { href: "/mis-alertas",  label: "Alertas",    icon: "bell" },
 ];
 

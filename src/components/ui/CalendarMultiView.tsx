@@ -313,7 +313,7 @@ function VistaMes({
   return (
     <>
       {/* ==== Weekdays ==== */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap:6, marginBottom:6 }}>
+      <div className="cal-grid" style={{ marginBottom:6 }}>
         {WEEKDAYS_SHORT.map(w => (
           <div key={w} style={{ textAlign:"center", fontSize:10, fontWeight:700, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:0.8, padding:"4px 0" }}>
             {w}
@@ -322,7 +322,7 @@ function VistaMes({
       </div>
 
       {/* ==== Días ==== */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap:6 }}>
+      <div className="cal-grid">
         {cells.map((d, i) => {
           if (!d) return <div key={i} />;
           const iso = toISO(d);
@@ -333,51 +333,46 @@ function VistaMes({
           const hasEvent = evs.length > 0;
 
           return (
-            <div key={iso} style={{
-              background: isWeekend ? "rgba(245,158,11,0.04)" : "var(--card)",
-              border: `1px solid ${isSelected ? accentColor : isToday ? "#f59e0b" : hasEvent ? `${evs[0].color}40` : "var(--border)"}`,
-              outline: isSelected ? `2px solid ${accentColor}` : "none",
-              borderRadius:10, padding:"6px 7px",
-              minHeight: 92,
-              display:"flex", flexDirection:"column", gap:4,
-              cursor:"pointer",
-            }}
-            onClick={()=>onDayClick?.(iso)}
+            <div key={iso}
+              className="cal-cell"
+              style={{
+                background: isWeekend ? "rgba(245,158,11,0.04)" : "var(--card)",
+                border: `1px solid ${isSelected ? accentColor : isToday ? "#f59e0b" : hasEvent ? `${evs[0].color}40` : "var(--border)"}`,
+                outline: isSelected ? `2px solid ${accentColor}` : "none",
+                cursor:"pointer",
+              }}
+              onClick={()=>onDayClick?.(iso)}
             >
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                <span style={{
-                  fontFamily:"'DM Mono',monospace",
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", minWidth: 0 }}>
+                <span className="cal-day-num" style={{
                   fontWeight: isToday ? 800 : 700,
-                  fontSize: 13,
                   color: isToday ? "#f59e0b" : isWeekend ? "#d97706" : "var(--text)",
                 }}>{String(d.getDate()).padStart(2,"0")}</span>
-                {evs.length > 0 && (
-                  <span style={{ fontSize:9, fontWeight:700, color: evs[0].color, fontFamily:"'DM Mono',monospace" }}>
-                    {evs.length > 1 ? `×${evs.length}` : ""}
+                {evs.length > 1 && (
+                  <span className="cal-tag-mini" style={{ fontSize:9, fontWeight:700, color: evs[0].color, fontFamily:"'DM Mono',monospace" }}>
+                    ×{evs.length}
                   </span>
                 )}
               </div>
 
-              <div style={{ display:"flex", flexDirection:"column", gap:2, overflow:"hidden" }}>
+              <div style={{ display:"flex", flexDirection:"column", gap:2, overflow:"hidden", minWidth: 0 }}>
                 {evs.slice(0,3).map((e, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={(ev)=>{ ev.stopPropagation(); onEventClick?.(e); }}
+                    className="cal-chip"
                     style={{
-                      fontSize:10, fontWeight:600,
                       background: `${e.color}1a`,
                       color: e.color,
-                      padding:"1px 6px", borderRadius:99,
-                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
                       border:"none", cursor: onEventClick ? "pointer" : "default",
                       textAlign:"left",
                     }}>
-                    {e.label}
+                    <span className="cal-btn-label">{e.label}</span>
                   </button>
                 ))}
                 {evs.length > 3 && (
-                  <span style={{ fontSize:9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
+                  <span className="cal-tag-mini" style={{ fontSize:9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
                     +{evs.length - 3}
                   </span>
                 )}

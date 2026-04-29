@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icons";
 import { PhotoUpload, PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { money } from "@/lib/utils/formatters";
+import { money, formatFecha } from "@/lib/utils/formatters";
 import { useData, type Jalador, type IngresoJalador, isoToday } from "@/components/providers/DataProvider";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 
@@ -398,7 +398,7 @@ function PerfilJalador({ jalador, onBack }: { jalador: Jalador; onBack: () => vo
               )}
               {pagIng.pageItems.map(i => (
                 <tr key={i.id}>
-                  <td style={{ fontFamily:"'DM Mono',monospace" }}>{i.fecha}</td>
+                  <td style={{ fontFamily:"'DM Mono',monospace" }}>{formatFecha(i.fecha)}</td>
                   <td><HideableAmount value={money(i.monto)} size={13} color="#16a34a" weight={700} fontFamily="'DM Mono',monospace" /></td>
                   <td><HideableAmount value={money(i.monto * jalador.porcentajeComision / 100)} size={13} color="var(--brand)" weight={700} fontFamily="'DM Mono',monospace" /></td>
                   <td style={{ fontSize: 12, color:"var(--text-muted)" }}>{i.nota || "—"}</td>

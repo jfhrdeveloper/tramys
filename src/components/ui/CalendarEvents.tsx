@@ -77,7 +77,7 @@ export function CalendarEvents({
       </div>
 
       {/* ==== Weekdays ==== */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0,1fr))", gap: 6, marginBottom: 6 }}>
+      <div className="cal-grid" style={{ marginBottom: 6 }}>
         {WEEKDAYS.map(w => (
           <div key={w} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.8, padding: "4px 0" }}>
             {w}
@@ -86,7 +86,7 @@ export function CalendarEvents({
       </div>
 
       {/* ==== Days grid ==== */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0,1fr))", gap: 6 }}>
+      <div className="cal-grid">
         {cells.map((d, i) => {
           if (!d) return <div key={i} />;
           const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
@@ -100,26 +100,21 @@ export function CalendarEvents({
               key={i}
               type="button"
               onClick={() => onDayClick?.(d)}
+              className="cal-cell"
               style={{
                 background: hasEvent ? `${evs[0].color}12` : isWeekend ? "rgba(245,158,11,0.04)" : "var(--card)",
                 border: `1px solid ${selected ? accentColor : isToday ? "#f59e0b" : hasEvent ? `${evs[0].color}40` : "var(--border)"}`,
                 outline: selected ? `2px solid ${accentColor}` : "none",
-                borderRadius: 10,
-                padding: compact ? "6px" : "8px",
                 textAlign: "left",
                 cursor: onDayClick ? "pointer" : "default",
-                display: "flex", flexDirection: "column", gap: 4,
-                minHeight: compact ? 62 : 92,
-                transition: "all 0.15s",
+                minHeight: compact ? 62 : undefined,
               }}
               onMouseEnter={e => hasEvent && ((e.currentTarget as HTMLElement).style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)")}
               onMouseLeave={e => ((e.currentTarget as HTMLElement).style.boxShadow = "none")}
             >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{
-                  fontFamily: "'DM Mono',monospace",
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
+                <span className="cal-day-num" style={{
                   fontWeight: isToday ? 800 : 700,
-                  fontSize: 13,
                   color: isToday ? "#f59e0b" : isWeekend ? "#d97706" : "var(--text)",
                 }}>
                   {String(d).padStart(2, "0")}
@@ -127,28 +122,24 @@ export function CalendarEvents({
                 {hasEvent && (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9, color: evs[0].color, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>
                     {evs[0].icon && <Icon name={evs[0].icon} size={11} color={evs[0].color} />}
-                    {evs.length > 1 && `×${evs.length}`}
+                    {evs.length > 1 && <span className="cal-tag-mini">×{evs.length}</span>}
                   </span>
                 )}
               </div>
 
               {/* ==== Eventos listados ==== */}
               {!compact && hasEvent && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, minHeight: 0, overflow: "hidden" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, minHeight: 0, overflow: "hidden", minWidth: 0 }}>
                   {evs.slice(0, 2).map((e, idx) => (
-                    <div key={idx} style={{
-                      fontSize: 10, fontWeight: 600,
+                    <div key={idx} className="cal-chip" style={{
                       background: `${e.color}1a`,
                       color: e.color,
-                      padding: "1px 6px",
-                      borderRadius: 99,
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>
-                      {e.label}
+                      <span className="cal-btn-label">{e.label}</span>
                     </div>
                   ))}
                   {evs.length > 2 && (
-                    <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
+                    <span className="cal-tag-mini" style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
                       +{evs.length - 2}
                     </span>
                   )}

@@ -5,6 +5,7 @@
 /* Persistencia en localStorage. Fuente única de verdad.       */
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { esFeriadoOficial as _esFerOf } from "@/lib/utils/peruHolidays";
 
 /* ================= TIPOS ================= */
 export type EstadoAsist = "presente" | "tardanza" | "ausente" | "permiso" | "feriado";
@@ -88,10 +89,13 @@ export interface Adelanto {
 export interface Permiso {
   id: string;
   workerId: string;
-  fecha: string;
+  fecha: string;             // = desde (compat. legacy: día único). Para rangos, usar desde/hasta.
+  desde?: string;            // ISO yyyy-mm-dd. Si no se envía, equivale a fecha.
+  hasta?: string;            // ISO yyyy-mm-dd. Si no se envía, equivale a desde/fecha.
   tipo: TipoPerm;
   motivo: string;
   estado: EstadoPerm;
+  pagado?: boolean;          // ¿se descuenta o se paga? Default false (no se paga).
   aprobadoPor?: string | null;
 }
 
@@ -379,7 +383,46 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, permisos: [...s.permisos, { ...p, id:`p_${Date.now().toString(36)}`, estado:"pendiente" }] }));
   }, []);
   const updatePermiso = useCallback((id: string, patch: Partial<Permiso>) => {
-    setState(s => ({ ...s, permisos: s.permisos.map(x => x.id === id ? { ...x, ...patch } : x) }));
+    setState(s => {
+      const permActualizado = s.permisos.find(x => x.id === id);
+      if (!permActualizado) return s;
+      const nuevo: Permiso = { ...permActualizado, ...patch };
+
+      let asistencia = s.asistencia;
+      /* Si pasa a "aprobado" → marcar todos los días del rango como permiso */
+      if (patch.estado === "aprobado") {
+        const w = s.workers.find(x => x.id === nuevo.workerId);
+        if (w) {
+          const dias = diasDePermiso(nuevo);
+          for (const iso of dias) {
+            const idx = asistencia.findIndex(a => a.workerId === w.id && a.fecha === iso);
+            const tarifa = nuevo.pagado
+              ? (esFeriadoOficialFn(iso) ? w.tarifas.feriado
+                  : isWeekendISO(iso) ? w.tarifas.finSemana
+                  : w.tarifas.diaNormal)
+              : null;
+            const tipoLabel = nuevo.tipo === "vacaciones" ? "Vacaciones"
+                            : nuevo.tipo === "medico"     ? "Permiso médico"
+                            :                                "Permiso personal";
+            const motivoEdit = nuevo.pagado ? `${tipoLabel} (pagado)` : tipoLabel;
+            const base = {
+              workerId: w.id, fecha: iso,
+              entrada: null as string | null, salida: null as string | null,
+              estado: "permiso" as EstadoAsist,
+              overrideIngreso: tarifa,
+              motivoEdit,
+            };
+            if (idx >= 0) asistencia = asistencia.map((a, i) => i === idx ? { ...a, ...base } : a);
+            else asistencia = [...asistencia, { ...base, id: `as_${Date.now().toString(36)}_${iso}` }];
+          }
+        }
+      }
+      return {
+        ...s,
+        permisos: s.permisos.map(x => x.id === id ? nuevo : x),
+        asistencia,
+      };
+    });
   }, []);
 
   const addEvento = useCallback((e: Omit<Evento, "id">) => {
@@ -530,6 +573,28 @@ export function dayOfWeekISO(iso: string): number {
 export function isWeekendISO(iso: string): boolean {
   const d = dayOfWeekISO(iso);
   return d === 0 || d === 6;
+}
+
+/* ====== Permisos / vacaciones: helpers ====== */
+/* Devuelve los días ISO cubiertos por un permiso (rango desde-hasta o un solo día). */
+export function diasDePermiso(p: Permiso): string[] {
+  const desde = p.desde ?? p.fecha;
+  const hasta = p.hasta ?? p.desde ?? p.fecha;
+  if (!desde) return [];
+  const out: string[] = [];
+  const [y0, m0, d0] = desde.split("-").map(Number);
+  const [y1, m1, d1] = hasta.split("-").map(Number);
+  const dini = new Date(y0, m0 - 1, d0);
+  const dfin = new Date(y1, m1 - 1, d1);
+  for (let cur = new Date(dini); cur <= dfin; cur.setDate(cur.getDate() + 1)) {
+    out.push(cur.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+/* Wrapper local: evita repetir el `.es` y mantiene el import arriba. */
+function esFeriadoOficialFn(iso: string): boolean {
+  return _esFerOf(iso).es;
 }
 
 /* ====== Multi-sede por día: derivados ====== */

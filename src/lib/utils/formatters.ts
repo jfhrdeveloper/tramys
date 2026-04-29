@@ -8,11 +8,21 @@ export function money(n: number): string {
   })}`;
 }
 
-/* ====== Formateo de fechas ====== */
+/* ====== Formateo de fechas ======
+   Orden canónico del proyecto: día → mes → año.
+   Nota: `toLocaleDateString` con estas opciones siempre respeta ese orden,
+   independientemente del locale. */
 export function formatFecha(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("es-PE", {
-    weekday: "short", day: "numeric", month: "short", year: "numeric",
+    day: "numeric", month: "short", year: "numeric",
+  });
+}
+
+export function formatFechaLarga(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("es-PE", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 }
 
