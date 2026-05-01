@@ -78,7 +78,7 @@ export async function middleware(request: NextRequest) {
   const rutasAdmin = [
     "/dashboard", "/sedes", "/trabajadores", "/jaladores",
     "/asistencia", "/planilla", "/adelantos", "/feriados",
-    "/cumpleanos", "/reportes", "/accesos",
+    "/cumpleanos", "/reportes", "/accesos", "/mis-gastos",
   ];
 
   /* ==== Rutas solo Trabajador ==== */
@@ -88,9 +88,11 @@ export async function middleware(request: NextRequest) {
   ];
 
   /* ==== Rutas solo Owner ==== */
+  /* Nota: `/sedes` lo ve también el encargado, pero la propia página
+     fuerza que solo acceda al detalle de su sede asignada. */
   const rutasSoloOwner = [
     "/planilla", "/adelantos", "/accesos", "/reportes",
-    "/jaladores", "/sedes",
+    "/jaladores",
   ];
 
   // Trabajador accede a ruta de admin

@@ -11,8 +11,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { money, formatFecha } from "@/lib/utils/formatters";
 import { useData, type Jalador, type IngresoJalador, isoToday } from "@/components/providers/DataProvider";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
-
-type Periodo = "semanal" | "mensual";
+import { rangoPeriodo, PERIODOS, PERIODO_LABEL, type Periodo } from "@/lib/utils/periodos";
 
 /* ================= MODAL NUEVO/EDITAR JALADOR ================= */
 function ModalJalador({
@@ -147,14 +146,7 @@ function CuadreCaja({ jaladores, ingresos }: {
   const [periodo, setPeriodo] = useState<Periodo>("semanal");
   const [modalIng, setModalIng] = useState<{ jal: Jalador; ingreso: IngresoJalador | null } | null>(null);
 
-  const rango = useMemo(() => {
-    const hoy = new Date(); hoy.setHours(0,0,0,0);
-    if (periodo === "semanal") {
-      const desde = new Date(hoy); desde.setDate(hoy.getDate() - 6);
-      return { desde, hasta: hoy };
-    }
-    return { desde: new Date(hoy.getFullYear(), hoy.getMonth(), 1), hasta: hoy };
-  }, [periodo]);
+  const rango = useMemo(() => rangoPeriodo(periodo), [periodo]);
 
   const desglose = useMemo(() => {
     return jaladores.map(j => {
@@ -182,16 +174,16 @@ function CuadreCaja({ jaladores, ingresos }: {
           <div style={{ fontWeight: 700, fontSize: 15 }}>Cuadre de caja</div>
           <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>Ingresos vs. comisiones</div>
         </div>
-        <div style={{ display:"flex", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 8, padding: 3 }}>
-          {(["semanal","mensual"] as Periodo[]).map(p => (
+        <div style={{ display:"flex", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 8, padding: 3, flexWrap:"wrap" }}>
+          {PERIODOS.map(p => (
             <button key={p} onClick={()=>setPeriodo(p)}
               style={{
                 padding:"6px 14px", borderRadius: 6, border:"none", cursor:"pointer",
                 background: periodo===p ? "var(--brand)" : "transparent",
                 color:      periodo===p ? "#fff" : "var(--text-muted)",
                 fontWeight: periodo===p ? 700 : 500, fontSize: 12,
-                textTransform:"capitalize", minHeight: 30,
-              }}>{p}</button>
+                minHeight: 30,
+              }}>{PERIODO_LABEL[p]}</button>
           ))}
         </div>
       </div>

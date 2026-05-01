@@ -14,20 +14,25 @@ const NAV_OWNER_PRIMARY = [
   { href:"/adelantos",    icon:"adelantos",    label:"Adelantos"  },
 ];
 const NAV_OWNER_MORE = [
-  { href:"/sedes",     icon:"sedes",     label:"Sedes"     },
-  { href:"/jaladores", icon:"jaladores", label:"Jaladores" },
-  { href:"/planilla",  icon:"planilla",  label:"Planilla"  },
-  { href:"/eventos",   icon:"feriados",  label:"Eventos"   },
-  { href:"/accesos",   icon:"accesos",   label:"Accesos"   },
+  { href:"/sedes",      icon:"sedes",      label:"Sedes"      },
+  { href:"/jaladores",  icon:"jaladores",  label:"Jaladores"  },
+  { href:"/planilla",   icon:"planilla",   label:"Planilla"   },
+  { href:"/mis-gastos", icon:"money_bill", label:"Mis gastos" },
+  { href:"/eventos",    icon:"feriados",   label:"Eventos"    },
+  { href:"/accesos",    icon:"accesos",    label:"Accesos"    },
 ];
 
 const NAV_ENC_PRIMARY = [
   { href:"/dashboard",    icon:"dashboard",    label:"Inicio"     },
-  { href:"/trabajadores", icon:"trabajadores", label:"Personal"   },
+  { href:"/sedes",        icon:"sedes",        label:"Mi sede"    },
   { href:"/asistencia",   icon:"asistencia",   label:"Asistencia" },
-  { href:"/eventos",      icon:"feriados",     label:"Eventos"    },
+  { href:"/trabajadores", icon:"trabajadores", label:"Personal"   },
 ];
-const NAV_ENC_MORE: { href:string; icon:string; label:string }[] = [];
+const NAV_ENC_MORE = [
+  { href:"/adelantos",  icon:"adelantos",  label:"Adelantos"  },
+  { href:"/mis-gastos", icon:"money_bill", label:"Mis gastos" },
+  { href:"/eventos",    icon:"feriados",   label:"Eventos"    },
+];
 
 export function BottomNav() {
   const pathname = usePathname();

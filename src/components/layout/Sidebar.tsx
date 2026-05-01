@@ -23,6 +23,7 @@ const NAV_OWNER = [
   { href: "/asistencia",   label: "Asistencia",   icon: "asistencia" },
   { href: "/planilla",     label: "Planilla",     icon: "planilla" },
   { href: "/adelantos",    label: "Adelantos",    icon: "adelantos" },
+  { href: "/mis-gastos",   label: "Mis gastos",   icon: "money_bill" },
   { href: "/eventos",      label: "Eventos",      icon: "calendar" },
   { href: "/reportes",     label: "Reportes",     icon: "reportes" },
   { href: "/accesos",      label: "Accesos",      icon: "accesos" },
@@ -30,9 +31,11 @@ const NAV_OWNER = [
 
 const NAV_ENC = [
   { href: "/dashboard",    label: "Dashboard",    icon: "dashboard" },
+  { href: "/sedes",        label: "Mi sede",      icon: "sedes" },
   { href: "/trabajadores", label: "Trabajadores", icon: "trabajadores" },
   { href: "/asistencia",   label: "Asistencia",   icon: "asistencia" },
   { href: "/adelantos",    label: "Adelantos",    icon: "adelantos" },
+  { href: "/mis-gastos",   label: "Mis gastos",   icon: "money_bill" },
   { href: "/eventos",      label: "Eventos",      icon: "calendar" },
 ];
 

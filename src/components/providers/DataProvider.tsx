@@ -15,6 +15,28 @@ export type TipoPerm    = "personal" | "medico" | "vacaciones";
 export type TipoEvento  = "cumpleanos" | "feriado-nacional" | "feriado-empresa" | "otro";
 export type Rol         = "owner" | "encargado" | "trabajador";
 
+/* ====== Movimientos de caja por sede ======
+   Line items con fecha. Los agregados (diario/semanal/mensual) se calculan
+   filtrando por rango con `agregadoCaja(...)`. */
+export type TipoMovimiento  = "ingreso" | "gasto-personal" | "gasto-fijo" | "gasto-manual";
+export type CategoriaFijo   = "luz" | "agua" | "internet" | "local" | "otro";
+
+export interface MovimientoCaja {
+  id: string;
+  sedeId: string;
+  fecha: string;                     // ISO yyyy-mm-dd
+  tipo: TipoMovimiento;
+  monto: number;                     // siempre positivo (el signo lo da `tipo`)
+  /* Para `ingreso`: descomposición opcional cantidad × unitario = monto. */
+  cantidad?: number;
+  unitario?: number;
+  /* Para `gasto-fijo`: subcategoría del consumo. */
+  categoria?: CategoriaFijo;
+  concepto: string;                  // descripción libre
+  registradoPor?: string;            // workerId
+  createdAt: string;                 // ISO datetime
+}
+
 export interface Sede {
   id: string;
   nombre: string;
@@ -24,10 +46,6 @@ export interface Sede {
   horario: string;
   encargadoId?: string;
   activa: boolean;
-  /* Caja por periodo (ingresos totales, sueldos totales, material) */
-  cajaDia:     { ingresos: number; material: number };
-  cajaSemana:  { ingresos: number; material: number };
-  cajaMes:     { ingresos: number; material: number };
 }
 
 export interface Turno {
@@ -152,6 +170,7 @@ export interface DataState {
   jaladores: Jalador[];
   ingresosJaladores: IngresoJalador[];
   accesosTemporales: AccesoTemporal[];
+  movimientosCaja: MovimientoCaja[];
   mostrarFeriadosOficiales: boolean;
 }
 
@@ -160,12 +179,9 @@ function seed(): DataState {
   const YEAR = new Date().getFullYear();
 
   const sedes: Sede[] = [
-    { id:"sa", nombre:"Santa Anita",  color:"#C41A3A", direccion:"Av. Los Chancas 456", telefono:"01 234-5678", horario:"08:00–18:00", encargadoId:"w_rp",  activa:true,
-      cajaDia:{ ingresos: 1850, material: 240 }, cajaSemana:{ ingresos: 11200, material: 1450 }, cajaMes:{ ingresos: 48600, material: 6200 } },
-    { id:"pp", nombre:"Puente Piedra", color:"#1d6fa4", direccion:"Jr. Comercio 123",    telefono:"01 876-5432", horario:"08:00–18:00", encargadoId:undefined, activa:true,
-      cajaDia:{ ingresos: 1210, material: 180 }, cajaSemana:{ ingresos: 7600, material: 1020 },  cajaMes:{ ingresos: 33400, material: 4300 } },
-    { id:"li", nombre:"Lima Centro",   color:"#16a34a", direccion:"Jr. de la Unión 800", telefono:"01 555-0100", horario:"08:00–18:00", encargadoId:undefined, activa:true,
-      cajaDia:{ ingresos: 920,  material: 150 }, cajaSemana:{ ingresos: 5800, material: 820 },   cajaMes:{ ingresos: 24800, material: 3100 } },
+    { id:"sa", nombre:"Santa Anita",  color:"#C41A3A", direccion:"Av. Los Chancas 456", telefono:"01 234-5678", horario:"08:00–18:00", encargadoId:"w_rp",  activa:true },
+    { id:"pp", nombre:"Puente Piedra", color:"#1d6fa4", direccion:"Jr. Comercio 123",    telefono:"01 876-5432", horario:"08:00–18:00", encargadoId:undefined, activa:true },
+    { id:"li", nombre:"Lima Centro",   color:"#16a34a", direccion:"Jr. de la Unión 800", telefono:"01 555-0100", horario:"08:00–18:00", encargadoId:undefined, activa:true },
   ];
 
   const TARIFAS_DEF: TarifasWorker = { diaNormal: 60, tardanza: 45, finSemana: 75, feriado: 90 };
@@ -249,10 +265,62 @@ function seed(): DataState {
     }
   }
 
+  /* ====== Semilla de movimientos de caja ====== */
+  const movimientosCaja: MovimientoCaja[] = [];
+  const SEDE_PERFIL: Record<string, { ingDia: number; clientesDia: number; luz: number; agua: number; internet: number; local: number }> = {
+    sa: { ingDia: 1850, clientesDia: 30, luz: 320, agua: 90,  internet: 150, local: 1800 },
+    pp: { ingDia: 1210, clientesDia: 22, luz: 240, agua: 75,  internet: 130, local: 1400 },
+    li: { ingDia: 920,  clientesDia: 18, luz: 200, agua: 60,  internet: 130, local: 1100 },
+  };
+  for (const s of sedes) {
+    const perfil = SEDE_PERFIL[s.id];
+    if (!perfil) continue;
+    /* Ingresos diarios de las últimas 4 semanas (con variación) */
+    for (let i = 27; i >= 0; i--) {
+      const d = new Date(hoy); d.setDate(hoy.getDate() - i);
+      const iso = d.toISOString().slice(0, 10);
+      const dow = d.getDay();
+      const factor = dow === 0 || dow === 6 ? 1.25 : 1;
+      const ruido = 0.85 + Math.random() * 0.3;
+      const cant = Math.max(1, Math.round(perfil.clientesDia * factor * ruido));
+      const unit = Math.round(perfil.ingDia / perfil.clientesDia);
+      const monto = cant * unit;
+      movimientosCaja.push({
+        id: `mc_${s.id}_in_${iso}`,
+        sedeId: s.id, fecha: iso, tipo: "ingreso",
+        monto, cantidad: cant, unitario: unit,
+        concepto: "Ventas del día",
+        createdAt: d.toISOString(),
+      });
+    }
+    /* Consumos fijos: uno por mes (luz/agua/internet/local) — día 5 del mes actual y anterior */
+    for (let mOff = 1; mOff >= 0; mOff--) {
+      const base = new Date(hoy.getFullYear(), hoy.getMonth() - mOff, 5);
+      if (base > hoy) continue;
+      const isoBase = base.toISOString().slice(0, 10);
+      const items: { cat: CategoriaFijo; concepto: string; monto: number }[] = [
+        { cat: "luz",      concepto: "Recibo de luz",      monto: perfil.luz },
+        { cat: "agua",     concepto: "Recibo de agua",     monto: perfil.agua },
+        { cat: "internet", concepto: "Internet del local", monto: perfil.internet },
+        { cat: "local",    concepto: "Alquiler de local",  monto: perfil.local },
+      ];
+      for (const it of items) {
+        movimientosCaja.push({
+          id: `mc_${s.id}_${it.cat}_${isoBase}`,
+          sedeId: s.id, fecha: isoBase, tipo: "gasto-fijo",
+          monto: it.monto, categoria: it.cat,
+          concepto: it.concepto,
+          createdAt: base.toISOString(),
+        });
+      }
+    }
+  }
+
   return {
     sedes, workers, asistencia, adelantos, permisos,
     eventos, jaladores, ingresosJaladores,
     accesosTemporales: [],
+    movimientosCaja,
     mostrarFeriadosOficiales: true,
   };
 }
@@ -292,6 +360,10 @@ interface DataCtx extends DataState {
   /* Accesos temporales */
   addAccesoTemp:    (a: Omit<AccesoTemporal, "id" | "rolOriginal">) => void;
   removeAccesoTemp: (id: string) => void;
+  /* Movimientos de caja */
+  addMovimientoCaja:    (m: Omit<MovimientoCaja, "id" | "createdAt">) => void;
+  updateMovimientoCaja: (id: string, patch: Partial<MovimientoCaja>) => void;
+  deleteMovimientoCaja: (id: string) => void;
   /* Reset */
   resetAll: () => void;
 }
@@ -518,6 +590,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return () => window.clearInterval(id);
   }, [hydrated]);
 
+  const addMovimientoCaja = useCallback((m: Omit<MovimientoCaja, "id" | "createdAt">) => {
+    setState(s => ({
+      ...s,
+      movimientosCaja: [...s.movimientosCaja, {
+        ...m,
+        id: `mc_${Date.now().toString(36)}`,
+        createdAt: new Date().toISOString(),
+      }],
+    }));
+  }, []);
+  const updateMovimientoCaja = useCallback((id: string, patch: Partial<MovimientoCaja>) => {
+    setState(s => ({ ...s, movimientosCaja: s.movimientosCaja.map(x => x.id === id ? { ...x, ...patch } : x) }));
+  }, []);
+  const deleteMovimientoCaja = useCallback((id: string) => {
+    setState(s => ({ ...s, movimientosCaja: s.movimientosCaja.filter(x => x.id !== id) }));
+  }, []);
+
   const resetAll = useCallback(() => {
     try { localStorage.removeItem(STORAGE_KEY); } catch {}
     setState(seed());
@@ -536,6 +625,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addJalador, updateJalador, deleteJalador,
       addIngreso, updateIngreso, deleteIngreso,
       addAccesoTemp, removeAccesoTemp,
+      addMovimientoCaja, updateMovimientoCaja, deleteMovimientoCaja,
       resetAll,
     }}>
       {children}
@@ -608,4 +698,46 @@ export function turnoDelDia(rec: AsistenciaRec | undefined, w: Worker): Turno {
     entrada: rec?.turnoEntrada ?? w.turno.entrada,
     salida:  rec?.turnoSalida  ?? w.turno.salida,
   };
+}
+
+/* ====== Caja: agregados desde MovimientoCaja ====== */
+export interface AgregadoCaja {
+  ingresos:       number;  // Σ ingreso
+  gastoPersonal:  number;  // Σ gasto-personal (manuales). Los sueldos de planilla se suman aparte.
+  gastoFijo:      number;  // Σ gasto-fijo (luz/agua/internet/local/otro)
+  gastoManual:    number;  // Σ gasto-manual
+  movimientos:    MovimientoCaja[]; // movimientos del rango (orden cronológico desc.)
+}
+export function movimientosEnRango(state: Pick<DataState, "movimientosCaja">, sedeId: string, desdeISO: string, hastaISO: string): MovimientoCaja[] {
+  return state.movimientosCaja
+    .filter(m => m.sedeId === sedeId && m.fecha >= desdeISO && m.fecha <= hastaISO)
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.createdAt.localeCompare(a.createdAt));
+}
+export function agregadoCaja(state: Pick<DataState, "movimientosCaja">, sedeId: string, desdeISO: string, hastaISO: string): AgregadoCaja {
+  const movimientos = movimientosEnRango(state, sedeId, desdeISO, hastaISO);
+  let ingresos = 0, gastoPersonal = 0, gastoFijo = 0, gastoManual = 0;
+  for (const m of movimientos) {
+    if      (m.tipo === "ingreso")        ingresos      += m.monto;
+    else if (m.tipo === "gasto-personal") gastoPersonal += m.monto;
+    else if (m.tipo === "gasto-fijo")     gastoFijo     += m.monto;
+    else if (m.tipo === "gasto-manual")   gastoManual   += m.monto;
+  }
+  return { ingresos, gastoPersonal, gastoFijo, gastoManual, movimientos };
+}
+
+/* ====== Ingresos de jaladores por sede en un rango ======
+   Cruza `ingresosJaladores` con `jaladores` para filtrar por la sede del jalador.
+   Se considera parte de las ganancias del cuadre de caja (no es un MovimientoCaja). */
+export function ingresosJaladoresEnRango(
+  state: Pick<DataState, "ingresosJaladores" | "jaladores">,
+  sedeId: string,
+  desdeISO: string,
+  hastaISO: string
+): { total: number; items: IngresoJalador[] } {
+  const idsSede = new Set(state.jaladores.filter(j => j.sedeId === sedeId).map(j => j.id));
+  const items = state.ingresosJaladores.filter(
+    ij => idsSede.has(ij.jaladorId) && ij.fecha >= desdeISO && ij.fecha <= hastaISO
+  );
+  const total = items.reduce((acc, ij) => acc + ij.monto, 0);
+  return { total, items };
 }

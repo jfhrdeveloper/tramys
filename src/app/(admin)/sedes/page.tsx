@@ -1,21 +1,46 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { Icon } from "@/components/ui/Icons";
 import { HideableAmount } from "@/components/ui/HideableAmount";
-import { money } from "@/lib/utils/formatters";
-import { useData, ingresoDia, isWeekendISO, isoToday, type Sede } from "@/components/providers/DataProvider";
+import { money, formatFecha } from "@/lib/utils/formatters";
+import {
+  useData, ingresoDia, isWeekendISO, isoToday, agregadoCaja, ingresosJaladoresEnRango,
+  type Sede, type MovimientoCaja, type TipoMovimiento, type CategoriaFijo,
+} from "@/components/providers/DataProvider";
+import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
-
-type Periodo = "diario" | "semanal" | "mensual";
+import { ModalMovimiento } from "@/components/sedes/ModalMovimiento";
+import { rangoPeriodo, PERIODOS, PERIODO_LABEL, type Periodo } from "@/lib/utils/periodos";
 
 const COLORES_SUG = ["#C41A3A","#1d6fa4","#16a34a","#f59e0b","#6366f1","#8b5cf6","#ec4899","#0ea5e9"];
 
+const CAT_LABEL: Record<CategoriaFijo, string> = {
+  luz:      "Luz",
+  agua:     "Agua",
+  internet: "Internet",
+  local:    "Local / Alquiler",
+  otro:     "Otro",
+};
+const TIPO_LABEL: Record<TipoMovimiento, string> = {
+  "ingreso":        "Ingreso",
+  "gasto-personal": "Gasto personal",
+  "gasto-fijo":     "Consumo fijo",
+  "gasto-manual":   "Gasto manual",
+};
+const TIPO_COLOR: Record<TipoMovimiento, string> = {
+  "ingreso":        "#16a34a",
+  "gasto-personal": "#C41A3A",
+  "gasto-fijo":     "#d97706",
+  "gasto-manual":   "#6366f1",
+};
+
+/* ====== Sueldos calculados desde asistencia × tarifas (no incluye gastos manuales). ====== */
 function sueldosSede(
   workers: ReturnType<typeof useData>["workers"],
   asistencia: ReturnType<typeof useData>["asistencia"],
@@ -36,21 +61,29 @@ function sueldosSede(
   return total;
 }
 
-function CajaBlock({
-  sede, periodo,
-}: { sede: Sede; periodo: Periodo }) {
+/* ================= BLOQUE DE CAJA ================= */
+function CajaBlock({ sede, periodo }: { sede: Sede; periodo: Periodo }) {
   const d = useData();
-  const caja = periodo === "diario" ? sede.cajaDia : periodo === "semanal" ? sede.cajaSemana : sede.cajaMes;
-  const rango = useMemo(() => {
-    const hoy = new Date(); hoy.setHours(0,0,0,0);
-    if (periodo === "diario")  return { desde: hoy, hasta: hoy };
-    if (periodo === "semanal") { const d = new Date(hoy); d.setDate(hoy.getDate()-6); return { desde: d, hasta: hoy }; }
-    const d1 = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    return { desde: d1, hasta: hoy };
-  }, [periodo]);
-  const sueldos = sueldosSede(d.workers, d.asistencia, sede.id, rango.desde, rango.hasta);
-  const neta = caja.ingresos - sueldos - caja.material;
-  const margen = caja.ingresos > 0 ? Math.round((neta / caja.ingresos) * 100) : 0;
+  const rango = useMemo(() => rangoPeriodo(periodo), [periodo]);
+  const ag = useMemo(
+    () => agregadoCaja({ movimientosCaja: d.movimientosCaja }, sede.id, rango.desdeISO, rango.hastaISO),
+    [d.movimientosCaja, sede.id, rango.desdeISO, rango.hastaISO]
+  );
+  const ingJal = useMemo(
+    () => ingresosJaladoresEnRango(
+      { ingresosJaladores: d.ingresosJaladores, jaladores: d.jaladores },
+      sede.id, rango.desdeISO, rango.hastaISO,
+    ),
+    [d.ingresosJaladores, d.jaladores, sede.id, rango.desdeISO, rango.hastaISO]
+  );
+  const sueldos = useMemo(
+    () => sueldosSede(d.workers, d.asistencia, sede.id, rango.desde, rango.hasta),
+    [d.workers, d.asistencia, sede.id, rango.desde, rango.hasta]
+  );
+  const ingresosTotal = ag.ingresos + ingJal.total;
+  const totalPersonal = sueldos + ag.gastoPersonal;
+  const neta = ingresosTotal - totalPersonal - ag.gastoFijo - ag.gastoManual;
+  const margen = ingresosTotal > 0 ? Math.round((neta / ingresosTotal) * 100) : 0;
 
   return (
     <div style={{
@@ -58,18 +91,33 @@ function CajaBlock({
       padding: 14, display:"flex", flexDirection:"column", gap: 10,
     }}>
       {/* Filas compactas con pill */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap: 8 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
         <div style={{ padding:"10px 12px", background:"rgba(34,197,94,0.08)", borderRadius: 8, textAlign:"center" }}>
           <div style={{ fontSize: 9, color:"#16a34a", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>Ingresos</div>
-          <HideableAmount value={money(caja.ingresos)} size={15} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" align="center" />
+          <HideableAmount value={money(ingresosTotal)} size={15} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" align="center" />
+          {ingJal.total > 0 && (
+            <div style={{ fontSize: 9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 2 }}>
+              caja {money(ag.ingresos)} · jaladores {money(ingJal.total)}
+            </div>
+          )}
         </div>
         <div style={{ padding:"10px 12px", background:"rgba(196,26,58,0.08)", borderRadius: 8, textAlign:"center" }}>
-          <div style={{ fontSize: 9, color:"var(--brand)", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>− Sueldos</div>
-          <HideableAmount value={money(sueldos)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" align="center" />
+          <div style={{ fontSize: 9, color:"var(--brand)", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>− Personal</div>
+          <HideableAmount value={money(totalPersonal)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" align="center" />
+          <div style={{ fontSize: 9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 2 }}>
+            sueldos {money(sueldos)}{ag.gastoPersonal > 0 ? ` · extra ${money(ag.gastoPersonal)}` : ""}
+          </div>
         </div>
-        <div style={{ padding:"10px 12px", background:"rgba(245,158,11,0.08)", borderRadius: 8, textAlign:"center" }}>
-          <div style={{ fontSize: 9, color:"#d97706", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>− Material</div>
-          <HideableAmount value={money(caja.material)} size={15} color="#d97706" weight={800} fontFamily="'DM Mono',monospace" align="center" />
+        <div style={{ padding:"10px 12px", background:"rgba(217,119,6,0.08)", borderRadius: 8, textAlign:"center" }}>
+          <div style={{ fontSize: 9, color:"#d97706", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>− Fijos</div>
+          <HideableAmount value={money(ag.gastoFijo)} size={15} color="#d97706" weight={800} fontFamily="'DM Mono',monospace" align="center" />
+          <div style={{ fontSize: 9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 2 }}>
+            luz, agua, internet, local…
+          </div>
+        </div>
+        <div style={{ padding:"10px 12px", background:"rgba(99,102,241,0.08)", borderRadius: 8, textAlign:"center" }}>
+          <div style={{ fontSize: 9, color:"#6366f1", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>− Manuales</div>
+          <HideableAmount value={money(ag.gastoManual)} size={15} color="#6366f1" weight={800} fontFamily="'DM Mono',monospace" align="center" />
         </div>
       </div>
 
@@ -91,6 +139,134 @@ function CajaBlock({
           {margen}%
         </span>
       </div>
+    </div>
+  );
+}
+
+/* ================= LISTA DE MOVIMIENTOS DEL PERIODO ================= */
+function MovimientosLista({ sede, periodo, color }: { sede: Sede; periodo: Periodo; color: string }) {
+  const d = useData();
+  const rango = useMemo(() => rangoPeriodo(periodo), [periodo]);
+  const ag = useMemo(
+    () => agregadoCaja({ movimientosCaja: d.movimientosCaja }, sede.id, rango.desdeISO, rango.hastaISO),
+    [d.movimientosCaja, sede.id, rango.desdeISO, rango.hastaISO]
+  );
+  const [filtro, setFiltro] = useState<TipoMovimiento | "todos">("todos");
+  const [editar, setEditar] = useState<MovimientoCaja | null>(null);
+  const [abrirNuevo, setAbrirNuevo] = useState(false);
+
+  const filtrados = filtro === "todos" ? ag.movimientos : ag.movimientos.filter(m => m.tipo === filtro);
+  const pag = usePagination(filtrados, 8);
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{
+        padding: "14px 18px", borderBottom: "1px solid var(--border)",
+        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap",
+      }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Movimientos del periodo</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
+            {ag.movimientos.length} registros · {formatFecha(rango.desdeISO)} → {formatFecha(rango.hastaISO)}
+          </div>
+        </div>
+        <button className="btn-primary hide-mobile" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          onClick={() => setAbrirNuevo(true)}>
+          <Icon name="plus" size={14} /> Registrar movimiento
+        </button>
+      </div>
+
+      {/* Filtros por tipo */}
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {([
+          { k: "todos",          label: `Todos (${ag.movimientos.length})`,                                              col: color },
+          { k: "ingreso",        label: `Ingresos (${ag.movimientos.filter(m => m.tipo==="ingreso").length})`,           col: TIPO_COLOR.ingreso },
+          { k: "gasto-personal", label: `Personal (${ag.movimientos.filter(m => m.tipo==="gasto-personal").length})`,    col: TIPO_COLOR["gasto-personal"] },
+          { k: "gasto-fijo",     label: `Fijos (${ag.movimientos.filter(m => m.tipo==="gasto-fijo").length})`,            col: TIPO_COLOR["gasto-fijo"] },
+          { k: "gasto-manual",   label: `Manuales (${ag.movimientos.filter(m => m.tipo==="gasto-manual").length})`,       col: TIPO_COLOR["gasto-manual"] },
+        ] as const).map(b => {
+          const active = filtro === b.k;
+          return (
+            <button key={b.k} onClick={() => { setFiltro(b.k as typeof filtro); pag.setPage(1); }}
+              style={{
+                padding: "5px 10px", borderRadius: 99,
+                border: active ? `1px solid ${b.col}` : "1px solid var(--border)",
+                background: active ? `${b.col}14` : "transparent",
+                color: active ? b.col : "var(--text-muted)",
+                fontWeight: active ? 700 : 500, fontSize: 11, cursor: "pointer",
+                fontFamily: "'DM Mono',monospace",
+              }}>
+              {b.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="table-wrap">
+        <table className="tramys-table">
+          <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th style={{ textAlign:"right" }}>Monto</th><th></th></tr></thead>
+          <tbody>
+            {pag.pageItems.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign:"center", padding: "26px 12px", color: "var(--text-muted)", fontSize: 13 }}>
+                No hay movimientos en este periodo.
+              </td></tr>
+            ) : pag.pageItems.map(m => (
+              <tr key={m.id}>
+                <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>{formatFecha(m.fecha)}</td>
+                <td>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, fontFamily: "'DM Mono',monospace",
+                    color: TIPO_COLOR[m.tipo],
+                    background: `${TIPO_COLOR[m.tipo]}18`,
+                    padding: "3px 8px", borderRadius: 99,
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                  }}>
+                    <span style={{ width: 6, height: 6, borderRadius: 99, background: TIPO_COLOR[m.tipo] }} />
+                    {TIPO_LABEL[m.tipo]}
+                    {m.tipo === "gasto-fijo" && m.categoria ? ` · ${CAT_LABEL[m.categoria]}` : ""}
+                  </span>
+                </td>
+                <td>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{m.concepto}</div>
+                  {m.cantidad != null && m.unitario != null && (
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
+                      {m.cantidad} × {money(m.unitario)}
+                    </div>
+                  )}
+                </td>
+                <td style={{ textAlign:"right", fontFamily:"'DM Mono',monospace", fontWeight: 700, color: TIPO_COLOR[m.tipo] }}>
+                  {m.tipo === "ingreso" ? "+" : "−"}{money(m.monto)}
+                </td>
+                <td style={{ width: 80, whiteSpace:"nowrap" }}>
+                  <button onClick={() => setEditar(m)}
+                    style={{ background:"transparent", border:"1px solid var(--border)", borderRadius: 6, cursor:"pointer", padding:"4px 8px", marginRight: 4 }}
+                    title="Editar"><Icon name="edit" size={12} /></button>
+                  <button
+                    onClick={() => { if (window.confirm("¿Eliminar este movimiento?")) d.deleteMovimientoCaja(m.id); }}
+                    style={{ background:"transparent", border:"1px solid var(--border)", borderRadius: 6, cursor:"pointer", padding:"4px 8px", color:"var(--brand)" }}
+                    title="Eliminar"><Icon name="trash" size={12} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {pag.needsPagination && (
+        <Pagination page={pag.page} totalPages={pag.totalPages} total={pag.total}
+          rangeStart={pag.rangeStart} rangeEnd={pag.rangeEnd} onChange={pag.setPage} label="movimientos" />
+      )}
+
+      {/* Botón mobile */}
+      <div className="show-mobile" style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
+        <button className="btn-primary" style={{ width: "100%", minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          onClick={() => setAbrirNuevo(true)}>
+          <Icon name="plus" size={14} /> Registrar movimiento
+        </button>
+      </div>
+
+      <ModalMovimiento open={abrirNuevo || editar !== null} sede={sede} edit={editar}
+        onClose={() => { setAbrirNuevo(false); setEditar(null); }} />
     </div>
   );
 }
@@ -122,8 +298,6 @@ function ModalEditarSede({
 
   if (!sede) return null;
 
-  /* Candidatos: encargados / owners actualmente activos. Si quien está
-     asignado ya no califica, lo conservamos como opción para no perderlo. */
   const candidatos = d.workers.filter(w => w.activo && (w.rol === "encargado" || w.rol === "owner"));
   const actual = sede.encargadoId ? d.workers.find(w => w.id === sede.encargadoId) : null;
   if (actual && !candidatos.some(c => c.id === actual.id)) candidatos.unshift(actual);
@@ -158,15 +332,9 @@ function ModalEditarSede({
           </div>
         </div>
 
-        {/* Selector de encargado */}
         <div>
           <div className="section-label">Encargado</div>
-          <select
-            className="select-base"
-            style={{ width:"100%" }}
-            value={encargadoId}
-            onChange={e => setEncargadoId(e.target.value)}
-          >
+          <select className="select-base" style={{ width:"100%" }} value={encargadoId} onChange={e => setEncargadoId(e.target.value)}>
             <option value="">— Sin encargado asignado —</option>
             {candidatos.map(w => (
               <option key={w.id} value={w.id}>
@@ -208,7 +376,9 @@ function ModalEditarSede({
 }
 
 /* ================= DETALLE DE SEDE ================= */
-function DetalleSede({ sede, onBack, onEditar }: { sede: Sede; onBack: () => void; onEditar: () => void }) {
+function DetalleSede({ sede, onBack, onEditar, mostrarVolver, puedeEditarSede }:
+  { sede: Sede; onBack: () => void; onEditar: () => void; mostrarVolver: boolean; puedeEditarSede: boolean }
+) {
   const d = useData();
   const [periodo, setPeriodo] = useState<Periodo>("diario");
 
@@ -223,9 +393,11 @@ function DetalleSede({ sede, onBack, onEditar }: { sede: Sede; onBack: () => voi
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap: 16 }}>
-      <button onClick={onBack} className="btn-outline" style={{ alignSelf:"flex-start", display:"flex", alignItems:"center", gap: 6 }}>
-        <Icon name="arrow_left" size={14} /> Volver a sedes
-      </button>
+      {mostrarVolver && (
+        <button onClick={onBack} className="btn-outline" style={{ alignSelf:"flex-start", display:"flex", alignItems:"center", gap: 6 }}>
+          <Icon name="arrow_left" size={14} /> Volver a sedes
+        </button>
+      )}
 
       {/* Header */}
       <div className="card" style={{ padding: 0, overflow:"hidden" }}>
@@ -245,9 +417,11 @@ function DetalleSede({ sede, onBack, onEditar }: { sede: Sede; onBack: () => voi
               <span><Icon name="clock" size={11} /> {sede.horario}</span>
             </div>
           </div>
-          <button className="btn-outline" onClick={onEditar} style={{ display:"flex", alignItems:"center", gap: 6 }}>
-            <Icon name="edit" size={13} /> Editar
-          </button>
+          {puedeEditarSede && (
+            <button className="btn-outline" onClick={onEditar} style={{ display:"flex", alignItems:"center", gap: 6 }}>
+              <Icon name="edit" size={13} /> Editar
+            </button>
+          )}
         </div>
 
         {/* Resumen rápido */}
@@ -277,27 +451,29 @@ function DetalleSede({ sede, onBack, onEditar }: { sede: Sede; onBack: () => voi
           <div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Caja</div>
             <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
-              Ingresos − Sueldos − Material = Neta
+              Ingresos − Personal − Fijos − Manuales = Neta
             </div>
           </div>
-          <div style={{ display:"flex", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 8, padding: 3 }}>
-            {(["diario","semanal","mensual"] as Periodo[]).map(p => (
+          <div style={{ display:"flex", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 8, padding: 3, flexWrap:"wrap" }}>
+            {PERIODOS.map(p => (
               <button key={p} onClick={()=>setPeriodo(p)}
                 style={{
                   padding: "6px 14px", borderRadius: 6, border: "none", cursor:"pointer",
                   background: periodo===p ? sede.color : "transparent",
                   color: periodo===p ? "#fff" : "var(--text-muted)",
                   fontWeight: periodo===p ? 700 : 500, fontSize: 12,
-                  textTransform:"capitalize",
                   fontFamily:"'Bricolage Grotesque',sans-serif",
                   minHeight: 30,
                 }}
-              >{p}</button>
+              >{PERIODO_LABEL[p]}</button>
             ))}
           </div>
         </div>
         <CajaBlock sede={sede} periodo={periodo} />
       </div>
+
+      {/* Movimientos del periodo */}
+      <MovimientosLista sede={sede} periodo={periodo} color={sede.color} />
 
       {/* Tabla de trabajadores */}
       <div className="card" style={{ padding: 0, overflow:"hidden" }}>
@@ -349,29 +525,61 @@ function DetalleSede({ sede, onBack, onEditar }: { sede: Sede; onBack: () => voi
 /* ================= PÁGINA PRINCIPAL ================= */
 export default function SedesPage() {
   const d = useData();
+  const { worker: actor, sede: sedeActor } = useSession();
+  const isEnc = actor?.rol === "encargado";
+
   const [selId, setSelId]   = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+
+  /* Encargado: forzar siempre el detalle de su sede asignada. */
+  useEffect(() => {
+    if (isEnc && sedeActor && selId !== sedeActor.id) setSelId(sedeActor.id);
+  }, [isEnc, sedeActor, selId]);
 
   const pagSedes = usePagination(d.sedes);
 
   const seleccionada = selId ? d.sedes.find(s => s.id === selId) ?? null : null;
 
   if (seleccionada) {
+    /* Encargado: solo puede ver y registrar movimientos en su propia sede.
+       No edita los datos maestros de la sede (eso es del owner). */
+    const puedeEditarSede = !isEnc;
     return (
       <>
-        <Topbar title={seleccionada.nombre} subtitle="Detalle de sede" />
+        <Topbar
+          title={isEnc ? "Mi sede" : seleccionada.nombre}
+          subtitle={isEnc ? seleccionada.nombre : "Detalle de sede"}
+        />
         <main className="page-main">
           <DetalleSede
             sede={seleccionada}
             onBack={()=>setSelId(null)}
             onEditar={()=>setEditId(seleccionada.id)}
+            mostrarVolver={!isEnc}
+            puedeEditarSede={puedeEditarSede}
           />
         </main>
-        <ModalEditarSede
-          open={editId !== null}
-          sede={editId ? d.sedes.find(s => s.id === editId) ?? null : null}
-          onClose={()=>setEditId(null)}
-        />
+        {puedeEditarSede && (
+          <ModalEditarSede
+            open={editId !== null}
+            sede={editId ? d.sedes.find(s => s.id === editId) ?? null : null}
+            onClose={()=>setEditId(null)}
+          />
+        )}
+      </>
+    );
+  }
+
+  /* Encargado sin sede asignada → mensaje guía. La grilla solo la ve owner. */
+  if (isEnc) {
+    return (
+      <>
+        <Topbar title="Mi sede" subtitle="Sin sede asignada" />
+        <main className="page-main">
+          <div className="card" style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
+            No tienes una sede asignada. Pide al owner que te asocie a una sede para ver y registrar movimientos.
+          </div>
+        </main>
       </>
     );
   }
@@ -418,7 +626,6 @@ export default function SedesPage() {
                     <Badge variant={sede.activa ? "activo" : "inactivo"} small />
                   </div>
 
-                  {/* Stats compactos */}
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
                     {[
                       { icon:"trabajadores", color: sede.color, value: workers.filter(w=>w.rol==="trabajador").length, label:"Personas" },
@@ -433,7 +640,6 @@ export default function SedesPage() {
                     ))}
                   </div>
 
-                  {/* Asistencia */}
                   <div style={{ fontSize: 11, color:"var(--text-muted)", display:"flex", justifyContent:"space-between", marginBottom: 4 }}>
                     <span>Asistencia hoy</span>
                     <span style={{ fontWeight: 700, color: sede.color, fontFamily:"'DM Mono',monospace" }}>{pct}%</span>
