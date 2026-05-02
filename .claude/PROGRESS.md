@@ -4,6 +4,25 @@
 
 ---
 
+## 🗓️ Bitácora de sesiones
+
+### 2026-05-02 — Asistencia con jaladores + perfil tabbed de jalador
+- `(admin)/asistencia/page.tsx`: filtros de personal reordenados a `Ambos · Trabajadores · Jaladores` con default "Ambos"; botón "Editar" siempre (sin "Registrar"); modal "Añadir registro" con selector de tipo (Trabajador/Jalador). Al elegir Jalador, "Continuar" hace `router.push('/jaladores?sede=…&jalador=…&fecha=…')` porque jaladores no tienen `AsistenciaRec`.
+- `(admin)/jaladores/page.tsx`: `PerfilJalador` rediseñado con tabs `Asistencia | Comisiones | Perfil` espejando la estructura del perfil de trabajador (header con KPI "Comisión mes", tabs con `Icon`+label, paneles con padding). Tab Asistencia usa `MultiverseCalendar` en modo `readonly` (worked = "tuvo ingreso ese día") + `onDayClick` para abrir modal de registrar ingreso prefijando fecha. Tab Comisiones absorbe el antiguo Cuadre de caja personal con selector de periodo. Tab Perfil muestra campos básicos + Editar.
+- `ModalIngreso` aceptó nuevo prop opcional `fechaInicial` para abrir en modo "nuevo" con fecha distinta a hoy (lo usa el calendario y el deep-link de `/asistencia`).
+- `JaladoresPage` consume `useSearchParams` y al detectar `?jalador=<id>&fecha=<iso>` selecciona el jalador y dispara automáticamente el modal de registrar ingreso con esa fecha — cierra el flujo iniciado desde la página de asistencia.
+- Motivo: el usuario pidió que jaladores tengan "el tema de asistencia similar a trabajadores" para uniformar el modelo mental cross-personal. Como jaladores no marcan entrada/salida, su asistencia se infiere de `IngresoJalador` (no se introdujo entidad nueva).
+- Pendiente: el `CuadreCaja` global de la lista de jaladores quedó intacto; evaluar si conviene también moverlo a la página de Caja para evitar duplicación con el cuadre personal de la pestaña Comisiones.
+
+### 2026-05-02 — Hook Stop para auto-log de sesiones
+- Añadido `.claude/hooks/stop-progress.ps1`: script PowerShell que en el evento `Stop` devuelve `{"decision":"block","reason":...}` la primera vez que ve un `session_id` y crea un marker en `.claude/.progress-markers/<id>` para que paradas posteriores del mismo session salgan silenciosas (evita bucle).
+- Registrado el hook en `.claude/settings.local.json` (`hooks.Stop`) invocando el `.ps1` con `powershell -NoProfile -ExecutionPolicy Bypass -File`, timeout 10s.
+- `.gitignore` ignora `.claude/.progress-markers/` para no versionar markers.
+- Motivo: dejar trazabilidad semántica de cada sesión sin pagar tokens en cada Edit (se decidió opción 2 = "1 escritura por sesión" frente a hooks por cada modificación).
+- Pendiente: tras la primera sesión real, evaluar si la entrada inicial queda muy escueta (el Stop dispara tras el primer turno, no al cierre real); si molesta, swap a marker time-based o ampliar a SessionEnd cuando la API lo permita.
+
+---
+
 ## 🎯 1. Reglas Globales del Proyecto
 
 > **Movido a `docs/style-guide.md`** — estándar visual de comentarios + JSX, breakpoints responsivos mobile-first, paleta TRAMYS (modo claro/oscuro/sedes/estados) y tipografía (Bricolage + DM Mono) son la fuente única ahí. Esta sección queda como puntero para evitar drift entre documentos.
@@ -308,6 +327,57 @@
 - [x] **Modo colapsado (sidebar 64 px)**: los grupos se "aplanan" — cada hijo se muestra como link suelto con su icono propio. Mantenemos navegación 1-clic sin tener que expandir el sidebar.
 - [x] **BottomNav móvil**: sin cambios. El patrón "4 primarias + bottom sheet 'Más'" ya cumple la función de agrupar y mantiene el mejor patrón táctil para mobile.
 - [x] Animación: chevron rota 0°↔−90° con `transition: transform 0.2s`, hijos aparecen con `animate-fade-in` y borde guía `var(--border)` a la izquierda.
+
+---
+
+## 🆕 5e. Iteración: rename `/mis-gastos` → `/caja`, aislamiento del reloj y decisiones diferidas
+
+### 🏷️ Rename `/mis-gastos` → `/caja`
+- [x] **Convención formalizada**: el prefijo `mis-*` queda **exclusivo del portal del trabajador** (`/mi-asistencia`, `/mis-permisos`, etc.). Para admin se usan nombres de dominio del negocio. Documentado en `CLAUDE.md` § "Convención de namespaces".
+- [x] **Carpeta** `src/app/(admin)/mis-gastos/` → `src/app/(admin)/caja/` (`git mv` preserva historia).
+- [x] **Componente** `PanelMisGastos.tsx` → `PanelCaja.tsx`. Función exportada `PanelMisGastos` → `PanelCaja`. Header del panel "Mis gastos · Sede" → "Caja · Sede". Topbar de la página: title "Caja", subtitle "gastos operativos".
+- [x] **Referencias actualizadas**: `Sidebar.tsx` (owner + encargado), `BottomNav.tsx` (owner `MORE` + encargado `MORE`), `middleware.ts` (`rutasAdmin`). El export default de la page renombrado a `CajaPage`.
+- [x] **Comentarios internos** actualizados en `ModalMovimiento.tsx` y `lib/utils/periodos.ts` (referencias textuales que decían "Mis gastos").
+- [x] El histórico de iteraciones (5c, 5d) en este documento conserva las menciones originales — no reescribimos historia, solo dejamos que las nuevas secciones reflejen el estado actual.
+
+### ⏱️ `useClock` aislado en sub-componente memoizado
+- [x] **Problema**: `useClock` (tick `setInterval` cada 1 s) se consumía directamente en el cuerpo de `Topbar` y `TopbarWorker`. Cada segundo, todo el topbar (theme toggle, notificaciones, privacy, alertas, datos del worker) se re-renderizaba.
+- [x] **Fix**: extraído a `TopbarClock` (admin) y `TopbarClockWorker` (worker), ambos `memo()`-izados, dentro del mismo archivo. El padre ya no llama `useClock` — solo renderiza `<TopbarClock />`. El tick afecta a un solo nodo aislado.
+- [x] **Sin cambios visuales**. Solo refactor de aislamiento.
+
+### 📌 Decisiones diferidas (con su trigger)
+- **`loading.tsx` nativos de Next**: NO aplicable hoy — la app es 100% Client Components con `DataProvider` (localStorage o realtime), por lo que el server no espera datos al renderizar páginas. `<HydrationGate>` con skeletons ya cubre el caso. **Trigger para revisar**: cuando se migre alguna ruta a Server Component con `await` directo de Supabase (ej. un reporte server-rendered). Solo entonces vale añadir `loading.tsx` por route group.
+- **Módulo genérico "Operaciones / Cargos"**: NO unificar `/jaladores` con un módulo abstracto hoy. Es abstracción prematura — un único rol operativo no justifica la generalización, y los jaladores tienen lógica específica (`porcentajeComision`, `metaMensual`, `ingresos_jaladores` aparte). **Trigger para revisar**: si entran ≥ 2 roles operativos nuevos (supervisores, volanteros, etc.), evaluar fusión en `/operaciones?rol=jalador|...`. Tener 2 ejemplos concretos antes de diseñar la abstracción.
+
+---
+
+## 🆕 5f. Iteración: ModalMovimiento simplificado, helper compartido `derivadosCaja` y labels intuitivos
+
+### 🧹 ModalMovimiento — quitar Cantidad y Unitario
+- [x] **Campos eliminados** del modal: `Cantidad (clientes / unidades)` y `Unitario (S/.)`. El usuario ingresa el monto directo.
+- [x] **Lógica de override eliminada**: `montoAuto`, `montoLocked`, botones "Editar manual" y "Volver a auto" ya no existen. El campo Monto siempre es editable, sin readonly.
+- [x] **Schema sin migración**: `MovimientoCaja.cantidad` y `MovimientoCaja.unitario` siguen existiendo como `optional` en TypeScript y en la columna SQL, así que **registros antiguos que los traían siguen leyéndose**, solo que ya no se escriben más. No se rompió nada en DB.
+- [x] El comentario en `guardar()` deja explícito que estos campos se omiten al persistir.
+
+### 🔧 Helper compartido `derivadosCaja(...)` en DataProvider
+- [x] **Problema previo**: `PanelCaja` (`/caja`) calculaba sueldos+comisiones derivados, pero `CajaBlock` (`/sedes`) usaba una función local `sueldosSede` que **solo sumaba sueldos** y no incluía comisiones de jaladores. Resultado: el card "− Personal" en `/sedes` mostraba menos que en `/caja` para la misma sede y periodo.
+- [x] **Fix**: nuevo helper exportado en `DataProvider.tsx`:
+  ```ts
+  derivadosCaja(state, sedeId, desdeISO, hastaISO, esFeriadoFn)
+    → { sueldos, comisiones, total }
+  ```
+  - `sueldos`: `Σ ingresoDia(rec, tarifas, weekend, feriado)` para asistencias en la **sede del día** (respeta multi-sede por día con `sedeDelDia`).
+  - `comisiones`: `Σ ingresoJalador × (porcentajeComision/100)` por jalador con `sedeId === sede.id`.
+- [x] **Adopción**:
+  - `PanelCaja` (`/caja`): reemplazó sus dos `useMemo` por una llamada a `derivadosCaja`.
+  - `CajaBlock` (`/sedes`): eliminada la función local `sueldosSede`. Ahora `totalPersonal = derivadosCaja.total + ag.gastoPersonal`. El hint del card "− Personal" muestra desglose `sueldos {n} · com {n} · extra {n}`.
+- [x] Comportamiento idéntico entre `/caja` y `/sedes` para la misma sede y periodo. Bug de inconsistencia eliminado.
+
+### 🏷️ Labels intuitivos para filas AUTO
+- [x] **Trabajadores** (cobro quincenal/mensual): `"Sueldos del personal (planilla)"` → **`"Sueldos por pagar (planilla)"`**. Lenguaje del dueño: "esto le debo a mi gente". Cubre tanto el corte quincenal como el mensual sin cambiar el label según la fecha.
+- [x] **Jaladores** (cobro diario): `"Comisiones de jaladores"` → **`"Comisiones del periodo (jaladores)"`**. Más explícito sobre el alcance temporal.
+- [x] **Tooltip del badge `AUTO`** ampliado: *"Costo del personal acumulado en el periodo. El pago real se registra desde Planilla / Jaladores cuando se ejecuta."* Aclara que es devengado, no pagado, sin usar la palabra técnica.
+- [x] El botón **Editar** sigue redirigiendo al panel de origen (`/planilla?sede=...` / `/jaladores?sede=...`), donde el dueño ejecuta el pago real.
 
 ---
 

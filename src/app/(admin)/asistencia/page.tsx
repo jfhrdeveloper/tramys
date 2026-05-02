@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/layout/Topbar";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -170,6 +171,7 @@ function ModalEditar({
 /* ================= PÁGINA ================= */
 export default function AsistenciaPage() {
   const d = useData();
+  const router = useRouter();
   const { worker: actor, sede: sedeActor } = useSession();
   const isEnc = actor?.rol === "encargado";
   const now = new Date();
@@ -180,10 +182,11 @@ export default function AsistenciaPage() {
   /* Filtro de tipo de personal. Trabajadores tienen `AsistenciaRec` real
      (estado, entrada/salida); jaladores no tienen marca diaria, así que
      su "asistencia" se infiere de si tienen `IngresoJalador` ese día. */
-  const [tipoPersonal, setTipoPersonal] = useState<"trabajadores" | "jaladores" | "ambos">("trabajadores");
+  const [tipoPersonal, setTipoPersonal] = useState<"trabajadores" | "jaladores" | "ambos">("ambos");
   const [modalEdit, setModalEdit] = useState<{ rec: AsistenciaRec | null; worker: Worker; iso: string } | null>(null);
   const [modalAdd, setModalAdd]   = useState<{ iso: string } | null>(null);
-  const [addWorkerId, setAddWorkerId] = useState<string>("");
+  const [addTipo, setAddTipo]     = useState<"trabajador" | "jalador">("trabajador");
+  const [addPersonId, setAddPersonId] = useState<string>("");
 
   /* Encargado: scope reducido a su sede. Acepta workers de planta de su sede
      O cualquier worker que tenga al menos un registro con sedeIdDia = su sede
@@ -262,9 +265,9 @@ export default function AsistenciaPage() {
             Personal
           </span>
           {([
+            { k: "ambos"        as const, label: `Ambos`,                                  icon: "trabajadores", col: "#6366f1" },
             { k: "trabajadores" as const, label: `Trabajadores (${trabajadores.length})`, icon: "trabajadores", col: "#C41A3A" },
             { k: "jaladores"    as const, label: `Jaladores (${jaladores.length})`,       icon: "jaladores",    col: "#1d6fa4" },
-            { k: "ambos"        as const, label: `Ambos`,                                  icon: "trabajadores", col: "#6366f1" },
           ]).map(t => {
             const active = tipoPersonal === t.k;
             return (
@@ -329,7 +332,7 @@ export default function AsistenciaPage() {
             <button
               className="btn-primary hide-mobile"
               style={{ display:"inline-flex", alignItems:"center", gap: 6 }}
-              onClick={()=>{ setAddWorkerId(""); setModalAdd({ iso: selIso }); }}
+              onClick={()=>{ setAddTipo(tipoPersonal === "jaladores" ? "jalador" : "trabajador"); setAddPersonId(""); setModalAdd({ iso: selIso }); }}
             >
               <Icon name="plus" size={13} color="#fff" /> Añadir registro
             </button>
@@ -340,7 +343,7 @@ export default function AsistenciaPage() {
         <button
           className="btn-primary show-mobile"
           style={{ display:"none", alignItems:"center", justifyContent:"center", gap: 6, width:"100%", marginBottom: 14, padding:"12px 0", minHeight: 44 }}
-          onClick={()=>{ setAddWorkerId(""); setModalAdd({ iso: selIso }); }}
+          onClick={()=>{ setAddTipo(tipoPersonal === "jaladores" ? "jalador" : "trabajador"); setAddPersonId(""); setModalAdd({ iso: selIso }); }}
         >
           <Icon name="plus" size={14} color="#fff" /> Añadir registro
         </button>
@@ -376,7 +379,7 @@ export default function AsistenciaPage() {
               return (
                 <div key={iso}
                   onClick={()=>setSelIso(iso)}
-                  onDoubleClick={()=>{ setAddWorkerId(""); setModalAdd({ iso }); }}
+                  onDoubleClick={()=>{ setAddTipo(tipoPersonal === "jaladores" ? "jalador" : "trabajador"); setAddPersonId(""); setModalAdd({ iso }); }}
                   title="Doble click para registrar a alguien este día"
                   className="cal-cell"
                   style={{
@@ -499,7 +502,7 @@ export default function AsistenciaPage() {
                         <td>
                           <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px", display:"inline-flex", alignItems:"center", gap: 4 }}
                             onClick={()=>setModalEdit({ rec: tieneRegistro ? x.rec : null, worker: x.worker, iso: selIso })}>
-                            <Icon name={tieneRegistro ? "edit" : "plus"} size={11} /> {tieneRegistro ? "Editar" : "Registrar"}
+                            <Icon name="edit" size={11} /> Editar
                           </button>
                         </td>
                       </tr>
@@ -586,7 +589,10 @@ export default function AsistenciaPage() {
         />
       )}
 
-      {/* ====== Modal "Añadir registro": picker de trabajador para una fecha ====== */}
+      {/* ====== Modal "Añadir registro": tipo + persona para una fecha ======
+         Trabajador → abre el modal de edición de asistencia para ese día.
+         Jalador    → no tiene marca diaria; redirige a /jaladores con la sede
+                      pre-filtrada para registrar el ingreso desde su panel. */}
       <Modal
         open={!!modalAdd}
         onClose={()=>setModalAdd(null)}
@@ -595,6 +601,30 @@ export default function AsistenciaPage() {
       >
         {modalAdd && (
           <div style={{ display:"flex", flexDirection:"column", gap: 12 }}>
+            <div>
+              <div className="section-label">Tipo</div>
+              <div style={{ display:"flex", gap: 6 }}>
+                {([
+                  { k: "trabajador" as const, label: "Trabajador", col: "#C41A3A" },
+                  { k: "jalador"    as const, label: "Jalador",    col: "#1d6fa4" },
+                ]).map(t => {
+                  const active = addTipo === t.k;
+                  return (
+                    <button key={t.k} onClick={()=>{ setAddTipo(t.k); setAddPersonId(""); }}
+                      style={{
+                        flex: 1, padding: "8px 12px", borderRadius: 8, cursor: "pointer",
+                        border: active ? `1px solid ${t.col}` : "1px solid var(--border)",
+                        background: active ? `${t.col}14` : "var(--bg)",
+                        color: active ? t.col : "var(--text-muted)",
+                        fontWeight: active ? 700 : 500, fontSize: 12.5,
+                        fontFamily: "'Bricolage Grotesque',sans-serif",
+                      }}>
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div>
               <div className="section-label">Fecha</div>
               <input
@@ -605,23 +635,40 @@ export default function AsistenciaPage() {
               />
             </div>
             <div>
-              <div className="section-label">Trabajador</div>
+              <div className="section-label">{addTipo === "trabajador" ? "Trabajador" : "Jalador"}</div>
               <select
                 className="select-base"
-                value={addWorkerId}
-                onChange={e=>setAddWorkerId(e.target.value)}
+                value={addPersonId}
+                onChange={e=>setAddPersonId(e.target.value)}
                 style={{ width: "100%" }}
               >
-                <option value="">Selecciona un trabajador…</option>
-                {trabajadores.map(w => (
-                  <option key={w.id} value={w.id}>
-                    {w.nombre}{w.apodo ? ` (${w.apodo})` : ""}
-                  </option>
-                ))}
+                <option value="">Selecciona un {addTipo}…</option>
+                {addTipo === "trabajador"
+                  ? trabajadores.map(w => (
+                      <option key={w.id} value={w.id}>
+                        {w.nombre}{w.apodo ? ` (${w.apodo})` : ""}
+                      </option>
+                    ))
+                  : jaladores.map(j => (
+                      <option key={j.id} value={j.id}>
+                        {j.nombre}{j.apodo ? ` (${j.apodo})` : ""}
+                      </option>
+                    ))
+                }
               </select>
-              {trabajadores.length === 0 && (
+              {addTipo === "trabajador" && trabajadores.length === 0 && (
                 <div style={{ marginTop: 6, fontSize: 11, color:"var(--text-muted)" }}>
                   No hay trabajadores en tu scope para asignar.
+                </div>
+              )}
+              {addTipo === "jalador" && jaladores.length === 0 && (
+                <div style={{ marginTop: 6, fontSize: 11, color:"var(--text-muted)" }}>
+                  No hay jaladores en tu scope para asignar.
+                </div>
+              )}
+              {addTipo === "jalador" && (
+                <div style={{ marginTop: 6, fontSize: 11, color:"var(--text-muted)" }}>
+                  Los jaladores no tienen marca diaria — al continuar, te llevamos al panel de Jaladores para registrar el ingreso.
                 </div>
               )}
             </div>
@@ -630,15 +677,23 @@ export default function AsistenciaPage() {
               <button
                 className="btn-primary"
                 style={{ flex: 2 }}
-                disabled={!addWorkerId}
+                disabled={!addPersonId}
                 onClick={()=>{
-                  const w = trabajadores.find(x => x.id === addWorkerId);
-                  if (!w || !modalAdd) return;
-                  const recExist = d.asistencia.find(a => a.workerId === w.id && a.fecha === modalAdd.iso) ?? null;
+                  if (!modalAdd) return;
                   const iso = modalAdd.iso;
-                  setSelIso(iso);
-                  setModalAdd(null);
-                  setModalEdit({ rec: recExist, worker: w, iso });
+                  if (addTipo === "trabajador") {
+                    const w = trabajadores.find(x => x.id === addPersonId);
+                    if (!w) return;
+                    const recExist = d.asistencia.find(a => a.workerId === w.id && a.fecha === iso) ?? null;
+                    setSelIso(iso);
+                    setModalAdd(null);
+                    setModalEdit({ rec: recExist, worker: w, iso });
+                  } else {
+                    const j = jaladores.find(x => x.id === addPersonId);
+                    if (!j) return;
+                    setModalAdd(null);
+                    router.push(`/jaladores?sede=${j.sedeId}&jalador=${j.id}&fecha=${iso}`);
+                  }
                 }}
               >
                 Continuar

@@ -1,11 +1,9 @@
 "use client";
 
 /* ================= IMPORTS ================= */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
-import { Icon } from "@/components/ui/Icons";
 import { useToast } from "@/components/ui/Feedback";
-import { money } from "@/lib/utils/formatters";
 import {
   useData, isoToday,
   type Sede, type MovimientoCaja, type TipoMovimiento, type CategoriaFijo,
@@ -57,7 +55,7 @@ interface Props {
   edit: MovimientoCaja | null;
   onClose: () => void;
   /* Tipo por defecto al crear (cuando no hay edit). Útil para abrir desde
-     "Mis gastos" con el tipo `gasto-personal` ya seleccionado. */
+     "Caja" con el tipo `gasto-personal` ya seleccionado. */
   tipoInicial?: TipoMovimiento;
   /* Filtro de tipos a mostrar en el selector:
      - "todos"     (default): los 4 tipos.
@@ -83,15 +81,12 @@ export function ModalMovimiento({ open, sede, edit, onClose, tipoInicial, modo =
     : modo === "gastos" ? "gasto"
     : "movimiento";
 
-  const [tipo, setTipo]                 = useState<TipoMovimiento>(tipoInicial ?? "ingreso");
-  const [fecha, setFecha]               = useState<string>(isoToday());
-  const [cantidad, setCantidad]         = useState<string>("");
-  const [unitario, setUnitario]         = useState<string>("");
-  const [monto, setMonto]               = useState<string>("");
-  const [montoTouched, setMontoTouched] = useState(false);
-  const [categoria, setCategoria]       = useState<CategoriaFijo>("luz");
-  const [subPersonal, setSubPersonal]   = useState<SubtipoPersonal>("Bono");
-  const [concepto, setConcepto]         = useState<string>("");
+  const [tipo, setTipo]               = useState<TipoMovimiento>(tipoInicial ?? "ingreso");
+  const [fecha, setFecha]             = useState<string>(isoToday());
+  const [monto, setMonto]             = useState<string>("");
+  const [categoria, setCategoria]     = useState<CategoriaFijo>("luz");
+  const [subPersonal, setSubPersonal] = useState<SubtipoPersonal>("Bono");
+  const [concepto, setConcepto]       = useState<string>("");
 
   /* Detecta el subtipo embebido en `concepto` al editar (formato "<Subtipo> · resto"). */
   function parseConceptoPersonal(c: string): { sub: SubtipoPersonal; rest: string } {
@@ -111,8 +106,6 @@ export function ModalMovimiento({ open, sede, edit, onClose, tipoInicial, modo =
     if (edit) {
       setTipo(edit.tipo);
       setFecha(edit.fecha);
-      setCantidad(edit.cantidad != null ? String(edit.cantidad) : "");
-      setUnitario(edit.unitario != null ? String(edit.unitario) : "");
       setMonto(String(edit.monto));
       setCategoria(edit.categoria ?? "luz");
       if (edit.tipo === "gasto-personal") {
@@ -128,34 +121,20 @@ export function ModalMovimiento({ open, sede, edit, onClose, tipoInicial, modo =
         setSubPersonal("Bono");
         setConcepto(edit.concepto);
       }
-      setMontoTouched(true);
     } else {
       setTipo(tipoInicial ?? "ingreso");
       setFecha(isoToday());
-      setCantidad("");
-      setUnitario("");
       setMonto("");
       setCategoria("luz");
       setSubPersonal("Bono");
       setConcepto("");
-      setMontoTouched(false);
     }
   }, [open, edit, tipoInicial]);
-
-  /* Auto-cálculo monto = cantidad × unitario para ingreso, salvo que el usuario lo edite. */
-  const montoAuto = useMemo(() => {
-    const c = Number(cantidad), u = Number(unitario);
-    if (tipo !== "ingreso" || !c || !u) return null;
-    return c * u;
-  }, [tipo, cantidad, unitario]);
-  /* `montoLocked`: el campo va readonly cuando el auto-cálculo aplica y el
-     usuario no ha pedido override manual. Botón "editar manual" lo libera. */
-  const montoLocked   = tipo === "ingreso" && montoAuto != null && !montoTouched;
-  const montoEfectivo = montoLocked && montoAuto != null ? montoAuto : (Number(monto) || 0);
 
   /* gasto-fijo con categoría != "otro" no necesita concepto manual:
      usamos la etiqueta de la categoría como concepto canónico. */
   const conceptoOculto = tipo === "gasto-fijo" && categoria !== "otro";
+  const montoEfectivo  = Number(monto) || 0;
 
   function guardar() {
     if (montoEfectivo <= 0) { toast("El monto debe ser mayor que 0.", "warning"); return; }
@@ -179,9 +158,9 @@ export function ModalMovimiento({ open, sede, edit, onClose, tipoInicial, modo =
       monto: montoEfectivo,
       concepto: conceptoFinal,
       registradoPor: actor?.id,
-      cantidad:  tipo === "ingreso"     && cantidad ? Number(cantidad) : undefined,
-      unitario:  tipo === "ingreso"     && unitario ? Number(unitario) : undefined,
-      categoria: tipo === "gasto-fijo"  ? categoria : undefined,
+      /* `cantidad` y `unitario` se omiten: el modal ya no los pide; los registros
+         antiguos que los traían en DB siguen existiendo pero no se reescriben. */
+      categoria: tipo === "gasto-fijo" ? categoria : undefined,
     };
     if (edit) d.updateMovimientoCaja(edit.id, base);
     else      d.addMovimientoCaja(base);
@@ -252,61 +231,12 @@ export function ModalMovimiento({ open, sede, edit, onClose, tipoInicial, modo =
           )}
         </div>
 
-        {tipo === "ingreso" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <div className="section-label">Cantidad (clientes / unidades)</div>
-              <input type="number" min={0} className="input-base" value={cantidad}
-                onChange={e => setCantidad(e.target.value)} placeholder="ej. 30" />
-            </div>
-            <div>
-              <div className="section-label">Unitario (S/.)</div>
-              <input type="number" min={0} step="0.01" className="input-base" value={unitario}
-                onChange={e => setUnitario(e.target.value)} placeholder="ej. 60" />
-            </div>
-          </div>
-        )}
-
         <div>
-          <div className="section-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span>Monto (S/.)</span>
-            {tipo === "ingreso" && montoAuto != null && montoLocked && (
-              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: "#16a34a" }}>
-                = {money(montoAuto)} (auto)
-              </span>
-            )}
-            {tipo === "ingreso" && montoLocked && (
-              <button type="button"
-                onClick={() => { setMonto(montoAuto != null ? String(montoAuto) : ""); setMontoTouched(true); }}
-                style={{
-                  marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4,
-                  background: "transparent", border: "1px solid var(--border)", borderRadius: 6,
-                  padding: "2px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer", color: "var(--text-muted)",
-                }}
-                title="Permitir editar el monto manualmente"
-              >
-                <Icon name="edit" size={10} /> Editar manual
-              </button>
-            )}
-            {tipo === "ingreso" && !montoLocked && montoAuto != null && (
-              <button type="button"
-                onClick={() => { setMontoTouched(false); setMonto(""); }}
-                style={{
-                  marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4,
-                  background: "transparent", border: "1px solid var(--border)", borderRadius: 6,
-                  padding: "2px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer", color: "var(--text-muted)",
-                }}
-                title="Volver al cálculo automático"
-              >
-                Volver a auto
-              </button>
-            )}
-          </div>
+          <div className="section-label">Monto (S/.)</div>
           <input type="number" min={0} step="0.01" className="input-base"
-            readOnly={montoLocked}
-            value={montoLocked && montoAuto != null ? String(montoAuto) : monto}
-            onChange={e => { setMonto(e.target.value); setMontoTouched(true); }}
-            style={montoLocked ? { background: "var(--hover)", color: "var(--text-muted)", cursor: "not-allowed" } : undefined}
+            value={monto}
+            onChange={e => setMonto(e.target.value)}
+            placeholder="0.00"
           />
         </div>
 

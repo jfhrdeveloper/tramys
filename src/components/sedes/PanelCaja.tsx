@@ -8,8 +8,7 @@ import { HideableAmount } from "@/components/ui/HideableAmount";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { money, formatFecha } from "@/lib/utils/formatters";
 import {
-  useData, agregadoCaja, ingresosJaladoresEnRango,
-  ingresoDia, isWeekendISO, sedeDelDia,
+  useData, agregadoCaja, ingresosJaladoresEnRango, derivadosCaja,
   type Sede, type CategoriaFijo, type MovimientoCaja, type TipoMovimiento,
 } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
@@ -69,7 +68,7 @@ const CAT_LABEL: Record<CategoriaFijo, string> = {
 };
 
 /* ================= COMPONENTE ================= */
-export function PanelMisGastos({ sede, periodo }: Props) {
+export function PanelCaja({ sede, periodo }: Props) {
   const d = useData();
   const router  = useRouter();
   const confirm = useConfirm();
@@ -94,52 +93,36 @@ export function PanelMisGastos({ sede, periodo }: Props) {
   );
   const ingresosTotal = ag.ingresos + ingJal.total;
 
-  /* ====== Auto-derivados: sueldos y comisiones de jaladores ======
-     - Sueldos: Σ ingresoDia para asistencias en la sede del día y dentro del rango.
-     - Comisiones: Σ ingresoJalador × (porcentajeComision/100), de jaladores cuya
-       sede asignada es la actual.
-     Estas filas son virtuales (no se guardan en `movimientos_caja`); cualquier
-     edición debe ocurrir en su panel original (planilla / jaladores). */
-  const sueldosAuto = useMemo(() => {
-    let total = 0;
-    for (const a of d.asistencia) {
-      if (a.fecha < rango.desdeISO || a.fecha > rango.hastaISO) continue;
-      const w = d.workers.find(x => x.id === a.workerId);
-      if (!w) continue;
-      if (sedeDelDia(a, w) !== sede.id) continue;
-      const esFds = isWeekendISO(a.fecha);
-      const esFer = esFeriadoOficial(a.fecha).es;
-      total += ingresoDia(a, w.tarifas, esFds, esFer);
-    }
-    return total;
-  }, [d.asistencia, d.workers, sede.id, rango.desdeISO, rango.hastaISO]);
+  /* ====== Auto-derivados: sueldos y comisiones (helper compartido) ======
+     `derivadosCaja` también lo consume `CajaBlock` en /sedes para que ambos
+     paneles muestren los mismos totales del periodo. */
+  const deriv = useMemo(
+    () => derivadosCaja(
+      { asistencia: d.asistencia, workers: d.workers, jaladores: d.jaladores, ingresosJaladores: d.ingresosJaladores },
+      sede.id, rango.desdeISO, rango.hastaISO,
+      (iso) => esFeriadoOficial(iso).es,
+    ),
+    [d.asistencia, d.workers, d.jaladores, d.ingresosJaladores, sede.id, rango.desdeISO, rango.hastaISO],
+  );
+  const sueldosAuto    = deriv.sueldos;
+  const comisionesAuto = deriv.comisiones;
 
-  const comisionesAuto = useMemo(() => {
-    let total = 0;
-    for (const j of d.jaladores) {
-      if (j.sedeId !== sede.id) continue;
-      const ingresosJ = d.ingresosJaladores.filter(
-        ij => ij.jaladorId === j.id && ij.fecha >= rango.desdeISO && ij.fecha <= rango.hastaISO,
-      );
-      const sumaJ = ingresosJ.reduce((acc, ij) => acc + ij.monto, 0);
-      total += sumaJ * (j.porcentajeComision / 100);
-    }
-    return total;
-  }, [d.jaladores, d.ingresosJaladores, sede.id, rango.desdeISO, rango.hastaISO]);
-
-  /* Filas virtuales para la tabla. Solo aparecen si hay monto > 0. */
+  /* Filas virtuales para la tabla. Solo aparecen si hay monto > 0.
+     Labels enfocadas al lenguaje del dueño:
+     - "Sueldos por pagar" (trabajadores: cobro quincenal/mensual).
+     - "Comisiones del periodo" (jaladores: cobro diario, ya pagado o por pagar). */
   const filasAuto = useMemo<RowAuto[]>(() => {
     const out: RowAuto[] = [];
     if (sueldosAuto > 0) out.push({
       kind: "auto", id: "auto-sueldos", fecha: rango.hastaISO,
       tipo: "gasto-personal", monto: sueldosAuto,
-      concepto: "Sueldos del personal (planilla)",
+      concepto: "Sueldos por pagar (planilla)",
       href: `/planilla?sede=${sede.id}`,
     });
     if (comisionesAuto > 0) out.push({
       kind: "auto", id: "auto-comisiones", fecha: rango.hastaISO,
       tipo: "gasto-personal", monto: comisionesAuto,
-      concepto: "Comisiones de jaladores",
+      concepto: "Comisiones del periodo (jaladores)",
       href: `/jaladores?sede=${sede.id}`,
     });
     return out;
@@ -211,7 +194,7 @@ export function PanelMisGastos({ sede, periodo }: Props) {
         <div>
           <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
             <Icon name="money_bill" size={15} color={sede.color} />
-            Mis gastos · {sede.nombre}
+            Caja · {sede.nombre}
           </div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
             {formatFecha(rango.desdeISO)} → {formatFecha(rango.hastaISO)}
@@ -468,7 +451,7 @@ export function PanelMisGastos({ sede, periodo }: Props) {
                           color: "#6366f1", background: "rgba(99,102,241,0.12)",
                           border: "1px solid rgba(99,102,241,0.3)",
                           padding: "1px 6px", borderRadius: 99, letterSpacing: 0.5,
-                        }} title="Calculado automáticamente desde otro panel">
+                        }} title="Costo del personal acumulado en el periodo. El pago real se registra desde Planilla / Jaladores cuando se ejecuta.">
                           AUTO
                         </span>
                       </div>

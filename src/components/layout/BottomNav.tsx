@@ -17,7 +17,7 @@ const NAV_OWNER_MORE = [
   { href:"/sedes",      icon:"sedes",      label:"Sedes"      },
   { href:"/jaladores",  icon:"jaladores",  label:"Jaladores"  },
   { href:"/planilla",   icon:"planilla",   label:"Planilla"   },
-  { href:"/mis-gastos", icon:"money_bill", label:"Mis gastos" },
+  { href:"/caja",       icon:"money_bill", label:"Caja"       },
   { href:"/eventos",    icon:"feriados",   label:"Eventos"    },
   { href:"/accesos",    icon:"accesos",    label:"Accesos"    },
 ];
@@ -30,7 +30,7 @@ const NAV_ENC_PRIMARY = [
 ];
 const NAV_ENC_MORE = [
   { href:"/adelantos",  icon:"adelantos",  label:"Adelantos"  },
-  { href:"/mis-gastos", icon:"money_bill", label:"Mis gastos" },
+  { href:"/caja",       icon:"money_bill", label:"Caja"       },
   { href:"/eventos",    icon:"feriados",   label:"Eventos"    },
 ];
 

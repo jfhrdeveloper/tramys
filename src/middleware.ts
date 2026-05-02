@@ -78,7 +78,7 @@ export async function middleware(request: NextRequest) {
   const rutasAdmin = [
     "/dashboard", "/sedes", "/trabajadores", "/jaladores",
     "/asistencia", "/planilla", "/adelantos", "/feriados",
-    "/cumpleanos", "/reportes", "/accesos", "/mis-gastos",
+    "/cumpleanos", "/reportes", "/accesos", "/caja",
   ];
 
   /* ==== Rutas solo Trabajador ==== */

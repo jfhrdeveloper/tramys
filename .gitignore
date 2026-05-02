@@ -59,3 +59,8 @@ next-env.d.ts
 # BASE DE DATOS
 # =========================================
 supabase-schema.sql
+
+# =========================================
+# CLAUDE CODE
+# =========================================
+.claude/.progress-markers/

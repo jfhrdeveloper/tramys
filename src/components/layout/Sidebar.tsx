@@ -33,7 +33,7 @@ const NAV_OWNER: NavItem[] = [
   ]},
   { kind: "group", key: "finanzas",    label: "Finanzas",  icon: "money_bill", children: [
     { kind: "link", href: "/planilla",   label: "Planilla",   icon: "planilla" },
-    { kind: "link", href: "/mis-gastos", label: "Mis gastos", icon: "money_bill" },
+    { kind: "link", href: "/caja",       label: "Caja",       icon: "money_bill" },
     { kind: "link", href: "/reportes",   label: "Reportes",   icon: "reportes" },
   ]},
   { kind: "link",  href: "/eventos", label: "Eventos", icon: "calendar" },
@@ -48,7 +48,7 @@ const NAV_ENC: NavItem[] = [
     { kind: "link", href: "/asistencia",   label: "Asistencia",   icon: "asistencia" },
     { kind: "link", href: "/adelantos",    label: "Adelantos",    icon: "adelantos" },
   ]},
-  { kind: "link",  href: "/mis-gastos", label: "Mis gastos", icon: "money_bill" },
+  { kind: "link",  href: "/caja",       label: "Caja",       icon: "money_bill" },
   { kind: "link",  href: "/eventos",    label: "Eventos",    icon: "calendar" },
 ];
 

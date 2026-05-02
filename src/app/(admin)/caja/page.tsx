@@ -4,13 +4,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import { Icon } from "@/components/ui/Icons";
-import { PanelMisGastos } from "@/components/sedes/PanelMisGastos";
+import { PanelCaja } from "@/components/sedes/PanelCaja";
 import { useData } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
 import { PERIODOS, PERIODO_LABEL, type Periodo } from "@/lib/utils/periodos";
 
 /* ================= PÁGINA ================= */
-export default function MisGastosPage() {
+export default function CajaPage() {
   const d = useData();
   const { worker: actor, sede: sedeActor } = useSession();
   const isEnc = actor?.rol === "encargado";
@@ -38,10 +38,10 @@ export default function MisGastosPage() {
   if (isEnc && !sedeActor) {
     return (
       <>
-        <Topbar title="Mis gastos" subtitle="Sin sede asignada" />
+        <Topbar title="Caja" subtitle="Sin sede asignada" />
         <main className="page-main">
           <div className="card" style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
-            No tienes una sede asignada. Pide al owner que te asocie a una sede para ver los gastos.
+            No tienes una sede asignada. Pide al owner que te asocie a una sede para ver la caja.
           </div>
         </main>
       </>
@@ -51,8 +51,8 @@ export default function MisGastosPage() {
   return (
     <>
       <Topbar
-        title="Mis gastos"
-        subtitle={sedeSel ? `${sedeSel.nombre} · solo gastos` : "Solo gastos"}
+        title="Caja"
+        subtitle={sedeSel ? `${sedeSel.nombre} · gastos operativos` : "Gastos operativos"}
       />
       <main className="page-main">
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -116,9 +116,9 @@ export default function MisGastosPage() {
             </div>
           </div>
 
-          {/* ====== Panel de gastos ====== */}
+          {/* ====== Panel de caja ====== */}
           {sedeSel ? (
-            <PanelMisGastos sede={sedeSel} periodo={periodo} />
+            <PanelCaja sede={sedeSel} periodo={periodo} />
           ) : (
             <div className="card" style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
               No hay sedes activas.

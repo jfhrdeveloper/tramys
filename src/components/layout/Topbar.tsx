@@ -1,7 +1,7 @@
 "use client";
 
 /* ================= IMPORTS ================= */
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useClock } from "@/hooks/useClock";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { usePrivacy } from "@/components/providers/PrivacyProvider";
@@ -28,18 +28,13 @@ const NOTIFS: NotifItem[] = [
   { text:"Miguel T. superó su meta mensual",     icon:"trophy",       color:"#16a34a", leido:true  },
 ];
 
-/* ================= COMPONENTE TOPBAR ================= */
-export function Topbar({ title, subtitle }: TopbarProps) {
-
-  /* ====== Estados y hooks ====== */
+/* ================= RELOJ AISLADO ================= */
+/* Consume `useClock` (tick cada 1 s) en un sub-componente dedicado:
+   solo este nodo se re-renderiza, no todo el Topbar (theme, notif, privacy).
+   `memo` lo aísla de re-renders del padre cuando cambian sus props. */
+const TopbarClock = memo(function TopbarClock() {
   const { horaCorta, fechaCorta } = useClock();
-  const { theme, toggleTheme }    = useTheme();
-  const { hidden: privacyHidden, toggle: togglePrivacy } = usePrivacy();
-  const [notifOpen, setNotifOpen] = useState(false);
-  const unread = NOTIFS.filter(n => !n.leido).length;
-
-  /* ====== Render del chip de fecha + hora ====== */
-  const Clock = (
+  return (
     <div
       className="topbar-clock"
       style={{
@@ -57,31 +52,25 @@ export function Topbar({ title, subtitle }: TopbarProps) {
         style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }}
         className="animate-pulse-dot"
       />
-      <span
-        style={{
-          fontFamily: "'DM Mono',monospace",
-          fontWeight: 600,
-          fontSize: 12,
-          color: "var(--text-muted)",
-          whiteSpace: "nowrap",
-        }}
-      >
+      <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 600, fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
         {fechaCorta}
       </span>
       <span style={{ color: "var(--text-muted)", fontSize: 12, lineHeight: 1, opacity: 0.5 }}>·</span>
-      <span
-        style={{
-          fontFamily: "'DM Mono',monospace",
-          fontWeight: 600,
-          fontSize: 12,
-          color: "var(--text-muted)",
-          whiteSpace: "nowrap",
-        }}
-      >
+      <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 600, fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
         {horaCorta}
       </span>
     </div>
   );
+});
+
+/* ================= COMPONENTE TOPBAR ================= */
+export function Topbar({ title, subtitle }: TopbarProps) {
+
+  /* ====== Estados y hooks ====== */
+  const { theme, toggleTheme }    = useTheme();
+  const { hidden: privacyHidden, toggle: togglePrivacy } = usePrivacy();
+  const [notifOpen, setNotifOpen] = useState(false);
+  const unread = NOTIFS.filter(n => !n.leido).length;
 
   return (
     <header
@@ -107,7 +96,7 @@ export function Topbar({ title, subtitle }: TopbarProps) {
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
 
         {/* ==== Chip fecha + hora (siempre visible) ==== */}
-        {Clock}
+        <TopbarClock />
 
         {/* ==== Título + subtítulo (solo desktop) ==== */}
         <div className="topbar-left" style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column" }}>

@@ -1,7 +1,7 @@
 "use client";
 
 /* ================= IMPORTS ================= */
-import { useState } from "react";
+import { memo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useClock } from "@/hooks/useClock";
@@ -18,11 +18,45 @@ interface Props {
   onMenuToggle?: () => void;
 }
 
+/* ================= RELOJ AISLADO ================= */
+/* Mismo patrón que en Topbar admin: aislamos el tick del reloj para que el
+   topbar (theme toggle, alertas, datos del worker) no se re-renderice cada
+   segundo solo por la hora. */
+const TopbarClockWorker = memo(function TopbarClockWorker() {
+  const { horaCorta, fechaCorta } = useClock();
+  return (
+    <div
+      className="topbar-clock"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        background: "var(--bg)",
+        border: "1px solid var(--border)",
+        borderRadius: 99,
+        padding: "6px 12px",
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }}
+        className="animate-pulse-dot"
+      />
+      <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 600, fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+        {fechaCorta}
+      </span>
+      <span style={{ color: "var(--text-muted)", fontSize: 12, lineHeight: 1, opacity: 0.5 }}>·</span>
+      <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 600, fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+        {horaCorta}
+      </span>
+    </div>
+  );
+});
+
 /* ================= COMPONENTE TOPBAR WORKER ================= */
 export function TopbarWorker({ title, subtitle, onMenuToggle }: Props) {
 
   /* ====== Estados y hooks ====== */
-  const { horaCorta, fechaCorta } = useClock();
   const { theme, toggleTheme }    = useTheme();
   const { worker }                = useSession();
   const d                         = useData();
@@ -58,31 +92,7 @@ export function TopbarWorker({ title, subtitle, onMenuToggle }: Props) {
       >
 
         {/* ====== Reloj — extremo izquierdo ====== */}
-        <div
-          className="topbar-clock"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: "var(--bg)",
-            border: "1px solid var(--border)",
-            borderRadius: 99,
-            padding: "6px 12px",
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }}
-            className="animate-pulse-dot"
-          />
-          <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 600, fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-            {fechaCorta}
-          </span>
-          <span style={{ color: "var(--text-muted)", fontSize: 12, lineHeight: 1, opacity: 0.5 }}>·</span>
-          <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 600, fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-            {horaCorta}
-          </span>
-        </div>
+        <TopbarClockWorker />
 
         {/* ====== 1) Botón marcar asistencia (extremo derecho) ====== */}
         <button

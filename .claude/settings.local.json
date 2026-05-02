@@ -9,7 +9,29 @@
       "Bash(git *)",
       "Bash(echo \"EXIT=$?\")",
       "Bash(npm run *)",
-      "Bash(npx --no-install eslint --version)"
+      "Bash(npx --no-install eslint --version)",
+      "Skill(update-config)",
+      "PowerShell($cfg = Get-Content .claude/settings.local.json -Raw | ConvertFrom-Json; $cmd = $cfg.hooks.Stop[0].hooks[0].command; if \\($cmd\\) { \"OK schema valido. command='$cmd'\" } else { \"ERROR: hooks.Stop[0].hooks[0].command no encontrado\" })",
+      "Bash(npx --no-install tsc --noEmit -p tsconfig.json)",
+      "Bash(npx --no-install eslint --quiet src/app/\\\\\\(admin\\\\\\)/jaladores/page.tsx src/app/\\\\\\(admin\\\\\\)/asistencia/page.tsx)",
+      "Bash(npx --no-install next lint --file src/app/\\\\\\(admin\\\\\\)/jaladores/page.tsx --file src/app/\\\\\\(admin\\\\\\)/asistencia/page.tsx)",
+      "Bash(tasklist)",
+      "Bash(findstr /i \"node next\")",
+      "Bash(tasklist /FI \"IMAGENAME eq node.exe\")",
+      "PowerShell(Get-Process *)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/stop-progress.ps1",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

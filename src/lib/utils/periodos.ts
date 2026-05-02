@@ -1,7 +1,7 @@
 /* ================= PERIODOS DE CUADRE ================= */
 /* Centraliza la noción de "periodo" usada por el cuadre de caja, jaladores y
-   "Mis gastos". Si necesitas otro periodo, agrégalo aquí y todos los toggles
-   y cálculos lo verán automáticamente. */
+   `/caja`. Si necesitas otro periodo, agrégalo aquí y todos los toggles y
+   cálculos lo verán automáticamente. */
 
 export type Periodo = "diario" | "semanal" | "quincenal" | "mensual";
 

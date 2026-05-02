@@ -741,3 +741,47 @@ export function ingresosJaladoresEnRango(
   const total = items.reduce((acc, ij) => acc + ij.monto, 0);
   return { total, items };
 }
+
+/* ====== Derivados automáticos del cuadre de caja por sede ======
+   Costos del personal que NO viven en `movimientos_caja` (sueldos de planilla
+   y comisiones de jaladores). Se derivan del estado y se inyectan en los
+   paneles de caja como filas/contadores AUTO.
+
+   - sueldos: Σ ingresoDia(rec, tarifas, weekend, feriado) para asistencias
+              cuya sede del día (override o planta) sea la actual y dentro
+              del rango.
+   - comisiones: Σ ingresoJalador × (porcentajeComision/100) para jaladores
+              con `sedeId === sede.id`.
+
+   Reusado por `PanelCaja` (`/caja`) y `CajaBlock` (`/sedes`) para mantener
+   coherencia: ambos paneles ven el mismo total de gastos del periodo. */
+export interface DerivadosCaja {
+  sueldos:    number;
+  comisiones: number;
+  total:      number;
+}
+export function derivadosCaja(
+  state: Pick<DataState, "asistencia" | "workers" | "jaladores" | "ingresosJaladores">,
+  sedeId: string,
+  desdeISO: string,
+  hastaISO: string,
+  esFeriadoFn: (iso: string) => boolean,
+): DerivadosCaja {
+  let sueldos = 0;
+  for (const a of state.asistencia) {
+    if (a.fecha < desdeISO || a.fecha > hastaISO) continue;
+    const w = state.workers.find(x => x.id === a.workerId);
+    if (!w) continue;
+    if (sedeDelDia(a, w) !== sedeId) continue;
+    sueldos += ingresoDia(a, w.tarifas, isWeekendISO(a.fecha), esFeriadoFn(a.fecha));
+  }
+  let comisiones = 0;
+  for (const j of state.jaladores) {
+    if (j.sedeId !== sedeId) continue;
+    const sumaJ = state.ingresosJaladores
+      .filter(ij => ij.jaladorId === j.id && ij.fecha >= desdeISO && ij.fecha <= hastaISO)
+      .reduce((acc, ij) => acc + ij.monto, 0);
+    comisiones += sumaJ * (j.porcentajeComision / 100);
+  }
+  return { sueldos, comisiones, total: sueldos + comisiones };
+}

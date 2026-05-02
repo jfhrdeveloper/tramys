@@ -9,7 +9,7 @@ import { Icon } from "@/components/ui/Icons";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { money, formatFecha } from "@/lib/utils/formatters";
 import {
-  useData, ingresoDia, isWeekendISO, isoToday, agregadoCaja, ingresosJaladoresEnRango,
+  useData, isoToday, agregadoCaja, ingresosJaladoresEnRango, derivadosCaja,
   type Sede, type MovimientoCaja, type TipoMovimiento, type CategoriaFijo,
 } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
@@ -41,27 +41,6 @@ const TIPO_COLOR: Record<TipoMovimiento, string> = {
   "gasto-manual":   "#6366f1",
 };
 
-/* ====== Sueldos calculados desde asistencia × tarifas (no incluye gastos manuales). ====== */
-function sueldosSede(
-  workers: ReturnType<typeof useData>["workers"],
-  asistencia: ReturnType<typeof useData>["asistencia"],
-  sedeId: string,
-  desde: Date,
-  hasta: Date
-): number {
-  const ws = workers.filter(w => w.sedeId === sedeId && w.activo && w.rol !== "owner");
-  let total = 0;
-  for (const w of ws) {
-    for (const a of asistencia) {
-      if (a.workerId !== w.id) continue;
-      const dt = new Date(a.fecha);
-      if (dt < desde || dt > hasta) continue;
-      total += ingresoDia(a, w.tarifas, isWeekendISO(a.fecha), esFeriadoOficial(a.fecha).es);
-    }
-  }
-  return total;
-}
-
 /* ================= BLOQUE DE CAJA ================= */
 function CajaBlock({ sede, periodo }: { sede: Sede; periodo: Periodo }) {
   const d = useData();
@@ -77,12 +56,18 @@ function CajaBlock({ sede, periodo }: { sede: Sede; periodo: Periodo }) {
     ),
     [d.ingresosJaladores, d.jaladores, sede.id, rango.desdeISO, rango.hastaISO]
   );
-  const sueldos = useMemo(
-    () => sueldosSede(d.workers, d.asistencia, sede.id, rango.desde, rango.hasta),
-    [d.workers, d.asistencia, sede.id, rango.desde, rango.hasta]
+  /* Costos automáticos del personal: sueldos (planilla) + comisiones (jaladores).
+     Usa el mismo helper que `PanelCaja` para garantizar coherencia entre /sedes y /caja. */
+  const deriv = useMemo(
+    () => derivadosCaja(
+      { asistencia: d.asistencia, workers: d.workers, jaladores: d.jaladores, ingresosJaladores: d.ingresosJaladores },
+      sede.id, rango.desdeISO, rango.hastaISO,
+      (iso) => esFeriadoOficial(iso).es,
+    ),
+    [d.asistencia, d.workers, d.jaladores, d.ingresosJaladores, sede.id, rango.desdeISO, rango.hastaISO]
   );
   const ingresosTotal = ag.ingresos + ingJal.total;
-  const totalPersonal = sueldos + ag.gastoPersonal;
+  const totalPersonal = deriv.total + ag.gastoPersonal;
   const neta = ingresosTotal - totalPersonal - ag.gastoFijo - ag.gastoManual;
   const margen = ingresosTotal > 0 ? Math.round((neta / ingresosTotal) * 100) : 0;
 
@@ -106,7 +91,9 @@ function CajaBlock({ sede, periodo }: { sede: Sede; periodo: Periodo }) {
           <div style={{ fontSize: 9, color:"var(--brand)", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>− Personal</div>
           <HideableAmount value={money(totalPersonal)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" align="center" />
           <div style={{ fontSize: 9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 2 }}>
-            sueldos {money(sueldos)}{ag.gastoPersonal > 0 ? ` · extra ${money(ag.gastoPersonal)}` : ""}
+            sueldos {money(deriv.sueldos)}
+            {deriv.comisiones > 0 ? ` · com ${money(deriv.comisiones)}` : ""}
+            {ag.gastoPersonal > 0 ? ` · extra ${money(ag.gastoPersonal)}` : ""}
           </div>
         </div>
         <div style={{ padding:"10px 12px", background:"rgba(217,119,6,0.08)", borderRadius: 8, textAlign:"center" }}>
