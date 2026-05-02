@@ -9,7 +9,7 @@ import { Icon } from "@/components/ui/Icons";
 import { HideableAmount, StatCardHidden } from "@/components/ui/HideableAmount";
 import { StatCard } from "@/components/ui/StatCard";
 import { money } from "@/lib/utils/formatters";
-import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
+import { useData, ingresoDia, isWeekendISO, agregadoCaja } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import Link from "next/link";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
@@ -84,8 +84,19 @@ export default function PlanillaPage() {
   const totalNeto  = rows.reduce((a, r) => a + r.neto, 0);
   const ganaCompania = totalBruto - totalNeto; // (conservador)
 
-  /* Para mostrar "Ganancia de la compañía" como "Ingresos − Neto pagado" usamos los ingresos de caja del mes */
-  const ingresosMesSedes = d.sedes.reduce((a, s) => a + s.cajaMes.ingresos, 0);
+  /* Para mostrar "Ganancia de la compañía" como "Ingresos − Neto pagado" sumamos
+     los ingresos de caja (MovimientoCaja tipo "ingreso") del mes filtrado, en
+     todas las sedes del scope. */
+  const ingresosMesSedes = useMemo(() => {
+    const desdeISO = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    const last = new Date(year, month + 1, 0).getDate();
+    const hastaISO = `${year}-${String(month + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+    const sedesScope = filtroSede === "todas" ? d.sedes : d.sedes.filter(s => s.id === filtroSede);
+    return sedesScope.reduce(
+      (acc, s) => acc + agregadoCaja({ movimientosCaja: d.movimientosCaja }, s.id, desdeISO, hastaISO).ingresos,
+      0,
+    );
+  }, [d.sedes, d.movimientosCaja, year, month, filtroSede]);
   const gananciaEmpresa = ingresosMesSedes - totalNeto;
 
   const togglePagado = (id: string) => setPagados(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);

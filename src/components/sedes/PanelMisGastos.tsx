@@ -2,20 +2,42 @@
 
 /* ================= IMPORTS ================= */
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui/Icons";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { money, formatFecha } from "@/lib/utils/formatters";
 import {
   useData, agregadoCaja, ingresosJaladoresEnRango,
+  ingresoDia, isWeekendISO, sedeDelDia,
   type Sede, type CategoriaFijo, type MovimientoCaja, type TipoMovimiento,
 } from "@/components/providers/DataProvider";
+import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import { ModalMovimiento } from "@/components/sedes/ModalMovimiento";
+import { useConfirm } from "@/components/ui/Feedback";
 import { rangoPeriodo, type Periodo } from "@/lib/utils/periodos";
 
 /* ================= TIPOS ================= */
 type TipoGasto = "gasto-personal" | "gasto-fijo" | "gasto-manual";
 type FiltroGasto = TipoGasto | "todos";
+
+/* Fila virtual derivada (no es un MovimientoCaja real): se inyecta en la tabla
+   con badge AUTO + botón "Editar" que redirige al panel donde se origina el
+   dato (planilla / jaladores). */
+interface RowAuto {
+  kind:     "auto";
+  id:       string;
+  fecha:    string;        // ISO — usamos hastaISO del rango para que ordene al final del periodo
+  tipo:     TipoGasto;     // siempre gasto-personal
+  monto:    number;
+  concepto: string;
+  href:     string;        // ruta a la que redirige "Editar"
+}
+interface RowReal {
+  kind: "real";
+  m:    MovimientoCaja;
+}
+type Row = RowAuto | RowReal;
 
 interface Props {
   sede: Sede;
@@ -49,7 +71,10 @@ const CAT_LABEL: Record<CategoriaFijo, string> = {
 /* ================= COMPONENTE ================= */
 export function PanelMisGastos({ sede, periodo }: Props) {
   const d = useData();
+  const router  = useRouter();
+  const confirm = useConfirm();
   const [filtro, setFiltro]               = useState<FiltroGasto>("todos");
+  const [busqueda, setBusqueda]           = useState<string>("");
   const [editar, setEditar]               = useState<MovimientoCaja | null>(null);
   const [abrirNuevo, setAbrirNuevo]       = useState(false);
   const [tipoNuevo, setTipoNuevo]         = useState<TipoMovimiento>("gasto-personal");
@@ -69,24 +94,104 @@ export function PanelMisGastos({ sede, periodo }: Props) {
   );
   const ingresosTotal = ag.ingresos + ingJal.total;
 
+  /* ====== Auto-derivados: sueldos y comisiones de jaladores ======
+     - Sueldos: Σ ingresoDia para asistencias en la sede del día y dentro del rango.
+     - Comisiones: Σ ingresoJalador × (porcentajeComision/100), de jaladores cuya
+       sede asignada es la actual.
+     Estas filas son virtuales (no se guardan en `movimientos_caja`); cualquier
+     edición debe ocurrir en su panel original (planilla / jaladores). */
+  const sueldosAuto = useMemo(() => {
+    let total = 0;
+    for (const a of d.asistencia) {
+      if (a.fecha < rango.desdeISO || a.fecha > rango.hastaISO) continue;
+      const w = d.workers.find(x => x.id === a.workerId);
+      if (!w) continue;
+      if (sedeDelDia(a, w) !== sede.id) continue;
+      const esFds = isWeekendISO(a.fecha);
+      const esFer = esFeriadoOficial(a.fecha).es;
+      total += ingresoDia(a, w.tarifas, esFds, esFer);
+    }
+    return total;
+  }, [d.asistencia, d.workers, sede.id, rango.desdeISO, rango.hastaISO]);
+
+  const comisionesAuto = useMemo(() => {
+    let total = 0;
+    for (const j of d.jaladores) {
+      if (j.sedeId !== sede.id) continue;
+      const ingresosJ = d.ingresosJaladores.filter(
+        ij => ij.jaladorId === j.id && ij.fecha >= rango.desdeISO && ij.fecha <= rango.hastaISO,
+      );
+      const sumaJ = ingresosJ.reduce((acc, ij) => acc + ij.monto, 0);
+      total += sumaJ * (j.porcentajeComision / 100);
+    }
+    return total;
+  }, [d.jaladores, d.ingresosJaladores, sede.id, rango.desdeISO, rango.hastaISO]);
+
+  /* Filas virtuales para la tabla. Solo aparecen si hay monto > 0. */
+  const filasAuto = useMemo<RowAuto[]>(() => {
+    const out: RowAuto[] = [];
+    if (sueldosAuto > 0) out.push({
+      kind: "auto", id: "auto-sueldos", fecha: rango.hastaISO,
+      tipo: "gasto-personal", monto: sueldosAuto,
+      concepto: "Sueldos del personal (planilla)",
+      href: `/planilla?sede=${sede.id}`,
+    });
+    if (comisionesAuto > 0) out.push({
+      kind: "auto", id: "auto-comisiones", fecha: rango.hastaISO,
+      tipo: "gasto-personal", monto: comisionesAuto,
+      concepto: "Comisiones de jaladores",
+      href: `/jaladores?sede=${sede.id}`,
+    });
+    return out;
+  }, [sueldosAuto, comisionesAuto, rango.hastaISO, sede.id]);
+
   /* Solo gastos: excluye ingresos. */
-  const gastos: MovimientoCaja[] = useMemo(
+  const gastosReales: MovimientoCaja[] = useMemo(
     () => ag.movimientos.filter(m => m.tipo !== "ingreso"),
     [ag.movimientos]
   );
-  const totalGastos = ag.gastoPersonal + ag.gastoFijo + ag.gastoManual;
-  const balance     = ingresosTotal - totalGastos;
 
-  const filtrados = filtro === "todos" ? gastos : gastos.filter(m => m.tipo === filtro);
+  /* Totales: incluyen las filas automáticas dentro de gasto-personal. */
+  const personalAuto  = sueldosAuto + comisionesAuto;
+  const totalGastos   = ag.gastoPersonal + personalAuto + ag.gastoFijo + ag.gastoManual;
+  const balance       = ingresosTotal - totalGastos;
+
+  /* Filas combinadas (auto + reales) ordenadas por fecha desc. Las auto van al
+     final del periodo (`rango.hastaISO`) — quedan arriba si la búsqueda y el
+     filtro las incluyen. */
+  const rowsAll = useMemo<Row[]>(() => {
+    const reales: Row[] = gastosReales.map(m => ({ kind: "real", m }));
+    const autos:  Row[] = filasAuto.map(a => ({ ...a }));
+    return [...autos, ...reales].sort((x, y) => {
+      const fx = x.kind === "real" ? x.m.fecha : x.fecha;
+      const fy = y.kind === "real" ? y.m.fecha : y.fecha;
+      return fy.localeCompare(fx);
+    });
+  }, [gastosReales, filasAuto]);
+
+  const filtrados = useMemo(() => {
+    const base = filtro === "todos" ? rowsAll : rowsAll.filter(r => {
+      const t = r.kind === "real" ? r.m.tipo : r.tipo;
+      return t === filtro;
+    });
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter(r => {
+      const c = r.kind === "real" ? r.m.concepto : r.concepto;
+      return c.toLowerCase().includes(q);
+    });
+  }, [rowsAll, filtro, busqueda]);
   const pag = usePagination(filtrados, 6);
 
+  const countTipo = (t: TipoGasto) =>
+    rowsAll.filter(r => (r.kind === "real" ? r.m.tipo : r.tipo) === t).length;
   const counts: Record<TipoGasto, number> = {
-    "gasto-personal": gastos.filter(m => m.tipo === "gasto-personal").length,
-    "gasto-fijo":     gastos.filter(m => m.tipo === "gasto-fijo").length,
-    "gasto-manual":   gastos.filter(m => m.tipo === "gasto-manual").length,
+    "gasto-personal": countTipo("gasto-personal"),
+    "gasto-fijo":     countTipo("gasto-fijo"),
+    "gasto-manual":   countTipo("gasto-manual"),
   };
   const totals: Record<TipoGasto, number> = {
-    "gasto-personal": ag.gastoPersonal,
+    "gasto-personal": ag.gastoPersonal + personalAuto,
     "gasto-fijo":     ag.gastoFijo,
     "gasto-manual":   ag.gastoManual,
   };
@@ -115,15 +220,15 @@ export function PanelMisGastos({ sede, periodo }: Props) {
 
         <div className="hide-mobile" style={{ display: "flex", gap: 8 }}>
           <button
-            className="btn-outline"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#16a34a", borderColor: "rgba(34,197,94,0.4)" }}
+            className="btn-primary"
+            style={{ background: "#16a34a", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 170 }}
             onClick={() => abrirRegistro("ingreso")}
           >
-            <Icon name="plus" size={14} color="#16a34a" /> Registrar ganancia
+            <Icon name="plus" size={14} /> Registrar ganancia
           </button>
           <button
             className="btn-primary"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            style={{ background: "#C41A3A", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 170 }}
             onClick={() => abrirRegistro("gasto-personal")}
           >
             <Icon name="plus" size={14} /> Registrar gasto
@@ -155,7 +260,8 @@ export function PanelMisGastos({ sede, periodo }: Props) {
           </div>
           <HideableAmount value={money(totalGastos)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" align="center" />
           <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
-            {gastos.length} {gastos.length === 1 ? "registro" : "registros"}
+            {rowsAll.length} {rowsAll.length === 1 ? "registro" : "registros"}
+            {personalAuto > 0 && ` · auto ${money(personalAuto)}`}
           </div>
         </div>
 
@@ -177,6 +283,48 @@ export function PanelMisGastos({ sede, periodo }: Props) {
             fontFamily="'DM Mono',monospace" align="center"
           />
         </div>
+      </div>
+
+      {/* ====== Visualización: dona de gastos + barras Ganancia vs Gasto ====== */}
+      <div style={{
+        padding: 14, borderBottom: "1px solid var(--border)",
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16,
+        alignItems: "center",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <MiniDona
+              total={totalGastos}
+              segments={(Object.keys(TIPO_LABEL) as TipoGasto[]).map(t => ({
+                color: TIPO_COLOR[t], value: totals[t], label: TIPO_LABEL[t],
+              }))}
+            />
+            <div style={{
+              position: "absolute", inset: 0, display: "flex",
+              flexDirection: "column", alignItems: "center", justifyContent: "center",
+              fontFamily: "'DM Mono',monospace", pointerEvents: "none",
+            }}>
+              <span style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Total</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text)" }}>
+                {moneyShort(totalGastos)}
+              </span>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
+            {(Object.keys(TIPO_LABEL) as TipoGasto[]).map(t => {
+              const pct = totalGastos > 0 ? Math.round((totals[t] / totalGastos) * 100) : 0;
+              return (
+                <div key={t} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 99, background: TIPO_COLOR[t] }} />
+                  <span style={{ color: "var(--text)", fontWeight: 600, minWidth: 60 }}>{TIPO_LABEL[t]}</span>
+                  <span style={{ color: TIPO_COLOR[t], fontWeight: 700 }}>{pct}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <MiniBarras ganancia={ingresosTotal} gasto={totalGastos} />
       </div>
 
       {/* ====== Resumen por tipo de gasto ====== */}
@@ -212,29 +360,64 @@ export function PanelMisGastos({ sede, periodo }: Props) {
         ))}
       </div>
 
-      {/* ====== Filtros ====== */}
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {([
-          { k: "todos" as const,           label: `Todos (${gastos.length})`,                col: sede.color },
-          { k: "gasto-personal" as const,  label: `Personal (${counts["gasto-personal"]})`,  col: TIPO_COLOR["gasto-personal"] },
-          { k: "gasto-fijo" as const,      label: `Fijos (${counts["gasto-fijo"]})`,         col: TIPO_COLOR["gasto-fijo"] },
-          { k: "gasto-manual" as const,    label: `Manuales (${counts["gasto-manual"]})`,    col: TIPO_COLOR["gasto-manual"] },
-        ]).map(b => {
-          const active = filtro === b.k;
-          return (
-            <button key={b.k} onClick={() => { setFiltro(b.k); pag.setPage(1); }}
+      {/* ====== Filtros + buscador ====== */}
+      <div style={{
+        padding: "10px 14px", borderBottom: "1px solid var(--border)",
+        display: "flex", flexDirection: "column", gap: 8,
+      }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {([
+            { k: "todos" as const,           label: `Todos (${rowsAll.length})`,               col: sede.color },
+            { k: "gasto-personal" as const,  label: `Personal (${counts["gasto-personal"]})`,  col: TIPO_COLOR["gasto-personal"] },
+            { k: "gasto-fijo" as const,      label: `Fijos (${counts["gasto-fijo"]})`,         col: TIPO_COLOR["gasto-fijo"] },
+            { k: "gasto-manual" as const,    label: `Manuales (${counts["gasto-manual"]})`,    col: TIPO_COLOR["gasto-manual"] },
+          ]).map(b => {
+            const active = filtro === b.k;
+            return (
+              <button key={b.k} onClick={() => { setFiltro(b.k); pag.setPage(1); }}
+                style={{
+                  padding: "5px 10px", borderRadius: 99,
+                  border: active ? `1px solid ${b.col}` : "1px solid var(--border)",
+                  background: active ? `${b.col}14` : "transparent",
+                  color: active ? b.col : "var(--text-muted)",
+                  fontWeight: active ? 700 : 500, fontSize: 11, cursor: "pointer",
+                  fontFamily: "'DM Mono',monospace",
+                }}>
+                {b.label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ position: "relative", maxWidth: 360 }}>
+          <span style={{
+            position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+            color: "var(--text-muted)", display: "inline-flex",
+          }}>
+            <Icon name="search" size={14} />
+          </span>
+          <input
+            type="text"
+            placeholder="Buscar por concepto…"
+            value={busqueda}
+            onChange={e => { setBusqueda(e.target.value); pag.setPage(1); }}
+            className="input-base"
+            style={{ paddingLeft: 32, paddingRight: busqueda ? 32 : 10, height: 34 }}
+          />
+          {busqueda && (
+            <button
+              type="button"
+              onClick={() => { setBusqueda(""); pag.setPage(1); }}
+              aria-label="Limpiar búsqueda"
               style={{
-                padding: "5px 10px", borderRadius: 99,
-                border: active ? `1px solid ${b.col}` : "1px solid var(--border)",
-                background: active ? `${b.col}14` : "transparent",
-                color: active ? b.col : "var(--text-muted)",
-                fontWeight: active ? 700 : 500, fontSize: 11, cursor: "pointer",
-                fontFamily: "'DM Mono',monospace",
-              }}>
-              {b.label}
+                position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                background: "transparent", border: "none", color: "var(--text-muted)",
+                cursor: "pointer", padding: 2, display: "inline-flex",
+              }}
+            >
+              <Icon name="x" size={14} />
             </button>
-          );
-        })}
+          )}
+        </div>
       </div>
 
       {/* ====== Tabla ====== */}
@@ -253,10 +436,65 @@ export function PanelMisGastos({ sede, periodo }: Props) {
             {pag.pageItems.length === 0 ? (
               <tr>
                 <td colSpan={5} style={{ textAlign: "center", padding: "26px 12px", color: "var(--text-muted)", fontSize: 13 }}>
-                  No hay gastos en este periodo.
+                  {busqueda.trim()
+                    ? `Sin coincidencias para "${busqueda.trim()}".`
+                    : "No hay gastos en este periodo."}
                 </td>
               </tr>
-            ) : pag.pageItems.map(m => {
+            ) : pag.pageItems.map(row => {
+              if (row.kind === "auto") {
+                const t = row.tipo;
+                return (
+                  <tr key={row.id} style={{ background: "rgba(99,102,241,0.04)" }}>
+                    <td style={{ fontFamily: "'DM Mono',monospace", fontSize: 12, color: "var(--text-muted)" }}>
+                      {formatFecha(row.fecha)}
+                    </td>
+                    <td>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, fontFamily: "'DM Mono',monospace",
+                        color: TIPO_COLOR[t], background: `${TIPO_COLOR[t]}18`,
+                        padding: "3px 8px", borderRadius: 99,
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                      }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 99, background: TIPO_COLOR[t] }} />
+                        {TIPO_LABEL[t]}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{row.concepto}</span>
+                        <span style={{
+                          fontSize: 9, fontWeight: 800, fontFamily: "'DM Mono',monospace",
+                          color: "#6366f1", background: "rgba(99,102,241,0.12)",
+                          border: "1px solid rgba(99,102,241,0.3)",
+                          padding: "1px 6px", borderRadius: 99, letterSpacing: 0.5,
+                        }} title="Calculado automáticamente desde otro panel">
+                          AUTO
+                        </span>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: "right", fontFamily: "'DM Mono',monospace", fontWeight: 700, color: TIPO_COLOR[t] }}>
+                      −{money(row.monto)}
+                    </td>
+                    <td style={{ width: 80, whiteSpace: "nowrap" }}>
+                      <button
+                        onClick={() => router.push(row.href)}
+                        style={{
+                          background: "transparent", border: "1px solid var(--border)",
+                          borderRadius: 6, cursor: "pointer", padding: "4px 8px",
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          fontSize: 11, fontWeight: 600, color: "var(--text-muted)",
+                        }}
+                        title="Editar en su panel original"
+                      >
+                        <Icon name="edit" size={12} /> Editar
+                      </button>
+                    </td>
+                  </tr>
+                );
+              }
+
+              const m = row.m;
               const t = m.tipo as TipoGasto;
               return (
                 <tr key={m.id}>
@@ -288,7 +526,15 @@ export function PanelMisGastos({ sede, periodo }: Props) {
                       <Icon name="edit" size={12} />
                     </button>
                     <button
-                      onClick={() => { if (window.confirm("¿Eliminar este gasto?")) d.deleteMovimientoCaja(m.id); }}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Eliminar gasto",
+                          message: "¿Seguro que deseas eliminar este gasto? Esta acción no se puede deshacer.",
+                          confirmLabel: "Eliminar",
+                          tone: "danger",
+                        });
+                        if (ok) d.deleteMovimientoCaja(m.id);
+                      }}
                       style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 6, cursor: "pointer", padding: "4px 8px", color: "var(--brand)" }}
                       title="Eliminar"
                     >
@@ -315,17 +561,17 @@ export function PanelMisGastos({ sede, periodo }: Props) {
       )}
 
       {/* ====== Botones mobile ====== */}
-      <div className="show-mobile" style={{ padding: 12, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="show-mobile" style={{ padding: 12, borderTop: "1px solid var(--border)", flexDirection: "column", gap: 8 }}>
         <button
-          className="btn-outline"
-          style={{ width: "100%", minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#16a34a", borderColor: "rgba(34,197,94,0.4)" }}
+          className="btn-primary"
+          style={{ background: "#16a34a", width: "100%", minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
           onClick={() => abrirRegistro("ingreso")}
         >
-          <Icon name="plus" size={14} color="#16a34a" /> Registrar ganancia
+          <Icon name="plus" size={14} /> Registrar ganancia
         </button>
         <button
           className="btn-primary"
-          style={{ width: "100%", minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          style={{ background: "#C41A3A", width: "100%", minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
           onClick={() => abrirRegistro("gasto-personal")}
         >
           <Icon name="plus" size={14} /> Registrar gasto
@@ -346,4 +592,89 @@ export function PanelMisGastos({ sede, periodo }: Props) {
       />
     </div>
   );
+}
+
+/* ================= GRÁFICO DONA (gastos por subtipo) ================= */
+/* SVG nativo. Cada segmento es un `<circle>` con stroke-dasharray.
+   Si todo es 0, mostramos un anillo gris para indicar "sin datos". */
+interface MiniDonaProps {
+  segments: { color: string; value: number; label: string }[];
+  total:    number;
+  size?:    number;
+}
+function MiniDona({ segments, total, size = 96 }: MiniDonaProps) {
+  const radius   = size / 2 - 8;
+  const circ     = 2 * Math.PI * radius;
+  const cx       = size / 2;
+  const cy       = size / 2;
+  const stroke   = 10;
+  let acumulado  = 0;
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Distribución de gastos">
+      <circle cx={cx} cy={cy} r={radius} fill="none" stroke="var(--border)" strokeWidth={stroke} />
+      {total > 0 && segments.map((s, i) => {
+        const frac    = s.value / total;
+        const dash    = frac * circ;
+        const offset  = -acumulado * circ;
+        acumulado    += frac;
+        return (
+          <circle
+            key={i} cx={cx} cy={cy} r={radius}
+            fill="none" stroke={s.color} strokeWidth={stroke}
+            strokeDasharray={`${dash} ${circ - dash}`}
+            strokeDashoffset={offset}
+            transform={`rotate(-90 ${cx} ${cy})`}
+            strokeLinecap="butt"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ================= MINI BARRAS (Ganancia vs Gasto) ================= */
+function MiniBarras({ ganancia, gasto }: { ganancia: number; gasto: number }) {
+  const max = Math.max(ganancia, gasto, 1);
+  const filaStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8 };
+  const labelStyle: React.CSSProperties = {
+    width: 70, fontSize: 10, color: "var(--text-muted)",
+    fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5,
+  };
+  const trackStyle: React.CSSProperties = {
+    flex: 1, height: 12, background: "var(--hover)", borderRadius: 99, position: "relative", overflow: "hidden",
+  };
+  const valStyle: React.CSSProperties = {
+    width: 80, textAlign: "right", fontSize: 11, fontFamily: "'DM Mono',monospace", fontWeight: 700,
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 }}>
+      <div style={filaStyle}>
+        <span style={labelStyle}>Ganancia</span>
+        <div style={trackStyle}>
+          <div style={{
+            position: "absolute", inset: 0, width: `${(ganancia / max) * 100}%`,
+            background: "#16a34a", borderRadius: 99, transition: "width 0.4s ease",
+          }} />
+        </div>
+        <span style={{ ...valStyle, color: "#16a34a" }}>{moneyShort(ganancia)}</span>
+      </div>
+      <div style={filaStyle}>
+        <span style={labelStyle}>Gasto</span>
+        <div style={trackStyle}>
+          <div style={{
+            position: "absolute", inset: 0, width: `${(gasto / max) * 100}%`,
+            background: "#C41A3A", borderRadius: 99, transition: "width 0.4s ease",
+          }} />
+        </div>
+        <span style={{ ...valStyle, color: "#C41A3A" }}>{moneyShort(gasto)}</span>
+      </div>
+    </div>
+  );
+}
+
+/* Versión compacta del monto para cabezas de barra (S/ 1.2k). */
+function moneyShort(n: number): string {
+  if (n >= 1000) return `S/ ${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return `S/ ${n.toFixed(0)}`;
 }

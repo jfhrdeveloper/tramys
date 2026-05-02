@@ -7,7 +7,9 @@
       "Bash(npx eslint *)",
       "Bash(git -C \"C:/Users/usuario/Desktop/adsadas/tramys\" status --short)",
       "Bash(git *)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npm run *)",
+      "Bash(npx --no-install eslint --version)"
     ]
   }
 }

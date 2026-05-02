@@ -10,6 +10,7 @@ import { PhotoUpload, PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { MultiverseCalendar } from "@/components/ui/MultiverseCalendar";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
+import { useConfirm } from "@/components/ui/Feedback";
 import { money, formatFecha } from "@/lib/utils/formatters";
 import {
   useData, ingresoDia, isWeekendISO,
@@ -38,6 +39,7 @@ function ModalEditAsistencia({
   worker: Worker; fechaISO: string;
 }) {
   const d = useData();
+  const confirm = useConfirm();
   const rec: AsistenciaRec | undefined = d.getAsistencia(worker.id, fechaISO);
 
   const [estado, setEstado]       = useState<EstadoAsist>(rec?.estado ?? "presente");
@@ -135,8 +137,14 @@ function ModalEditAsistencia({
         {rec && (
           <button className="btn-ghost"
             style={{ color:"var(--brand)", border:"1px solid rgba(196,26,58,0.25)" }}
-            onClick={()=>{
-              if (confirm("¿Borrar el registro de este día?")) {
+            onClick={async ()=>{
+              const ok = await confirm({
+                title: "Limpiar registro",
+                message: "¿Borrar el registro de este día? Quedará marcado como ausente.",
+                confirmLabel: "Limpiar",
+                tone: "danger",
+              });
+              if (ok) {
                 d.setAsistencia(worker.id, fechaISO, {
                   estado:"ausente", entrada:null, salida:null, overrideIngreso:null, motivoEdit:undefined,
                 });
@@ -280,6 +288,7 @@ function ModalWorker({
   open, onClose, worker,
 }: { open: boolean; onClose: () => void; worker: Worker | null }) {
   const d = useData();
+  const confirm = useConfirm();
   const esNuevo = !worker;
 
   const [nombre, setNombre] = useState(worker?.nombre ?? "");
@@ -435,8 +444,15 @@ function ModalWorker({
           <button
             className="btn-ghost"
             style={{ color:"var(--brand)", border:"1px solid rgba(196,26,58,0.25)", display:"flex", alignItems:"center", gap: 5 }}
-            onClick={() => {
-              if (worker && confirm("¿Eliminar este trabajador?")) {
+            onClick={async () => {
+              if (!worker) return;
+              const ok = await confirm({
+                title: "Eliminar trabajador",
+                message: `¿Eliminar a ${worker.nombre}? Se perderán sus registros asociados. Esta acción no se puede deshacer.`,
+                confirmLabel: "Eliminar",
+                tone: "danger",
+              });
+              if (ok) {
                 d.deleteWorker(worker.id);
                 onClose();
               }

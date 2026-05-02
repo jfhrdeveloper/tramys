@@ -11,6 +11,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { money, formatFecha } from "@/lib/utils/formatters";
 import { useData, type Jalador, type IngresoJalador, isoToday } from "@/components/providers/DataProvider";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
+import { useConfirm } from "@/components/ui/Feedback";
 import { rangoPeriodo, PERIODOS, PERIODO_LABEL, type Periodo } from "@/lib/utils/periodos";
 
 /* ================= MODAL NUEVO/EDITAR JALADOR ================= */
@@ -18,6 +19,7 @@ function ModalJalador({
   open, onClose, jalador,
 }: { open: boolean; onClose: () => void; jalador: Jalador | null }) {
   const d = useData();
+  const confirm = useConfirm();
   const esNuevo = !jalador;
   const [nombre, setNombre] = useState(jalador?.nombre ?? "");
   const [apodo, setApodo]   = useState(jalador?.apodo ?? "");
@@ -81,7 +83,16 @@ function ModalJalador({
         </div>
       </div>
       <div style={{ display:"flex", gap: 10 }}>
-        {!esNuevo && <button className="btn-ghost" style={{ color:"var(--brand)", border:"1px solid rgba(196,26,58,0.25)" }} onClick={() => { if(jalador && confirm("¿Eliminar?")) { d.deleteJalador(jalador.id); onClose(); } }}>Eliminar</button>}
+        {!esNuevo && <button className="btn-ghost" style={{ color:"var(--brand)", border:"1px solid rgba(196,26,58,0.25)" }} onClick={async () => {
+          if (!jalador) return;
+          const ok = await confirm({
+            title: "Eliminar jalador",
+            message: `¿Eliminar a ${jalador.nombre}? Se perderán sus ingresos asociados. Esta acción no se puede deshacer.`,
+            confirmLabel: "Eliminar",
+            tone: "danger",
+          });
+          if (ok) { d.deleteJalador(jalador.id); onClose(); }
+        }}>Eliminar</button>}
         <div style={{ flex: 1 }} />
         <button className="btn-outline" onClick={onClose}>Cancelar</button>
         <button className="btn-primary" onClick={guardar} disabled={!nombre.trim()}>{esNuevo ? "Crear" : "Guardar"}</button>

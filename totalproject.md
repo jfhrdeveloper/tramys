@@ -6,39 +6,7 @@
 
 ## 🎯 1. Reglas Globales del Proyecto
 
-### 📝 Estándar Visual de Comentarios
-
-Para mantener una legibilidad impecable, aplica estrictamente esta jerarquía en todos los archivos `.ts` y `.tsx`:
-
-- **Nivel 1 (Bloques principales):** `/* ================= BLOQUE PRINCIPAL ================= */`
-- **Nivel 2 (Secciones lógicas):** `/* ====== Sección secundaria ====== */`
-- **Nivel 3 (Subsecciones):** `/* ==== Subsección ==== */`
-- **Nivel 4 (Notas de una línea):** `// Nota específica` o `/* Elemento adicional */`
-
-> **⚠️ Regla Crítica (React/JSX):** Dentro del JSX (en el `return`), usa **ÚNICA Y ESTRICTAMENTE** `{/* */}`. El uso de `//` dentro del JSX romperá la aplicación.
-
-### 📱 Diseño Responsivo Adaptativo (Mobile-First)
-
-Todo componente y vista debe escalar correctamente siguiendo los breakpoints de Tailwind:
-
-| Nivel    | Breakpoint | Dispositivo Objetivo   | Reglas Base de Layout                                                        |
-| :------- | :--------- | :--------------------- | :--------------------------------------------------------------------------- |
-| **base** | `< 640px`  | Móvil (360px–430px)    | Layout 1 columna, bottom-nav / menú hamburguesa, touch targets ≥ 44px.       |
-| **sm**   | `≥ 640px`  | Móvil grande / Paisaje | 1 columna con márgenes holgados.                                             |
-| **md**   | `≥ 768px`  | Tablet (768px–1024px)  | Grid de 2 columnas. Sidebar en overlay/colapsable.                           |
-| **lg**   | `≥ 1024px` | Laptop 13–14"          | Sidebar fijo. Grid de 2-3 columnas.                                          |
-| **xl**   | `≥ 1280px` | Laptop 15–16" estándar | Grid de ≥ 3 columnas sin scroll horizontal.                                  |
-| **2xl**  | `≥ 1536px` | Monitor / PC 17"+      | `max-w-screen-xl` o `max-w-[1440px]` centrado. Layouts no estirados al 100%. |
-
-- **Anchos:** Nunca usar anchos fijos en px para contenedores. Usar `w-full` y `max-w-*`. El sidebar PC es fijo (`w-64`/`w-72`), el contenido usa `flex-1 min-w-0`.
-- **Imágenes:** Siempre `w-full h-auto` u `object-cover`.
-- **Tipografía:** Responsiva (`text-sm md:text-base xl:text-lg`), nunca tamaños fijos.
-
-### 🎨 Paleta TRAMYS y Tipografía
-
-- **Modo Claro:** Brand `#C41A3A` · Claro `#e8304d` · Oscuro `#a01530` · Fondo `#f8f7f4` · Card `#ffffff` · Texto `#1a1917`
-- **Modo Oscuro:** Fondo `#0e1117` · Card `#161b22` · Texto `#e8eaf0`
-- **Fuentes:** _Bricolage Grotesque_ (UI General) + _DM Mono_ (Código, Fechas, Etiquetas)
+> **Movido a `docs/style-guide.md`** — estándar visual de comentarios + JSX, breakpoints responsivos mobile-first, paleta TRAMYS (modo claro/oscuro/sedes/estados) y tipografía (Bricolage + DM Mono) son la fuente única ahí. Esta sección queda como puntero para evitar drift entre documentos.
 
 ---
 
@@ -277,13 +245,14 @@ create table if not exists public.sedes (
   horario         text default '',
   encargado_id    uuid,
   activa          boolean not null default true,
-  caja_dia        jsonb not null default '{"ingresos":0,"material":0}'::jsonb,
-  caja_semana     jsonb not null default '{"ingresos":0,"material":0}'::jsonb,
-  caja_mes        jsonb not null default '{"ingresos":0,"material":0}'::jsonb,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
 create index if not exists idx_sedes_activa on public.sedes(activa);
+/* Limpia campos legacy si la tabla ya existía (caja_* migrado a movimientos_caja). */
+alter table public.sedes drop column if exists caja_dia;
+alter table public.sedes drop column if exists caja_semana;
+alter table public.sedes drop column if exists caja_mes;
 
 /* ============================================================
    PROFILES (1:1 con auth.users) — incluye perfil editable
@@ -445,6 +414,41 @@ create index if not exists idx_at_worker on public.accesos_temporales(worker_id)
 create index if not exists idx_at_hasta  on public.accesos_temporales(hasta);
 
 /* ============================================================
+   MOVIMIENTOS DE CAJA (line items por sede)
+   Reemplaza al agregado caja_* del modelo anterior. Permite
+   distinguir ingresos, gasto-personal (sueldos extra al cálculo
+   automático de planilla), gasto-fijo (luz/agua/internet/local…)
+   y gasto-manual.
+   ============================================================ */
+do $$ begin
+  create type tipo_movimiento as enum ('ingreso','gasto-personal','gasto-fijo','gasto-manual');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type categoria_fijo as enum ('luz','agua','internet','local','otro');
+exception when duplicate_object then null; end $$;
+
+create table if not exists public.movimientos_caja (
+  id              uuid primary key default gen_random_uuid(),
+  sede_id         uuid not null references public.sedes(id) on delete cascade,
+  fecha           date not null,
+  tipo            tipo_movimiento not null,
+  monto           numeric(12,2) not null check (monto >= 0),
+  /* Para `ingreso`: descomposición opcional cantidad × unitario. */
+  cantidad        numeric(10,2),
+  unitario        numeric(12,2),
+  /* Para `gasto-fijo`: subcategoría. */
+  categoria       categoria_fijo,
+  concepto        text not null default '',
+  registrado_por  uuid references public.profiles(id) on delete set null,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists idx_mc_sede   on public.movimientos_caja(sede_id);
+create index if not exists idx_mc_fecha  on public.movimientos_caja(fecha);
+create index if not exists idx_mc_tipo   on public.movimientos_caja(tipo);
+
+/* ============================================================
    AJUSTES GLOBALES (1 sola fila — singleton)
    ============================================================ */
 create table if not exists public.ajustes (
@@ -464,7 +468,7 @@ declare t text;
 begin
   foreach t in array array[
     'sedes','profiles','asistencia','adelantos','permisos',
-    'eventos','jaladores','accesos_temporales','ajustes'
+    'eventos','jaladores','accesos_temporales','movimientos_caja','ajustes'
   ] loop
     execute format(
       'drop trigger if exists trg_%1$s_updated on public.%1$s;
@@ -623,6 +627,26 @@ create policy at_read  on public.accesos_temporales for select using (
 create policy at_write on public.accesos_temporales for all
   using (public.is_owner()) with check (public.is_owner());
 
+/* ====== MOVIMIENTOS DE CAJA ======
+   Owner: todo. Encargado: solo movimientos de SU sede. Trabajador: nada. */
+alter table public.movimientos_caja enable row level security;
+drop policy if exists mc_owner_all      on public.movimientos_caja;
+drop policy if exists mc_enc_read       on public.movimientos_caja;
+drop policy if exists mc_enc_insert     on public.movimientos_caja;
+drop policy if exists mc_enc_update     on public.movimientos_caja;
+drop policy if exists mc_enc_delete     on public.movimientos_caja;
+create policy mc_owner_all on public.movimientos_caja for all
+  using (public.is_owner()) with check (public.is_owner());
+create policy mc_enc_read on public.movimientos_caja for select
+  using (public.is_encargado() and sede_id = public.current_sede());
+create policy mc_enc_insert on public.movimientos_caja for insert
+  with check (public.is_encargado() and sede_id = public.current_sede());
+create policy mc_enc_update on public.movimientos_caja for update
+  using (public.is_encargado() and sede_id = public.current_sede())
+  with check (public.is_encargado() and sede_id = public.current_sede());
+create policy mc_enc_delete on public.movimientos_caja for delete
+  using (public.is_encargado() and sede_id = public.current_sede());
+
 /* ====== AJUSTES (solo owner edita; todos leen) ====== */
 drop policy if exists aj_read  on public.ajustes;
 drop policy if exists aj_write on public.ajustes;
@@ -671,7 +695,7 @@ on conflict do nothing;
 
 - **Crear el primer owner manualmente:** registra un usuario por Auth → ejecuta `update public.profiles set rol = 'owner' where id = '<uuid>';`.
 - Las **tarifas viven en `profiles`** (no hay sueldo base): `tarifa_normal`, `tarifa_tardanza`, `tarifa_finsem`, `tarifa_feriado`.
-- El campo `caja_*` en `sedes` está como `jsonb` para mantener la forma `{ ingresos, material }` que usa el `DataProvider`.
+- **Caja por sede:** los antiguos campos `caja_dia/semana/mes` de `sedes` ya no existen. La caja se calcula como agregado de `movimientos_caja` filtrando por `sede_id` y rango de `fecha`. El owner ve y registra movimientos en cualquier sede; el encargado solo en la suya (`sede_id = current_sede()` por RLS). Tipos: `ingreso` · `gasto-personal` (extras al sueldo automático) · `gasto-fijo` (categoría `luz`/`agua`/`internet`/`local`/`otro`) · `gasto-manual`.
 - `accesos_temporales`: el cliente debe escribir `rol_original` con el rol vigente del worker, aplicar `rol_otorgado` en `profiles.rol`, y al expirar (cron / acción manual) restaurar `rol_original`. La vista `Accesos` ya implementa este flujo en localStorage; al migrar a Supabase, replicar la misma lógica con un `update profiles set rol = at.rol_original ...`.
 - Si decides **no usar el bucket `avatars`**, deja `profiles.avatar_base64` y guarda la imagen en base64 (igual que el modo demo actual).
 

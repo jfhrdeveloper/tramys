@@ -5,7 +5,7 @@ import { Topbar } from "@/components/layout/Topbar";
 import { Icon } from "@/components/ui/Icons";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { money } from "@/lib/utils/formatters";
-import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
+import { useData, ingresoDia, isWeekendISO, agregadoCaja } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -230,20 +230,53 @@ export default function ReportesPage() {
     );
   };
 
-  /* 8. Sedes */
+  /* 8. Sedes — totales día/semana/mes calculados desde MovimientoCaja */
   const exportSedes = () => {
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const isoOf = (dt: Date) => dt.toISOString().slice(0, 10);
+    const hoyISO = isoOf(hoy);
+    const semDesde = new Date(hoy); semDesde.setDate(hoy.getDate() - 6);
+    const mesDesde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const rangos = {
+      dia:    { d: hoyISO,           h: hoyISO },
+      semana: { d: isoOf(semDesde),  h: hoyISO },
+      mes:    { d: isoOf(mesDesde),  h: hoyISO },
+    };
     const rows = d.sedes
       .filter(s => sedeOk(s.id))
       .map(s => {
         const enc = s.encargadoId ? workerMap[s.encargadoId]?.nombre ?? "" : "";
+        const ag = (r: { d: string; h: string }) =>
+          agregadoCaja({ movimientosCaja: d.movimientosCaja }, s.id, r.d, r.h);
+        const aDia = ag(rangos.dia), aSem = ag(rangos.semana), aMes = ag(rangos.mes);
         return [s.id, s.nombre, s.direccion, s.telefono, s.horario, enc, s.activa ? "SI" : "NO",
-                s.cajaDia.ingresos, s.cajaSemana.ingresos, s.cajaMes.ingresos,
-                s.cajaDia.material, s.cajaSemana.material, s.cajaMes.material];
+                aDia.ingresos.toFixed(2), aSem.ingresos.toFixed(2), aMes.ingresos.toFixed(2),
+                (aDia.gastoFijo + aDia.gastoPersonal + aDia.gastoManual).toFixed(2),
+                (aSem.gastoFijo + aSem.gastoPersonal + aSem.gastoManual).toFixed(2),
+                (aMes.gastoFijo + aMes.gastoPersonal + aMes.gastoManual).toFixed(2)];
       });
     downloadCSV(
       ["ID","Nombre","Direccion","Telefono","Horario","Encargado","Activa",
-       "IngresosDia","IngresosSemana","IngresosMes","MaterialDia","MaterialSemana","MaterialMes"],
+       "IngresosDia","IngresosSemana","IngresosMes","GastosDia","GastosSemana","GastosMes"],
       rows, `sedes_${suf}.csv`
+    );
+  };
+
+  /* 8b. Movimientos de caja — line items del periodo seleccionado */
+  const exportMovimientosCaja = () => {
+    const rows = d.movimientosCaja
+      .filter(m => inRange(m.fecha))
+      .filter(m => sedeOk(m.sedeId))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.createdAt.localeCompare(b.createdAt))
+      .map(m => {
+        const reg = m.registradoPor ? workerMap[m.registradoPor]?.nombre ?? "" : "";
+        return [m.fecha, sedeMap[m.sedeId] ?? "", m.tipo, m.categoria ?? "",
+                m.cantidad ?? "", m.unitario ?? "", m.monto.toFixed(2),
+                m.concepto, reg];
+      });
+    downloadCSV(
+      ["Fecha","Sede","Tipo","Categoria","Cantidad","Unitario","Monto","Concepto","RegistradoPor"],
+      rows, `movimientos_caja_${suf}.csv`
     );
   };
 
@@ -316,6 +349,7 @@ export default function ReportesPage() {
       jaladores: d.jaladores,
       ingresosJaladores: d.ingresosJaladores,
       accesosTemporales: d.accesosTemporales,
+      movimientosCaja: d.movimientosCaja,
     }, `snapshot_tramys_${suf}.json`);
   };
 
@@ -369,8 +403,9 @@ export default function ReportesPage() {
       titulo: "Maestros · Catálogo",
       descripcion: "Información estructural (independiente del periodo)",
       items: [
-        { label:"Trabajadores", desc:"Perfil completo, tarifas y turno",  icon:"trabajadores", color:"#0ea5e9", onClick: exportTrabajadores, format:"CSV" },
-        { label:"Sedes",        desc:"Datos de contacto, encargado y caja", icon:"sedes",      color:"#7c3aed", onClick: exportSedes,        format:"CSV" },
+        { label:"Trabajadores",      desc:"Perfil completo, tarifas y turno",                     icon:"trabajadores", color:"#0ea5e9", onClick: exportTrabajadores,     format:"CSV" },
+        { label:"Sedes",             desc:"Datos de contacto, encargado y totales de caja",       icon:"sedes",        color:"#7c3aed", onClick: exportSedes,            format:"CSV" },
+        { label:"Movimientos caja",  desc:"Line items de ingresos y gastos del periodo por sede", icon:"sueldo",       color:"#16a34a", onClick: exportMovimientosCaja,  format:"CSV" },
       ],
     },
     {

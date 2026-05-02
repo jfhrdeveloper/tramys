@@ -11,6 +11,7 @@ import { DataProvider } from "@/components/providers/DataProvider";
 import { DataProviderSupabase } from "@/components/providers/DataProviderSupabase";
 import { SessionProvider } from "@/components/providers/SessionProvider";
 import { SessionProviderSupabase } from "@/components/providers/SessionProviderSupabase";
+import { FeedbackProvider } from "@/components/ui/Feedback";
 
 const USE_SUPABASE = process.env.NEXT_PUBLIC_USE_SUPABASE === "true";
 
@@ -20,11 +21,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
       <PrivacyProvider>
-        <Data>
-          <Session>
-            {children}
-          </Session>
-        </Data>
+        <FeedbackProvider>
+          <Data>
+            <Session>
+              {children}
+            </Session>
+          </Data>
+        </FeedbackProvider>
       </PrivacyProvider>
     </ThemeProvider>
   );

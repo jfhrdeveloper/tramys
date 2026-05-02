@@ -464,6 +464,11 @@
   }
 }
 
+/* ====== Helpers responsive: visible solo en mobile ====== */
+.show-mobile {
+  display: none;
+}
+
 /* ====== Mobile (<768px) ====== */
 @media (max-width: 767px) {
   .page-main {

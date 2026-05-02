@@ -250,6 +250,67 @@
 
 ---
 
+## 🆕 5d. Iteración: feedback unificado, ergonomía del modal de movimiento, gráficos y buscador
+
+### 🔔 Sistema de feedback (Toast + Confirm) — `src/components/ui/Feedback.tsx`
+- [x] `FeedbackProvider` montado en `Providers.tsx` (envuelve a Data + Session) → habilita `useToast()` y `useConfirm()` en toda la app, incluido el data provider.
+- [x] `useToast(message, variant)` → toast superior derecho con 4 variantes (`success` verde / `error` rojo / `warning` ámbar / `info` violeta), auto-dismiss 3.5 s, cerrable con la X.
+- [x] `useConfirm({ title, message, confirmLabel, cancelLabel, tone })` → modal con CTA tematizable (`danger | primary | success`). Devuelve `Promise<boolean>`.
+- [x] Sustituidos **todos** los `window.alert` / `window.confirm` / `confirm()` nativos del codebase: validaciones del `ModalMovimiento` (warnings), eliminaciones en `PanelMisGastos`, `sedes/page`, `trabajadores/page` (limpiar día y eliminar trabajador), y `jaladores/page`.
+- [x] El alert del reset deshabilitado en `DataProviderSupabase` se degradó a `console.warn` (caso técnico no UI).
+- [x] Anti-patrón canónico: cumple la regla del style guide §11 — “❌ `prompt()`/`alert()`/`confirm()` nativos: siempre `Modal`”.
+
+### 💸 Botones Ganancia / Gasto homogéneos en `PanelMisGastos`
+- [x] Mismo `btn-primary` para los dos: verde `#16a34a` para Ganancia, rojo `#C41A3A` para Gasto. `minWidth: 170` desktop / `width: 100% + minHeight: 44` mobile.
+- [x] **Fix duplicación PC**: `.show-mobile` ahora tiene `display: none` por defecto (en `globals.css`) — antes solo se definía dentro del media query y los CTA "gigantes" del bloque mobile aparecían también en desktop. Ahora el bloque inferior mobile vuelve a ser exclusivo de móvil.
+
+### 🧮 ModalMovimiento — ergonomía del registro
+- [x] **Monto auto-bloqueado** cuando `cantidad × unitario` produce un total válido en `ingreso`: el campo se vuelve `readOnly` con fondo `--hover` y label "= S/ N (auto)".
+- [x] **Override manual** mediante botón pequeño *"✏ Editar manual"*: libera el input. Una vez editado, aparece el reverso *"Volver a auto"* para reactivar el cálculo. Conserva flexibilidad para descuentos/redondeos.
+- [x] **Subtipo de gasto-personal** sin tocar DB ni el enum `categoria_fijo`: selector con `Bono | Adelanto extra | Propina | Comida | Otro` que se prefija al `concepto` con formato `"<Subtipo> · <descripción>"`. Al editar, se parsea con `parseConceptoPersonal()` para recuperar la selección original. Los reportes pueden agrupar por el prefijo si se necesita más adelante.
+- [x] **Contraste de hints** subido en el selector de tipo: el hint de la opción no activa usa `var(--text)` con `opacity 0.62`, y la activa usa el color del tipo con `opacity 0.85` — mejora AA en dark sin afectar el resto de la app.
+
+### 📊 Visualización en `PanelMisGastos`
+- [x] **Mini-dona** en SVG nativo con la distribución porcentual `Personal / Fijo / Manual`. Cada segmento es un `<circle>` con `stroke-dasharray`; cuando `total === 0` queda un anillo gris ("sin datos"). El centro muestra el total en formato compacto (`moneyShort`).
+- [x] Leyenda lateral con dot de color, etiqueta y porcentaje por tipo.
+- [x] **Mini-barras** Ganancia vs Gasto: dos barras horizontales escaladas al máximo de los dos valores; verde para ganancia, rojo de marca para gasto. Animación `width 0.4s ease`.
+- [x] Sin librerías nuevas — todo en SVG/CSS dentro del mismo componente para no inflar el bundle.
+
+### 🔎 Buscador por concepto
+- [x] Input bajo los chips de filtro (`maxWidth: 360`), icono `search` a la izquierda y X de limpiar a la derecha. Filtra `case-insensitive` por substring sobre `m.concepto` antes de paginar.
+- [x] El estado `busqueda` resetea la página a 1 al teclear o limpiar.
+- [x] El empty state distingue: *"Sin coincidencias para X"* cuando hay query, vs el clásico *"No hay gastos en este periodo"*.
+
+### 🧑‍🤝‍🧑 Asistencia: filtro Trabajadores · Jaladores · Ambos
+- [x] Nuevo chip filter en `/asistencia` con tres opciones (`trabajadores | jaladores | ambos`). Default `trabajadores`.
+- [x] **Modelo sin migración**: los jaladores no usan `AsistenciaRec`. Su "asistencia diaria" se infiere de `IngresoJalador` con esa fecha — si tiene ingresos del día → estado `Activo`; si no → `Sin actividad`. Cero cambio de schema.
+- [x] **Tipo unificado** `DiaItem = { kind: "worker" } | { kind: "jalador" }` para iterar el detalle del día. La tabla muestra columna "Tipo" (`TRAB` rojo / `JAL` azul) cuando el filtro es "Ambos".
+- [x] **Calendario**: chips del día incluyen jaladores activos (azul `#1d6fa4`) además de trabajadores presentes/tardanza/vacaciones.
+- [x] **Edición**: trabajadores abren el modal habitual; jaladores redirigen a `/jaladores?sede=<id>` (no editan asistencia, sino el panel de origen).
+- [x] **Encargado**: scope reducido a su sede tanto para trabajadores como para jaladores.
+
+### 💰 Mis gastos: filas automáticas + Concepto en Fijo + duplicado PC
+- [x] **Filas virtuales `AUTO`** inyectadas en la tabla de `PanelMisGastos`:
+  - **`Sueldos del personal (planilla)`** = `Σ ingresoDia(rec, tarifas, weekend, feriado)` para asistencias en la sede del día y dentro del rango. Reusa `ingresoDia` del provider y `esFeriadoOficial`.
+  - **`Comisiones de jaladores`** = `Σ ingreso × (porcentajeComision/100)` por jalador de la sede en el rango.
+  - Badge `AUTO` violeta + botón **Editar** que redirige a `/planilla?sede=<id>` o `/jaladores?sede=<id>` respectivamente. No editables inline ni eliminables.
+  - Se suman a los KPIs (Personal, Total gastos, Balance) y aparecen en la dona/barras como parte de "Personal".
+  - Fila con fondo violeta sutil (`rgba(99,102,241,0.04)`) para separarlas visualmente de los movimientos reales.
+- [x] **Concepto oculto en gasto-fijo** (ModalMovimiento): si `categoria !== "otro"`, no se muestra el campo Concepto. Al guardar se usa `CAT_LABEL[categoria]` ("Luz" / "Agua" / "Internet" / "Local / Alquiler") como concepto canónico. Si `categoria === "otro"`, sí se pide texto libre. Al editar, si el concepto coincide con la etiqueta canónica, se infiere y el campo no reaparece como ruido.
+- [x] **Botones duplicados PC**: el bloque mobile tenía `display: "flex"` inline que ganaba sobre `.show-mobile { display: none }` y se mostraba también en PC. Quitamos el `display: flex` inline y dejamos que la clase controle la visibilidad — ahora los CTA del header son los únicos visibles en PC.
+
+### 🗂️ Sidebar con grupos desplegables
+- [x] Modelo de navegación tipado `NavItem = NavLink | NavGroup` (`Sidebar.tsx`). El sidebar ya no es una lista plana de hrefs.
+- [x] **Agrupación owner (11 → 6):** Dashboard · Sedes · ▼ **Personal** (Trabajadores, Jaladores, Asistencia, Adelantos) · ▼ **Finanzas** (Planilla, Mis gastos, Reportes) · Eventos · Accesos.
+- [x] **Agrupación encargado (7 → 5):** Dashboard · Mi sede · ▼ **Personal** (Trabajadores, Asistencia, Adelantos) · Mis gastos · Eventos.
+- [x] **Auto-expansión**: el grupo cuyo path activo cae dentro arranca abierto. El usuario puede colapsar/expandir manualmente y la elección persiste mientras dura la sesión del componente.
+- [x] **Badge agregado**: cuando un grupo está cerrado, suma los badges de sus hijos (ej: Adelantos pendientes burbujea al header de "Personal"). Al abrirlo, el badge migra al hijo correspondiente.
+- [x] **Modo colapsado (sidebar 64 px)**: los grupos se "aplanan" — cada hijo se muestra como link suelto con su icono propio. Mantenemos navegación 1-clic sin tener que expandir el sidebar.
+- [x] **BottomNav móvil**: sin cambios. El patrón "4 primarias + bottom sheet 'Más'" ya cumple la función de agrupar y mantiene el mejor patrón táctil para mobile.
+- [x] Animación: chevron rota 0°↔−90° con `transition: transform 0.2s`, hijos aparecen con `animate-fade-in` y borde guía `var(--border)` a la izquierda.
+
+---
+
 ## 🔁 10. Multi-sede por día + Calendarios cross-vista — IMPLEMENTADO
 
 ### 10.1 Modelo: la sede y el horario son del registro de asistencia, no del worker — [x]

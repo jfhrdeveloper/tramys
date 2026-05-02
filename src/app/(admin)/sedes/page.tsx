@@ -16,6 +16,7 @@ import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { ModalMovimiento } from "@/components/sedes/ModalMovimiento";
+import { useConfirm } from "@/components/ui/Feedback";
 import { rangoPeriodo, PERIODOS, PERIODO_LABEL, type Periodo } from "@/lib/utils/periodos";
 
 const COLORES_SUG = ["#C41A3A","#1d6fa4","#16a34a","#f59e0b","#6366f1","#8b5cf6","#ec4899","#0ea5e9"];
@@ -146,6 +147,7 @@ function CajaBlock({ sede, periodo }: { sede: Sede; periodo: Periodo }) {
 /* ================= LISTA DE MOVIMIENTOS DEL PERIODO ================= */
 function MovimientosLista({ sede, periodo, color }: { sede: Sede; periodo: Periodo; color: string }) {
   const d = useData();
+  const confirm = useConfirm();
   const rango = useMemo(() => rangoPeriodo(periodo), [periodo]);
   const ag = useMemo(
     () => agregadoCaja({ movimientosCaja: d.movimientosCaja }, sede.id, rango.desdeISO, rango.hastaISO),
@@ -242,7 +244,15 @@ function MovimientosLista({ sede, periodo, color }: { sede: Sede; periodo: Perio
                     style={{ background:"transparent", border:"1px solid var(--border)", borderRadius: 6, cursor:"pointer", padding:"4px 8px", marginRight: 4 }}
                     title="Editar"><Icon name="edit" size={12} /></button>
                   <button
-                    onClick={() => { if (window.confirm("¿Eliminar este movimiento?")) d.deleteMovimientoCaja(m.id); }}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "Eliminar movimiento",
+                        message: "¿Seguro que deseas eliminar este movimiento? Esta acción no se puede deshacer.",
+                        confirmLabel: "Eliminar",
+                        tone: "danger",
+                      });
+                      if (ok) d.deleteMovimientoCaja(m.id);
+                    }}
                     style={{ background:"transparent", border:"1px solid var(--border)", borderRadius: 6, cursor:"pointer", padding:"4px 8px", color:"var(--brand)" }}
                     title="Eliminar"><Icon name="trash" size={12} /></button>
                 </td>

@@ -35,14 +35,6 @@ export default function DashboardPage() {
   const ausentes  = hoyRecords.filter(x => !x.rec || x.rec.estado === "ausente").length;
   const pctAsist  = hoyRecords.length ? Math.round(((presentes + tardanzas) / hoyRecords.length) * 100) : 0;
 
-  /* ==== Adelantos pendientes (scoped) ==== */
-  const idsScope = useMemo(
-    () => new Set(d.workers.filter(w => !isEnc || !sedeActor || w.sedeId === sedeActor.id).map(w => w.id)),
-    [d.workers, isEnc, sedeActor],
-  );
-  const pendientes = d.adelantos.filter(a => a.estado === "pendiente" && idsScope.has(a.workerId));
-  const totalPend  = pendientes.reduce((a, x) => a + x.monto, 0);
-
   /* ==== Comisiones jaladores del mes ==== */
   const year = new Date().getFullYear();
   const month = new Date().getMonth();
@@ -94,19 +86,14 @@ export default function DashboardPage() {
   /* ==== Actividad reciente ==== */
   const actividad = useMemo(() => {
     const items: { text: string; hora: string; color: string; icon: string }[] = [];
-    for (const r of d.asistencia.filter(a => a.fecha === hoy).slice(0, 4)) {
+    for (const r of d.asistencia.filter(a => a.fecha === hoy).slice(0, 6)) {
       const w = d.workers.find(x => x.id === r.workerId);
       if (!w) continue;
       if (r.estado === "tardanza") items.push({ text:`${w.apodo || w.nombre.split(" ")[0]} llegó tarde`, hora:r.entrada ?? "—", color:"#f59e0b", icon:"alert_circle" });
       else if (r.estado === "presente") items.push({ text:`${w.apodo || w.nombre.split(" ")[0]} registró entrada`, hora:r.entrada ?? "—", color:"#22c55e", icon:"check_circle" });
     }
-    for (const a of pendientes.slice(0, 2)) {
-      const w = d.workers.find(x => x.id === a.workerId);
-      if (!w) continue;
-      items.push({ text:`Solicitud adelanto — ${w.apodo || w.nombre.split(" ")[0]}`, hora:`${money(a.monto)}`, color:"#C41A3A", icon:"adelantos" });
-    }
     return items.slice(0, 6);
-  }, [d.asistencia, d.workers, pendientes, hoy]);
+  }, [d.asistencia, d.workers, hoy]);
 
   const pagPresencia = usePagination(hoyRecords);
 
@@ -168,41 +155,23 @@ export default function DashboardPage() {
         </div>
 
         {/* ====== Alertas ====== */}
-        {(cumpleHoy.length > 0 || pendientes.length > 0) && (
-          <div className="grid-2" style={{ marginBottom: 16 }}>
-            {cumpleHoy.length > 0 && (
-              <div className="card" style={{ borderLeft: "4px solid #f59e0b", background: "rgba(245,158,11,0.04)" }}>
-                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <div style={{ width: 42, height: 42, borderRadius: "50%", background: "rgba(245,158,11,0.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <Icon name="cake" size={22} color="#d97706" />
+        {cumpleHoy.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div className="card" style={{ borderLeft: "4px solid #f59e0b", background: "rgba(245,158,11,0.04)" }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ width: 42, height: 42, borderRadius: "50%", background: "rgba(245,158,11,0.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Icon name="cake" size={22} color="#d97706" />
+                </div>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#d97706" }}>
+                    {cumpleHoy.length === 1 ? "¡Cumpleaños hoy!" : `${cumpleHoy.length} cumpleaños hoy`}
                   </div>
-                  <div style={{ flex: 1, minWidth: 120 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: "#d97706" }}>
-                      {cumpleHoy.length === 1 ? "¡Cumpleaños hoy!" : `${cumpleHoy.length} cumpleaños hoy`}
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      {cumpleHoy.map(c => c.nombre).join(", ")}
-                    </div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    {cumpleHoy.map(c => c.nombre).join(", ")}
                   </div>
                 </div>
               </div>
-            )}
-
-            {pendientes.length > 0 && (
-              <div className="card" style={{ borderLeft: "4px solid #f59e0b" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>Adelantos pendientes</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      {pendientes.length} por aprobar · <HideableAmount value={money(totalPend)} size={11} color="var(--brand)" weight={700} fontFamily="'DM Mono',monospace" />
-                    </div>
-                  </div>
-                  <Link href="/adelantos" className="btn-primary" style={{ fontSize: 12, padding: "6px 12px" }}>
-                    Revisar
-                  </Link>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         )}
 

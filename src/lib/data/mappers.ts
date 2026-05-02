@@ -4,8 +4,9 @@
 
 import type {
   Sede, Worker, AsistenciaRec, Adelanto, Permiso, Evento,
-  Jalador, IngresoJalador, AccesoTemporal, Rol, EstadoAsist,
-  EstadoAdel, EstadoPerm, TipoPerm, TipoEvento, TarifasWorker,
+  Jalador, IngresoJalador, AccesoTemporal, MovimientoCaja,
+  Rol, EstadoAsist, EstadoAdel, EstadoPerm, TipoPerm, TipoEvento,
+  TipoMovimiento, CategoriaFijo, TarifasWorker,
 } from "@/components/providers/DataProvider";
 
 /* ====== Sedes ====== */
@@ -19,9 +20,6 @@ export function rowToSede(r: Record<string, unknown>): Sede {
     horario:     String(r.horario ?? ""),
     encargadoId: r.encargado_id ? String(r.encargado_id) : undefined,
     activa:      Boolean(r.activa ?? true),
-    cajaDia:     (r.caja_dia    as { ingresos: number; material: number }) ?? { ingresos: 0, material: 0 },
-    cajaSemana:  (r.caja_semana as { ingresos: number; material: number }) ?? { ingresos: 0, material: 0 },
-    cajaMes:     (r.caja_mes    as { ingresos: number; material: number }) ?? { ingresos: 0, material: 0 },
   };
 }
 export function sedeToRow(s: Partial<Sede>): Record<string, unknown> {
@@ -33,9 +31,36 @@ export function sedeToRow(s: Partial<Sede>): Record<string, unknown> {
   if (s.horario     !== undefined) out.horario      = s.horario;
   if (s.encargadoId !== undefined) out.encargado_id = s.encargadoId ?? null;
   if (s.activa      !== undefined) out.activa       = s.activa;
-  if (s.cajaDia     !== undefined) out.caja_dia     = s.cajaDia;
-  if (s.cajaSemana  !== undefined) out.caja_semana  = s.cajaSemana;
-  if (s.cajaMes     !== undefined) out.caja_mes     = s.cajaMes;
+  return out;
+}
+
+/* ====== Movimientos de caja ====== */
+export function rowToMovimientoCaja(r: Record<string, unknown>): MovimientoCaja {
+  return {
+    id:           String(r.id),
+    sedeId:       String(r.sede_id),
+    fecha:        String(r.fecha),
+    tipo:         (r.tipo as TipoMovimiento) ?? "ingreso",
+    monto:        Number(r.monto ?? 0),
+    cantidad:     r.cantidad != null ? Number(r.cantidad) : undefined,
+    unitario:     r.unitario != null ? Number(r.unitario) : undefined,
+    categoria:    r.categoria ? (r.categoria as CategoriaFijo) : undefined,
+    concepto:     String(r.concepto ?? ""),
+    registradoPor: r.registrado_por ? String(r.registrado_por) : undefined,
+    createdAt:    String(r.created_at ?? new Date().toISOString()),
+  };
+}
+export function movimientoCajaToRow(m: Partial<MovimientoCaja>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (m.sedeId        !== undefined) out.sede_id        = m.sedeId;
+  if (m.fecha         !== undefined) out.fecha          = m.fecha;
+  if (m.tipo          !== undefined) out.tipo           = m.tipo;
+  if (m.monto         !== undefined) out.monto          = m.monto;
+  if (m.cantidad      !== undefined) out.cantidad       = m.cantidad ?? null;
+  if (m.unitario      !== undefined) out.unitario       = m.unitario ?? null;
+  if (m.categoria     !== undefined) out.categoria      = m.categoria ?? null;
+  if (m.concepto      !== undefined) out.concepto       = m.concepto;
+  if (m.registradoPor !== undefined) out.registrado_por = m.registradoPor ?? null;
   return out;
 }
 

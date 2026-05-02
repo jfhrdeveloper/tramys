@@ -13,6 +13,7 @@ import {
   type DataState,
   type Sede, type Worker, type AsistenciaRec, type Adelanto, type Permiso,
   type Evento, type Jalador, type IngresoJalador, type AccesoTemporal,
+  type MovimientoCaja,
 } from "@/components/providers/DataProvider";
 import {
   rowToSede, sedeToRow,
@@ -24,11 +25,13 @@ import {
   rowToJalador, jaladorToRow,
   rowToIngreso, ingresoToRow,
   rowToAccesoTemp, accesoTempToRow,
+  rowToMovimientoCaja, movimientoCajaToRow,
 } from "@/lib/data/mappers";
 
 const EMPTY_STATE: DataState = {
   sedes: [], workers: [], asistencia: [], adelantos: [], permisos: [],
   eventos: [], jaladores: [], ingresosJaladores: [], accesosTemporales: [],
+  movimientosCaja: [],
   mostrarFeriadosOficiales: true,
 };
 
@@ -40,7 +43,7 @@ export function DataProviderSupabase({ children }: { children: React.ReactNode }
   /* ====== Carga inicial (todas las tablas en paralelo) ====== */
   const cargar = useCallback(async () => {
     const [
-      sedes, profiles, asist, adel, perm, ev, jal, ij, at, ajustes,
+      sedes, profiles, asist, adel, perm, ev, jal, ij, at, mc, ajustes,
     ] = await Promise.all([
       supabase.from("sedes").select("*"),
       supabase.from("profiles").select("*"),
@@ -51,6 +54,7 @@ export function DataProviderSupabase({ children }: { children: React.ReactNode }
       supabase.from("jaladores").select("*"),
       supabase.from("ingresos_jaladores").select("*"),
       supabase.from("accesos_temporales").select("*"),
+      supabase.from("movimientos_caja").select("*"),
       supabase.from("ajustes").select("*").eq("id", 1).maybeSingle(),
     ]);
 
@@ -64,6 +68,7 @@ export function DataProviderSupabase({ children }: { children: React.ReactNode }
       jaladores:         (jal.data      ?? []).map(rowToJalador),
       ingresosJaladores: (ij.data       ?? []).map(rowToIngreso),
       accesosTemporales: (at.data       ?? []).map(rowToAccesoTemp),
+      movimientosCaja:   (mc.data       ?? []).map(rowToMovimientoCaja),
       mostrarFeriadosOficiales: ajustes.data?.mostrar_feriados_oficiales ?? true,
     });
     setReady(true);
@@ -204,10 +209,22 @@ export function DataProviderSupabase({ children }: { children: React.ReactNode }
     return () => window.clearInterval(id);
   }, [supabase, ready]);
 
+  /* ====== Movimientos de caja ====== */
+  const addMovimientoCaja = useCallback(async (m: Omit<MovimientoCaja, "id" | "createdAt">) => {
+    await supabase.from("movimientos_caja").insert(movimientoCajaToRow(m as Partial<MovimientoCaja>));
+  }, [supabase]);
+  const updateMovimientoCaja = useCallback(async (id: string, patch: Partial<MovimientoCaja>) => {
+    await supabase.from("movimientos_caja").update(movimientoCajaToRow(patch)).eq("id", id);
+  }, [supabase]);
+  const deleteMovimientoCaja = useCallback(async (id: string) => {
+    await supabase.from("movimientos_caja").delete().eq("id", id);
+  }, [supabase]);
+
   const resetAll = useCallback(() => {
-    /* En Supabase no hacemos un wipe destructivo desde el cliente. */
+    /* En Supabase no hacemos un wipe destructivo desde el cliente:
+       el reset solo borra datos en modo demo (localStorage). */
     if (typeof window !== "undefined") {
-      window.alert("Reset deshabilitado en modo Supabase. Borra los datos desde el SQL Editor.");
+      console.warn("[Supabase] Reset deshabilitado: borra los datos desde el SQL Editor.");
     }
   }, []);
 
@@ -223,6 +240,7 @@ export function DataProviderSupabase({ children }: { children: React.ReactNode }
     addJalador, updateJalador, deleteJalador,
     addIngreso, updateIngreso, deleteIngreso,
     addAccesoTemp, removeAccesoTemp,
+    addMovimientoCaja, updateMovimientoCaja, deleteMovimientoCaja,
     resetAll,
   };
 

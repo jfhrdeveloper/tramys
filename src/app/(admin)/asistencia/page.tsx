@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Topbar } from "@/components/layout/Topbar";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -8,7 +9,7 @@ import { Icon } from "@/components/ui/Icons";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
 import {
   useData, sedeDelDia, turnoDelDia,
-  type AsistenciaRec, type EstadoAsist, type Worker,
+  type AsistenciaRec, type EstadoAsist, type Worker, type Jalador,
 } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
@@ -176,6 +177,10 @@ export default function AsistenciaPage() {
   const [month, setMonth] = useState(now.getMonth());
   const [selIso, setSelIso] = useState<string>(now.toISOString().slice(0,10));
   const [filtroSede, setFiltroSede] = useState(isEnc && sedeActor ? sedeActor.id : "todas");
+  /* Filtro de tipo de personal. Trabajadores tienen `AsistenciaRec` real
+     (estado, entrada/salida); jaladores no tienen marca diaria, así que
+     su "asistencia" se infiere de si tienen `IngresoJalador` ese día. */
+  const [tipoPersonal, setTipoPersonal] = useState<"trabajadores" | "jaladores" | "ambos">("trabajadores");
   const [modalEdit, setModalEdit] = useState<{ rec: AsistenciaRec | null; worker: Worker; iso: string } | null>(null);
   const [modalAdd, setModalAdd]   = useState<{ iso: string } | null>(null);
   const [addWorkerId, setAddWorkerId] = useState<string>("");
@@ -196,18 +201,37 @@ export default function AsistenciaPage() {
     && (!isEnc || !sedeActor || w.sedeId === sedeActor.id || idsEnSedeDelDia.has(w.id))
     && (filtroSede === "todas" || w.sedeId === filtroSede));
 
-  function dataDia(iso: string) {
+  const jaladores = d.jaladores.filter(j => j.activo
+    && (!isEnc || !sedeActor || j.sedeId === sedeActor.id)
+    && (filtroSede === "todas" || j.sedeId === filtroSede));
+
+  /* Item unificado para iterar trabajadores + jaladores en el detalle del día. */
+  type DiaItem =
+    | { kind: "worker";  worker: Worker;   rec: AsistenciaRec; activoDia: boolean }
+    | { kind: "jalador"; jalador: Jalador; ingresosDia: number; cantidadDia: number };
+
+  function dataDia(iso: string): DiaItem[] {
     const feriado = esFeriadoOficial(iso).es;
-    const lista = trabajadores.map(w => {
-      const rec = d.asistencia.find(a => a.workerId === w.id && a.fecha === iso);
-      return {
-        worker: w,
-        rec: rec ?? { id:"", workerId: w.id, fecha: iso, entrada: null, salida: null,
-                      estado: feriado ? "feriado" as const : "ausente" as const,
-                      overrideIngreso: null } as AsistenciaRec,
-      };
-    });
-    return lista;
+    const items: DiaItem[] = [];
+    if (tipoPersonal !== "jaladores") {
+      for (const w of trabajadores) {
+        const rec = d.asistencia.find(a => a.workerId === w.id && a.fecha === iso);
+        const recEff: AsistenciaRec = rec ?? {
+          id:"", workerId: w.id, fecha: iso, entrada: null, salida: null,
+          estado: feriado ? "feriado" : "ausente",
+          overrideIngreso: null,
+        };
+        items.push({ kind: "worker", worker: w, rec: recEff, activoDia: !!rec });
+      }
+    }
+    if (tipoPersonal !== "trabajadores") {
+      for (const j of jaladores) {
+        const ings = d.ingresosJaladores.filter(ij => ij.jaladorId === j.id && ij.fecha === iso);
+        const ingresosDia = ings.reduce((acc, ij) => acc + ij.monto, 0);
+        items.push({ kind: "jalador", jalador: j, ingresosDia, cantidadDia: ings.length });
+      }
+    }
+    return items;
   }
 
   const daysInMonth = new Date(year, month+1, 0).getDate();
@@ -231,6 +255,35 @@ export default function AsistenciaPage() {
     <>
       <Topbar title="Asistencia" subtitle={`${MESES[month]} ${year}`} />
       <main className="page-main animate-fade-in">
+
+        {/* ====== Filtro tipo de personal ====== */}
+        <div className="card" style={{ padding: "10px 14px", marginBottom: 10, display:"flex", gap: 8, alignItems:"center", flexWrap:"wrap" }}>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700 }}>
+            Personal
+          </span>
+          {([
+            { k: "trabajadores" as const, label: `Trabajadores (${trabajadores.length})`, icon: "trabajadores", col: "#C41A3A" },
+            { k: "jaladores"    as const, label: `Jaladores (${jaladores.length})`,       icon: "jaladores",    col: "#1d6fa4" },
+            { k: "ambos"        as const, label: `Ambos`,                                  icon: "trabajadores", col: "#6366f1" },
+          ]).map(t => {
+            const active = tipoPersonal === t.k;
+            return (
+              <button key={t.k} onClick={() => setTipoPersonal(t.k)}
+                style={{
+                  padding: "6px 12px", borderRadius: 99,
+                  border: active ? `1px solid ${t.col}` : "1px solid var(--border)",
+                  background: active ? `${t.col}14` : "transparent",
+                  color: active ? t.col : "var(--text-muted)",
+                  fontWeight: active ? 700 : 500, fontSize: 11.5, cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  fontFamily: "'Bricolage Grotesque',sans-serif",
+                }}>
+                <Icon name={t.icon} size={12} color={active ? t.col : "var(--text-muted)"} />
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
 
         {/* ====== Filtros de sede + dropdown mes/año ====== */}
         <div className="card" style={{ padding: 14, marginBottom: 14, display:"flex", gap: 10, flexWrap:"wrap", alignItems:"center" }}>
@@ -310,9 +363,13 @@ export default function AsistenciaPage() {
               const weekend = ((offset + day - 1) % 7) >= 5;
               const feriado = esFeriadoOficial(iso).es;
 
-              const visibles = data.filter(x =>
-                x.rec.estado === "presente" || x.rec.estado === "tardanza" || esVacaciones(x.rec)
-              );
+              /* Chips visibles del día: trabajadores con marca útil + jaladores con ingreso. */
+              const visibles = data.filter(x => {
+                if (x.kind === "worker") {
+                  return x.rec.estado === "presente" || x.rec.estado === "tardanza" || esVacaciones(x.rec);
+                }
+                return x.cantidadDia > 0;
+              });
               const mostrar = visibles.slice(0, 3);
               const restantes = visibles.length - mostrar.length;
 
@@ -339,15 +396,22 @@ export default function AsistenciaPage() {
                   {/* Apodos/nombres (en móvil se convierten en barritas/dots) */}
                   <div style={{ display:"flex", flexDirection:"column", gap: 2, overflow:"hidden", minWidth: 0 }}>
                     {mostrar.map((x,i) => {
-                      const est = estiloEstado(x.rec);
+                      if (x.kind === "worker") {
+                        const est = estiloEstado(x.rec);
+                        return (
+                          <div key={i} className="cal-chip" style={{ background: est.bg, color: est.fg }}>
+                            <span style={{ width: 4, height: 4, borderRadius:"50%", background:"currentColor", flexShrink: 0 }} />
+                            <span className="cal-btn-label" style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                              {x.worker.apodo || x.worker.nombre.split(" ")[0]}
+                            </span>
+                          </div>
+                        );
+                      }
                       return (
-                        <div key={i} className="cal-chip" style={{
-                          background: est.bg,
-                          color:      est.fg,
-                        }}>
+                        <div key={i} className="cal-chip" style={{ background: "rgba(29,111,164,0.14)", color: "#1d6fa4" }}>
                           <span style={{ width: 4, height: 4, borderRadius:"50%", background:"currentColor", flexShrink: 0 }} />
                           <span className="cal-btn-label" style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                            {x.worker.apodo || x.worker.nombre.split(" ")[0]}
+                            {x.jalador.apodo || x.jalador.nombre.split(" ")[0]}
                           </span>
                         </div>
                       );
@@ -369,55 +433,128 @@ export default function AsistenciaPage() {
           </div>
           <div className="table-wrap">
             <table className="tramys-table">
-              <thead><tr><th>Trabajador</th><th>Apodo</th><th>Sede del día</th><th>Entrada</th><th>Salida</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr>
+                <th>Persona</th>
+                {tipoPersonal === "ambos" && <th>Tipo</th>}
+                <th>Apodo</th>
+                <th>Sede del día</th>
+                <th>Entrada</th>
+                <th>Salida</th>
+                <th>Estado</th>
+                <th></th>
+              </tr></thead>
               <tbody>
                 {pagDetalle.pageItems.map(x => {
-                  const sedePlanta = d.sedes.find(s => s.id === x.worker.sedeId);
-                  const sedeReal   = d.sedes.find(s => s.id === sedeDelDia(x.rec, x.worker));
-                  const tieneRegistro = !!x.rec.id;
-                  const visita = tieneRegistro && x.rec.sedeIdDia && x.rec.sedeIdDia !== x.worker.sedeId;
+                  if (x.kind === "worker") {
+                    const sedePlanta = d.sedes.find(s => s.id === x.worker.sedeId);
+                    const sedeReal   = d.sedes.find(s => s.id === sedeDelDia(x.rec, x.worker));
+                    const tieneRegistro = !!x.rec.id;
+                    const visita = tieneRegistro && x.rec.sedeIdDia && x.rec.sedeIdDia !== x.worker.sedeId;
+                    return (
+                      <tr key={`w-${x.worker.id}`}>
+                        <td>
+                          <div style={{ display:"flex", alignItems:"center", gap: 8 }}>
+                            <PhotoAvatar src={x.worker.avatarBase64} initials={(x.worker.apodo||x.worker.nombre)[0]} size={28} color={sedePlanta?.color ?? "#C41A3A"} />
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>{x.worker.nombre}</span>
+                          </div>
+                        </td>
+                        {tipoPersonal === "ambos" && (
+                          <td>
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, fontFamily: "'DM Mono',monospace",
+                              color: "#C41A3A", background: "rgba(196,26,58,0.12)",
+                              padding: "2px 8px", borderRadius: 99, letterSpacing: 0.4,
+                            }}>TRAB</span>
+                          </td>
+                        )}
+                        <td style={{ fontSize: 12, color: sedePlanta?.color, fontWeight: 700 }}>{x.worker.apodo}</td>
+                        <td>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: sedeReal?.color }}>{sedeReal?.nombre}</span>
+                          {visita && (
+                            <span style={{
+                              display:"inline-flex", alignItems:"center", gap:4,
+                              marginLeft:6, fontSize:9, fontWeight:700,
+                              padding:"2px 6px", borderRadius:99,
+                              background:"rgba(245,158,11,0.15)", color:"#d97706",
+                              fontFamily:"'DM Mono',monospace", textTransform:"uppercase",
+                            }} title={`Sede de planta: ${sedePlanta?.nombre}`}>
+                              ⇄ visita
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ fontFamily:"'DM Mono',monospace" }}>{x.rec.entrada ?? "—"}</td>
+                        <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{x.rec.salida ?? "—"}</td>
+                        <td>
+                          <span style={{ display:"inline-flex", alignItems:"center", gap: 5 }}>
+                            <Badge variant={x.rec.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small />
+                            {esVacaciones(x.rec) && (
+                              <span style={{
+                                fontSize: 9, fontWeight: 800, padding:"2px 6px", borderRadius: 99,
+                                background:"rgba(6,182,212,0.14)", color:"#0891b2",
+                                fontFamily:"'DM Mono',monospace", letterSpacing: .4,
+                              }} title={x.rec.motivoEdit ?? "Vacaciones"}>VAC</span>
+                            )}
+                          </span>
+                        </td>
+                        <td>
+                          <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px", display:"inline-flex", alignItems:"center", gap: 4 }}
+                            onClick={()=>setModalEdit({ rec: tieneRegistro ? x.rec : null, worker: x.worker, iso: selIso })}>
+                            <Icon name={tieneRegistro ? "edit" : "plus"} size={11} /> {tieneRegistro ? "Editar" : "Registrar"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  /* Jalador: sin marca diaria. Estado = "Activo" si tiene
+                     ingreso ese día, "Sin actividad" si no. Edit redirige
+                     al panel de jaladores. */
+                  const sedeJal = d.sedes.find(s => s.id === x.jalador.sedeId);
+                  const activo  = x.cantidadDia > 0;
                   return (
-                    <tr key={x.worker.id}>
+                    <tr key={`j-${x.jalador.id}`} style={{ background: "rgba(29,111,164,0.04)" }}>
                       <td>
                         <div style={{ display:"flex", alignItems:"center", gap: 8 }}>
-                          <PhotoAvatar src={x.worker.avatarBase64} initials={(x.worker.apodo||x.worker.nombre)[0]} size={28} color={sedePlanta?.color ?? "#C41A3A"} />
-                          <span style={{ fontWeight: 600, fontSize: 13 }}>{x.worker.nombre}</span>
+                          <PhotoAvatar src={x.jalador.avatarBase64} initials={(x.jalador.apodo||x.jalador.nombre)[0]} size={28} color={sedeJal?.color ?? "#1d6fa4"} />
+                          <span style={{ fontWeight: 600, fontSize: 13 }}>{x.jalador.nombre}</span>
                         </div>
                       </td>
-                      <td style={{ fontSize: 12, color: sedePlanta?.color, fontWeight: 700 }}>{x.worker.apodo}</td>
-                      <td>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: sedeReal?.color }}>{sedeReal?.nombre}</span>
-                        {visita && (
+                      {tipoPersonal === "ambos" && (
+                        <td>
                           <span style={{
-                            display:"inline-flex", alignItems:"center", gap:4,
-                            marginLeft:6, fontSize:9, fontWeight:700,
-                            padding:"2px 6px", borderRadius:99,
-                            background:"rgba(245,158,11,0.15)", color:"#d97706",
-                            fontFamily:"'DM Mono',monospace", textTransform:"uppercase",
-                          }} title={`Sede de planta: ${sedePlanta?.nombre}`}>
-                            ⇄ visita
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ fontFamily:"'DM Mono',monospace" }}>{x.rec.entrada ?? "—"}</td>
-                      <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{x.rec.salida ?? "—"}</td>
+                            fontSize: 10, fontWeight: 700, fontFamily: "'DM Mono',monospace",
+                            color: "#1d6fa4", background: "rgba(29,111,164,0.12)",
+                            padding: "2px 8px", borderRadius: 99, letterSpacing: 0.4,
+                          }}>JAL</span>
+                        </td>
+                      )}
+                      <td style={{ fontSize: 12, color: sedeJal?.color, fontWeight: 700 }}>{x.jalador.apodo}</td>
                       <td>
-                        <span style={{ display:"inline-flex", alignItems:"center", gap: 5 }}>
-                          <Badge variant={x.rec.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small />
-                          {esVacaciones(x.rec) && (
-                            <span style={{
-                              fontSize: 9, fontWeight: 800, padding:"2px 6px", borderRadius: 99,
-                              background:"rgba(6,182,212,0.14)", color:"#0891b2",
-                              fontFamily:"'DM Mono',monospace", letterSpacing: .4,
-                            }} title={x.rec.motivoEdit ?? "Vacaciones"}>VAC</span>
-                          )}
+                        <span style={{ fontSize: 12, fontWeight: 600, color: sedeJal?.color }}>{sedeJal?.nombre ?? "—"}</span>
+                      </td>
+                      <td colSpan={2} style={{ fontFamily:"'DM Mono',monospace", fontSize: 11.5, color: "var(--text-muted)" }}>
+                        {activo
+                          ? `${x.cantidadDia} ingreso${x.cantidadDia === 1 ? "" : "s"} · S/ ${x.ingresosDia.toFixed(2)}`
+                          : "—"}
+                      </td>
+                      <td>
+                        <span style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 99,
+                          background: activo ? "rgba(34,197,94,0.12)" : "rgba(139,143,168,0.15)",
+                          color: activo ? "#16a34a" : "var(--text-muted)",
+                          fontFamily: "'DM Mono',monospace",
+                        }}>
+                          <span style={{ width: 6, height: 6, borderRadius: 99, background: "currentColor" }} />
+                          {activo ? "Activo" : "Sin actividad"}
                         </span>
                       </td>
                       <td>
-                        <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px", display:"inline-flex", alignItems:"center", gap: 4 }}
-                          onClick={()=>setModalEdit({ rec: tieneRegistro ? x.rec : null, worker: x.worker, iso: selIso })}>
-                          <Icon name={tieneRegistro ? "edit" : "plus"} size={11} /> {tieneRegistro ? "Editar" : "Registrar"}
-                        </button>
+                        <Link href={`/jaladores?sede=${x.jalador.sedeId}`} style={{ textDecoration: "none" }}>
+                          <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px", display:"inline-flex", alignItems:"center", gap: 4 }}>
+                            <Icon name="edit" size={11} /> Editar
+                          </button>
+                        </Link>
                       </td>
                     </tr>
                   );
