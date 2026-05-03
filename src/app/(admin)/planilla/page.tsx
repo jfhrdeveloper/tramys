@@ -7,14 +7,12 @@ import { PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icons";
 import { HideableAmount, StatCardHidden } from "@/components/ui/HideableAmount";
-import { StatCard } from "@/components/ui/StatCard";
-import { money } from "@/lib/utils/formatters";
+import { money, formatFecha } from "@/lib/utils/formatters";
 import { useData, ingresoDia, isWeekendISO, agregadoCaja } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import Link from "next/link";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
-
-const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+import { rangoPeriodo, PERIODOS, PERIODO_LABEL, type Periodo } from "@/lib/utils/periodos";
 
 interface Row {
   workerId: string;
@@ -34,12 +32,14 @@ interface Row {
 
 export default function PlanillaPage() {
   const d = useData();
-  const now = new Date();
-  const [year, setYear]   = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  const [periodo, setPeriodo] = useState<Periodo>("quincenal");
   const [filtroSede, setFiltroSede] = useState("todas");
   const [pagados, setPagados] = useState<string[]>([]);
   const [modalW, setModalW] = useState<Row | null>(null);
+
+  /* Rango activo. Centralizado en `periodos.ts` — quincenal y mensual coinciden
+     con el cuadre que usa /sedes y /caja, así "Sueldos por pagar" cuadra. */
+  const rango = useMemo(() => rangoPeriodo(periodo), [periodo]);
 
   const rows: Row[] = useMemo(() => {
     return d.workers
@@ -50,8 +50,7 @@ export default function PlanillaPage() {
         let normal = 0, tardanza = 0, finSem = 0, feriado = 0, bruto = 0;
         for (const a of d.asistencia) {
           if (a.workerId !== w.id) continue;
-          const [y,m] = a.fecha.split("-").map(Number);
-          if (y !== year || m-1 !== month) continue;
+          if (a.fecha < rango.desdeISO || a.fecha > rango.hastaISO) continue;
           const esFer = esFeriadoOficial(a.fecha).es;
           const esFds = isWeekendISO(a.fecha);
           bruto += ingresoDia(a, w.tarifas, esFds, esFer);
@@ -64,10 +63,7 @@ export default function PlanillaPage() {
         }
         const adelantos = d.adelantos
           .filter(x => x.workerId === w.id && x.estado === "aprobado")
-          .filter(x => {
-            const [y,m] = x.fecha.split("-").map(Number);
-            return y === year && m-1 === month;
-          })
+          .filter(x => x.fecha >= rango.desdeISO && x.fecha <= rango.hastaISO)
           .reduce((a, x) => a + x.monto, 0);
         return {
           workerId: w.id,
@@ -77,27 +73,23 @@ export default function PlanillaPage() {
           totalBruto: bruto, adelantos, neto: Math.max(0, bruto - adelantos),
         };
       });
-  }, [d.workers, d.sedes, d.asistencia, d.adelantos, year, month, filtroSede]);
+  }, [d.workers, d.sedes, d.asistencia, d.adelantos, rango.desdeISO, rango.hastaISO, filtroSede]);
 
   const totalBruto = rows.reduce((a, r) => a + r.totalBruto, 0);
   const totalAdel  = rows.reduce((a, r) => a + r.adelantos, 0);
   const totalNeto  = rows.reduce((a, r) => a + r.neto, 0);
-  const ganaCompania = totalBruto - totalNeto; // (conservador)
 
   /* Para mostrar "Ganancia de la compañía" como "Ingresos − Neto pagado" sumamos
-     los ingresos de caja (MovimientoCaja tipo "ingreso") del mes filtrado, en
+     los ingresos de caja (MovimientoCaja tipo "ingreso") del rango activo, en
      todas las sedes del scope. */
-  const ingresosMesSedes = useMemo(() => {
-    const desdeISO = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-    const last = new Date(year, month + 1, 0).getDate();
-    const hastaISO = `${year}-${String(month + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+  const ingresosRangoSedes = useMemo(() => {
     const sedesScope = filtroSede === "todas" ? d.sedes : d.sedes.filter(s => s.id === filtroSede);
     return sedesScope.reduce(
-      (acc, s) => acc + agregadoCaja({ movimientosCaja: d.movimientosCaja }, s.id, desdeISO, hastaISO).ingresos,
+      (acc, s) => acc + agregadoCaja({ movimientosCaja: d.movimientosCaja }, s.id, rango.desdeISO, rango.hastaISO).ingresos,
       0,
     );
-  }, [d.sedes, d.movimientosCaja, year, month, filtroSede]);
-  const gananciaEmpresa = ingresosMesSedes - totalNeto;
+  }, [d.sedes, d.movimientosCaja, rango.desdeISO, rango.hastaISO, filtroSede]);
+  const gananciaEmpresa = ingresosRangoSedes - totalNeto;
 
   const togglePagado = (id: string) => setPagados(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
 
@@ -105,16 +97,35 @@ export default function PlanillaPage() {
 
   return (
     <>
-      <Topbar title="Planilla" subtitle={`${MESES[month]} ${year} · ${rows.length} trabajadores`} />
+      <Topbar
+        title="Planilla"
+        subtitle={`${PERIODO_LABEL[periodo]} · ${formatFecha(rango.desdeISO)} → ${formatFecha(rango.hastaISO)} · ${rows.length} trabajadores`}
+      />
       <main className="page-main">
 
-        <div style={{ display:"flex", gap: 10, marginBottom: 14, flexWrap:"wrap" }}>
-          <select className="select-base" value={month} onChange={e=>setMonth(Number(e.target.value))}>
-            {MESES.map((m,i)=><option key={m} value={i}>{m}</option>)}
-          </select>
-          <select className="select-base" value={year} onChange={e=>setYear(Number(e.target.value))}>
-            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+        <div style={{ display:"flex", gap: 10, marginBottom: 14, flexWrap:"wrap", alignItems:"center" }}>
+          {/* Toggle de periodo (mismo patrón que /sedes y /caja). */}
+          <div style={{
+            display: "flex", background: "var(--bg)", border: "1px solid var(--border)",
+            borderRadius: 8, padding: 3, flexWrap: "wrap",
+          }}>
+            {PERIODOS.map(p => {
+              const active = periodo === p;
+              return (
+                <button key={p} onClick={() => setPeriodo(p)}
+                  style={{
+                    padding: "6px 14px", borderRadius: 6, border: "none", cursor: "pointer",
+                    background: active ? "var(--brand)" : "transparent",
+                    color: active ? "#fff" : "var(--text-muted)",
+                    fontWeight: active ? 700 : 500, fontSize: 12,
+                    fontFamily: "'Bricolage Grotesque',sans-serif",
+                    minHeight: 30,
+                  }}>
+                  {PERIODO_LABEL[p]}
+                </button>
+              );
+            })}
+          </div>
           <select className="select-base" value={filtroSede} onChange={e=>setFiltroSede(e.target.value)}>
             <option value="todas">Todas las sedes</option>
             {d.sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
@@ -180,6 +191,9 @@ export default function PlanillaPage() {
                         <div style={{ display:"flex", gap: 4 }}>
                           <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px" }} onClick={()=>setModalW(r)}>Desglose</button>
                           <button onClick={()=>togglePagado(r.workerId)}
+                            title={pagado
+                              ? `Pagado del ${formatFecha(rango.desdeISO)} al ${formatFecha(rango.hastaISO)}`
+                              : `Marcar como pagado del ${formatFecha(rango.desdeISO)} al ${formatFecha(rango.hastaISO)}`}
                             style={{
                               background: pagado ? "rgba(34,197,94,0.1)" : "transparent",
                               border: `1px solid ${pagado ? "rgba(34,197,94,0.3)" : "var(--border)"}`,
@@ -230,6 +244,28 @@ export default function PlanillaPage() {
               <div>
                 <div style={{ fontWeight: 700 }}>{modalW.nombre}</div>
                 <div style={{ fontSize: 12, color:"var(--text-muted)" }}>{modalW.sedeNombre}</div>
+              </div>
+            </div>
+
+            {/* Rango de pago: muestra el periodo activo y los días que cubre. */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 14px",
+              background: "rgba(99,102,241,0.08)",
+              border: "1px solid rgba(99,102,241,0.25)",
+              borderRadius: 9,
+            }}>
+              <Icon name="calendar" size={16} color="#6366f1" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 9, color:"#6366f1", fontWeight: 700,
+                  fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6,
+                }}>
+                  Pagando · {PERIODO_LABEL[periodo]}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color:"var(--text)", fontFamily:"'DM Mono',monospace" }}>
+                  {formatFecha(rango.desdeISO)} → {formatFecha(rango.hastaISO)}
+                </div>
               </div>
             </div>
 

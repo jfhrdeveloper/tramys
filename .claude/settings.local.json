@@ -18,7 +18,8 @@
       "Bash(tasklist)",
       "Bash(findstr /i \"node next\")",
       "Bash(tasklist /FI \"IMAGENAME eq node.exe\")",
-      "PowerShell(Get-Process *)"
+      "PowerShell(Get-Process *)",
+      "Bash(awk 'NR==23,NR==282' src/app/\\\\\\(admin\\\\\\)/sedes/page.tsx)"
     ]
   },
   "hooks": {

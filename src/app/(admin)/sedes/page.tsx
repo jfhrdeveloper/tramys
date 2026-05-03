@@ -1,272 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Topbar } from "@/components/layout/Topbar";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { PhotoAvatar } from "@/components/ui/PhotoUpload";
 import { Icon } from "@/components/ui/Icons";
-import { HideableAmount } from "@/components/ui/HideableAmount";
-import { money, formatFecha } from "@/lib/utils/formatters";
 import {
-  useData, isoToday, agregadoCaja, ingresosJaladoresEnRango, derivadosCaja,
-  type Sede, type MovimientoCaja, type TipoMovimiento, type CategoriaFijo,
+  useData, isoToday,
+  type Sede,
 } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
-import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
-import { ModalMovimiento } from "@/components/sedes/ModalMovimiento";
-import { useConfirm } from "@/components/ui/Feedback";
-import { rangoPeriodo, PERIODOS, PERIODO_LABEL, type Periodo } from "@/lib/utils/periodos";
+import { PanelCaja } from "@/components/sedes/PanelCaja";
+import { PERIODOS, PERIODO_LABEL, rangoPeriodo, type Periodo } from "@/lib/utils/periodos";
+import { formatFecha } from "@/lib/utils/formatters";
 
 const COLORES_SUG = ["#C41A3A","#1d6fa4","#16a34a","#f59e0b","#6366f1","#8b5cf6","#ec4899","#0ea5e9"];
-
-const CAT_LABEL: Record<CategoriaFijo, string> = {
-  luz:      "Luz",
-  agua:     "Agua",
-  internet: "Internet",
-  local:    "Local / Alquiler",
-  otro:     "Otro",
-};
-const TIPO_LABEL: Record<TipoMovimiento, string> = {
-  "ingreso":        "Ingreso",
-  "gasto-personal": "Gasto personal",
-  "gasto-fijo":     "Consumo fijo",
-  "gasto-manual":   "Gasto manual",
-};
-const TIPO_COLOR: Record<TipoMovimiento, string> = {
-  "ingreso":        "#16a34a",
-  "gasto-personal": "#C41A3A",
-  "gasto-fijo":     "#d97706",
-  "gasto-manual":   "#6366f1",
-};
-
-/* ================= BLOQUE DE CAJA ================= */
-function CajaBlock({ sede, periodo }: { sede: Sede; periodo: Periodo }) {
-  const d = useData();
-  const rango = useMemo(() => rangoPeriodo(periodo), [periodo]);
-  const ag = useMemo(
-    () => agregadoCaja({ movimientosCaja: d.movimientosCaja }, sede.id, rango.desdeISO, rango.hastaISO),
-    [d.movimientosCaja, sede.id, rango.desdeISO, rango.hastaISO]
-  );
-  const ingJal = useMemo(
-    () => ingresosJaladoresEnRango(
-      { ingresosJaladores: d.ingresosJaladores, jaladores: d.jaladores },
-      sede.id, rango.desdeISO, rango.hastaISO,
-    ),
-    [d.ingresosJaladores, d.jaladores, sede.id, rango.desdeISO, rango.hastaISO]
-  );
-  /* Costos automáticos del personal: sueldos (planilla) + comisiones (jaladores).
-     Usa el mismo helper que `PanelCaja` para garantizar coherencia entre /sedes y /caja. */
-  const deriv = useMemo(
-    () => derivadosCaja(
-      { asistencia: d.asistencia, workers: d.workers, jaladores: d.jaladores, ingresosJaladores: d.ingresosJaladores },
-      sede.id, rango.desdeISO, rango.hastaISO,
-      (iso) => esFeriadoOficial(iso).es,
-    ),
-    [d.asistencia, d.workers, d.jaladores, d.ingresosJaladores, sede.id, rango.desdeISO, rango.hastaISO]
-  );
-  const ingresosTotal = ag.ingresos + ingJal.total;
-  const totalPersonal = deriv.total + ag.gastoPersonal;
-  const neta = ingresosTotal - totalPersonal - ag.gastoFijo - ag.gastoManual;
-  const margen = ingresosTotal > 0 ? Math.round((neta / ingresosTotal) * 100) : 0;
-
-  return (
-    <div style={{
-      background:"var(--bg)", border:"1px solid var(--border)", borderRadius:10,
-      padding: 14, display:"flex", flexDirection:"column", gap: 10,
-    }}>
-      {/* Filas compactas con pill */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
-        <div style={{ padding:"10px 12px", background:"rgba(34,197,94,0.08)", borderRadius: 8, textAlign:"center" }}>
-          <div style={{ fontSize: 9, color:"#16a34a", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>Ingresos</div>
-          <HideableAmount value={money(ingresosTotal)} size={15} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" align="center" />
-          {ingJal.total > 0 && (
-            <div style={{ fontSize: 9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 2 }}>
-              caja {money(ag.ingresos)} · jaladores {money(ingJal.total)}
-            </div>
-          )}
-        </div>
-        <div style={{ padding:"10px 12px", background:"rgba(196,26,58,0.08)", borderRadius: 8, textAlign:"center" }}>
-          <div style={{ fontSize: 9, color:"var(--brand)", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>− Personal</div>
-          <HideableAmount value={money(totalPersonal)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" align="center" />
-          <div style={{ fontSize: 9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 2 }}>
-            sueldos {money(deriv.sueldos)}
-            {deriv.comisiones > 0 ? ` · com ${money(deriv.comisiones)}` : ""}
-            {ag.gastoPersonal > 0 ? ` · extra ${money(ag.gastoPersonal)}` : ""}
-          </div>
-        </div>
-        <div style={{ padding:"10px 12px", background:"rgba(217,119,6,0.08)", borderRadius: 8, textAlign:"center" }}>
-          <div style={{ fontSize: 9, color:"#d97706", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>− Fijos</div>
-          <HideableAmount value={money(ag.gastoFijo)} size={15} color="#d97706" weight={800} fontFamily="'DM Mono',monospace" align="center" />
-          <div style={{ fontSize: 9, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 2 }}>
-            luz, agua, internet, local…
-          </div>
-        </div>
-        <div style={{ padding:"10px 12px", background:"rgba(99,102,241,0.08)", borderRadius: 8, textAlign:"center" }}>
-          <div style={{ fontSize: 9, color:"#6366f1", fontWeight:700, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:.6, marginBottom: 4 }}>− Manuales</div>
-          <HideableAmount value={money(ag.gastoManual)} size={15} color="#6366f1" weight={800} fontFamily="'DM Mono',monospace" align="center" />
-        </div>
-      </div>
-
-      {/* Ganancia neta */}
-      <div style={{
-        padding:"14px 16px", borderRadius: 10,
-        background: neta >= 0 ? "rgba(34,197,94,0.10)" : "rgba(196,26,58,0.10)",
-        border: `1px solid ${neta >= 0 ? "rgba(34,197,94,0.30)" : "rgba(196,26,58,0.30)"}`,
-        display:"flex", alignItems:"center", gap: 12,
-      }}>
-        <Icon name={neta>=0?"trending_up":"alert_circle"} size={22} color={neta>=0?"#16a34a":"var(--brand)"} />
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6 }}>
-            Ganancia neta · {periodo}
-          </div>
-          <HideableAmount value={money(neta)} size={22} color={neta>=0?"#16a34a":"var(--brand)"} weight={800} fontFamily="'DM Mono',monospace" />
-        </div>
-        <span style={{ fontSize: 12, fontWeight: 800, background: neta>=0?"rgba(34,197,94,0.18)":"rgba(196,26,58,0.18)", color: neta>=0?"#16a34a":"var(--brand)", padding:"4px 10px", borderRadius: 99, fontFamily:"'DM Mono',monospace" }}>
-          {margen}%
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/* ================= LISTA DE MOVIMIENTOS DEL PERIODO ================= */
-function MovimientosLista({ sede, periodo, color }: { sede: Sede; periodo: Periodo; color: string }) {
-  const d = useData();
-  const confirm = useConfirm();
-  const rango = useMemo(() => rangoPeriodo(periodo), [periodo]);
-  const ag = useMemo(
-    () => agregadoCaja({ movimientosCaja: d.movimientosCaja }, sede.id, rango.desdeISO, rango.hastaISO),
-    [d.movimientosCaja, sede.id, rango.desdeISO, rango.hastaISO]
-  );
-  const [filtro, setFiltro] = useState<TipoMovimiento | "todos">("todos");
-  const [editar, setEditar] = useState<MovimientoCaja | null>(null);
-  const [abrirNuevo, setAbrirNuevo] = useState(false);
-
-  const filtrados = filtro === "todos" ? ag.movimientos : ag.movimientos.filter(m => m.tipo === filtro);
-  const pag = usePagination(filtrados, 8);
-
-  return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{
-        padding: "14px 18px", borderBottom: "1px solid var(--border)",
-        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap",
-      }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>Movimientos del periodo</div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
-            {ag.movimientos.length} registros · {formatFecha(rango.desdeISO)} → {formatFecha(rango.hastaISO)}
-          </div>
-        </div>
-        <button className="btn-primary hide-mobile" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          onClick={() => setAbrirNuevo(true)}>
-          <Icon name="plus" size={14} /> Registrar movimiento
-        </button>
-      </div>
-
-      {/* Filtros por tipo */}
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {([
-          { k: "todos",          label: `Todos (${ag.movimientos.length})`,                                              col: color },
-          { k: "ingreso",        label: `Ingresos (${ag.movimientos.filter(m => m.tipo==="ingreso").length})`,           col: TIPO_COLOR.ingreso },
-          { k: "gasto-personal", label: `Personal (${ag.movimientos.filter(m => m.tipo==="gasto-personal").length})`,    col: TIPO_COLOR["gasto-personal"] },
-          { k: "gasto-fijo",     label: `Fijos (${ag.movimientos.filter(m => m.tipo==="gasto-fijo").length})`,            col: TIPO_COLOR["gasto-fijo"] },
-          { k: "gasto-manual",   label: `Manuales (${ag.movimientos.filter(m => m.tipo==="gasto-manual").length})`,       col: TIPO_COLOR["gasto-manual"] },
-        ] as const).map(b => {
-          const active = filtro === b.k;
-          return (
-            <button key={b.k} onClick={() => { setFiltro(b.k as typeof filtro); pag.setPage(1); }}
-              style={{
-                padding: "5px 10px", borderRadius: 99,
-                border: active ? `1px solid ${b.col}` : "1px solid var(--border)",
-                background: active ? `${b.col}14` : "transparent",
-                color: active ? b.col : "var(--text-muted)",
-                fontWeight: active ? 700 : 500, fontSize: 11, cursor: "pointer",
-                fontFamily: "'DM Mono',monospace",
-              }}>
-              {b.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="table-wrap">
-        <table className="tramys-table">
-          <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th style={{ textAlign:"right" }}>Monto</th><th></th></tr></thead>
-          <tbody>
-            {pag.pageItems.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign:"center", padding: "26px 12px", color: "var(--text-muted)", fontSize: 13 }}>
-                No hay movimientos en este periodo.
-              </td></tr>
-            ) : pag.pageItems.map(m => (
-              <tr key={m.id}>
-                <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>{formatFecha(m.fecha)}</td>
-                <td>
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, fontFamily: "'DM Mono',monospace",
-                    color: TIPO_COLOR[m.tipo],
-                    background: `${TIPO_COLOR[m.tipo]}18`,
-                    padding: "3px 8px", borderRadius: 99,
-                    display: "inline-flex", alignItems: "center", gap: 4,
-                  }}>
-                    <span style={{ width: 6, height: 6, borderRadius: 99, background: TIPO_COLOR[m.tipo] }} />
-                    {TIPO_LABEL[m.tipo]}
-                    {m.tipo === "gasto-fijo" && m.categoria ? ` · ${CAT_LABEL[m.categoria]}` : ""}
-                  </span>
-                </td>
-                <td>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{m.concepto}</div>
-                  {m.cantidad != null && m.unitario != null && (
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
-                      {m.cantidad} × {money(m.unitario)}
-                    </div>
-                  )}
-                </td>
-                <td style={{ textAlign:"right", fontFamily:"'DM Mono',monospace", fontWeight: 700, color: TIPO_COLOR[m.tipo] }}>
-                  {m.tipo === "ingreso" ? "+" : "−"}{money(m.monto)}
-                </td>
-                <td style={{ width: 80, whiteSpace:"nowrap" }}>
-                  <button onClick={() => setEditar(m)}
-                    style={{ background:"transparent", border:"1px solid var(--border)", borderRadius: 6, cursor:"pointer", padding:"4px 8px", marginRight: 4 }}
-                    title="Editar"><Icon name="edit" size={12} /></button>
-                  <button
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: "Eliminar movimiento",
-                        message: "¿Seguro que deseas eliminar este movimiento? Esta acción no se puede deshacer.",
-                        confirmLabel: "Eliminar",
-                        tone: "danger",
-                      });
-                      if (ok) d.deleteMovimientoCaja(m.id);
-                    }}
-                    style={{ background:"transparent", border:"1px solid var(--border)", borderRadius: 6, cursor:"pointer", padding:"4px 8px", color:"var(--brand)" }}
-                    title="Eliminar"><Icon name="trash" size={12} /></button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {pag.needsPagination && (
-        <Pagination page={pag.page} totalPages={pag.totalPages} total={pag.total}
-          rangeStart={pag.rangeStart} rangeEnd={pag.rangeEnd} onChange={pag.setPage} label="movimientos" />
-      )}
-
-      {/* Botón mobile */}
-      <div className="show-mobile" style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
-        <button className="btn-primary" style={{ width: "100%", minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-          onClick={() => setAbrirNuevo(true)}>
-          <Icon name="plus" size={14} /> Registrar movimiento
-        </button>
-      </div>
-
-      <ModalMovimiento open={abrirNuevo || editar !== null} sede={sede} edit={editar}
-        onClose={() => { setAbrirNuevo(false); setEditar(null); }} />
-    </div>
-  );
-}
 
 /* ================= MODAL EDITAR SEDE ================= */
 function ModalEditarSede({
@@ -372,12 +123,178 @@ function ModalEditarSede({
   );
 }
 
-/* ================= DETALLE DE SEDE ================= */
+/* ================= TABLA DE TRABAJADORES (tab) ================= */
+function TablaTrabajadores({ sede }: { sede: Sede }) {
+  const d = useData();
+  const hoy = isoToday();
+  const workersSede = d.workers.filter(w => w.sedeId === sede.id && w.activo);
+  const pag = usePagination(workersSede);
+
+  return (
+    <div className="card" style={{ padding: 0, overflow:"hidden" }}>
+      <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: 14 }}>
+        Trabajadores de {sede.nombre} ({workersSede.length})
+      </div>
+      <div className="table-wrap">
+        <table className="tramys-table">
+          <thead><tr><th>Trabajador</th><th>Apodo</th><th>Cargo</th><th>Turno</th><th>Estado</th></tr></thead>
+          <tbody>
+            {pag.pageItems.map(w => {
+              const rec = d.asistencia.find(a => a.workerId === w.id && a.fecha === hoy);
+              return (
+                <tr key={w.id}>
+                  <td>
+                    <div style={{ display:"flex", alignItems:"center", gap: 8 }}>
+                      <PhotoAvatar src={w.avatarBase64} initials={(w.apodo || w.nombre)[0]} size={28} color={sede.color} />
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>{w.nombre}</span>
+                    </div>
+                  </td>
+                  <td style={{ fontSize: 12, color: sede.color, fontWeight: 600 }}>{w.apodo}</td>
+                  <td style={{ fontSize: 12, color:"var(--text-muted)" }}>{w.cargo}</td>
+                  <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 11, color:"var(--text-muted)" }}>
+                    {w.turno.entrada}–{w.turno.salida}
+                  </td>
+                  <td><Badge variant={(rec?.estado ?? "ausente") as "presente" | "tardanza" | "ausente" | "permiso" | "feriado"} small /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {pag.needsPagination && (
+        <Pagination
+          page={pag.page}
+          totalPages={pag.totalPages}
+          total={pag.total}
+          rangeStart={pag.rangeStart}
+          rangeEnd={pag.rangeEnd}
+          onChange={pag.setPage}
+          label="trabajadores"
+        />
+      )}
+    </div>
+  );
+}
+
+/* ================= TAB CAJA ================= */
+function TabCaja({ sede }: { sede: Sede }) {
+  const [periodo, setPeriodo] = useState<Periodo>("diario");
+  /* offset = 0 → periodo en curso; -1 → anterior; etc. Solo se navega hacia
+     atrás (no tiene sentido ir al futuro cuando no hay datos). */
+  const [offset, setOffset]   = useState(0);
+
+  /* Al cambiar de periodo reseteamos offset: el "anterior" significa cosas
+     distintas según la unidad y arrastrar el offset confunde. */
+  function cambiarPeriodo(p: Periodo) {
+    setPeriodo(p);
+    setOffset(0);
+  }
+
+  const rango       = useMemo(() => rangoPeriodo(periodo, offset),     [periodo, offset]);
+  const rangoActual = useMemo(() => rangoPeriodo(periodo, 0),          [periodo]);
+  const esActual    = rango.desdeISO === rangoActual.desdeISO && rango.hastaISO === rangoActual.hastaISO;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Toggle periodo + flechas de navegación */}
+      <div className="card" style={{
+        padding: 12,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: 10, flexWrap: "wrap",
+      }}>
+        <div style={{
+          display: "flex", background: "var(--bg)", border: "1px solid var(--border)",
+          borderRadius: 8, padding: 3, flexWrap: "wrap",
+        }}>
+          {PERIODOS.map(p => {
+            const active = periodo === p;
+            return (
+              <button key={p} onClick={() => cambiarPeriodo(p)}
+                style={{
+                  padding: "6px 14px", borderRadius: 6, border: "none", cursor: "pointer",
+                  background: active ? sede.color : "transparent",
+                  color: active ? "#fff" : "var(--text-muted)",
+                  fontWeight: active ? 700 : 500, fontSize: 12,
+                  fontFamily: "'Bricolage Grotesque',sans-serif",
+                  minHeight: 30,
+                }}>
+                {PERIODO_LABEL[p]}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Navegación de periodo: ← anterior · ahora · → siguiente
+            La flecha → solo se activa si NO estamos en el periodo actual. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "'DM Mono',monospace" }}>
+          <button
+            onClick={() => setOffset(o => o - 1)}
+            title="Periodo anterior"
+            style={{
+              width: 30, height: 30, borderRadius: 6,
+              border: "1px solid var(--border)", background: "var(--card)",
+              color: "var(--text)", cursor: "pointer",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <Icon name="arrow_left" size={14} />
+          </button>
+          {!esActual && (
+            <button
+              onClick={() => setOffset(0)}
+              title="Volver al periodo actual"
+              style={{
+                padding: "5px 10px", borderRadius: 6, fontSize: 11,
+                border: `1px solid ${sede.color}`, background: `${sede.color}14`,
+                color: sede.color, cursor: "pointer", fontWeight: 700,
+              }}
+            >
+              Hoy
+            </button>
+          )}
+          <button
+            onClick={() => setOffset(o => o + 1)}
+            disabled={esActual}
+            title={esActual ? "Ya estás en el periodo actual" : "Periodo siguiente"}
+            style={{
+              width: 30, height: 30, borderRadius: 6,
+              border: "1px solid var(--border)",
+              background: esActual ? "var(--bg)" : "var(--card)",
+              color: esActual ? "var(--text-muted)" : "var(--text)",
+              cursor: esActual ? "not-allowed" : "pointer", opacity: esActual ? 0.5 : 1,
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              transform: "rotate(180deg)",
+            }}
+          >
+            <Icon name="arrow_left" size={14} />
+          </button>
+        </div>
+      </div>
+
+      <PanelCaja sede={sede} periodo={periodo} offset={offset} />
+    </div>
+  );
+}
+
+/* ================= DETALLE DE SEDE (con tabs) ================= */
+type TabKey = "caja" | "trabajadores";
+
 function DetalleSede({ sede, onBack, onEditar, mostrarVolver, puedeEditarSede }:
   { sede: Sede; onBack: () => void; onEditar: () => void; mostrarVolver: boolean; puedeEditarSede: boolean }
 ) {
   const d = useData();
-  const [periodo, setPeriodo] = useState<Periodo>("diario");
+  const router = useRouter();
+  const params = useSearchParams();
+
+  const tabUrl = (params.get("tab") as TabKey | null) ?? "caja";
+  const tabActiva: TabKey = tabUrl === "trabajadores" ? "trabajadores" : "caja";
+
+  /* Deep-link: setear ?tab= sin recargar. */
+  function setTab(t: TabKey) {
+    const sp = new URLSearchParams(params.toString());
+    sp.set("tab", t);
+    router.replace(`?${sp.toString()}`, { scroll: false });
+  }
 
   const workersSede = d.workers.filter(w => w.sedeId === sede.id && w.activo);
   const hoy = isoToday();
@@ -385,8 +302,6 @@ function DetalleSede({ sede, onBack, onEditar, mostrarVolver, puedeEditarSede }:
   const presentes = asistHoy.filter(a => a.estado === "presente").length;
   const tardanzas = asistHoy.filter(a => a.estado === "tardanza").length;
   const encargado = d.workers.find(w => w.id === sede.encargadoId);
-
-  const pag = usePagination(workersSede);
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap: 16 }}>
@@ -396,7 +311,7 @@ function DetalleSede({ sede, onBack, onEditar, mostrarVolver, puedeEditarSede }:
         </button>
       )}
 
-      {/* Header */}
+      {/* ===== Header de la sede (siempre visible) ===== */}
       <div className="card" style={{ padding: 0, overflow:"hidden" }}>
         <div style={{ height: 6, background: `linear-gradient(90deg, ${sede.color}88, ${sede.color})` }} />
         <div style={{ padding: "18px 20px", display: "flex", gap: 16, alignItems:"center", flexWrap:"wrap" }}>
@@ -421,7 +336,7 @@ function DetalleSede({ sede, onBack, onEditar, mostrarVolver, puedeEditarSede }:
           )}
         </div>
 
-        {/* Resumen rápido */}
+        {/* Resumen rápido (KPIs del día) */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))", gap: 0, borderTop:"1px solid var(--border)" }}>
           {[
             { icon:"trabajadores", label:"Trabajadores", value: workersSede.filter(w=>w.rol==="trabajador").length, color: sede.color },
@@ -442,79 +357,38 @@ function DetalleSede({ sede, onBack, onEditar, mostrarVolver, puedeEditarSede }:
         </div>
       </div>
 
-      {/* Caja con toggle */}
-      <div className="card">
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 12, flexWrap:"wrap", gap: 8 }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Caja</div>
-            <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
-              Ingresos − Personal − Fijos − Manuales = Neta
-            </div>
-          </div>
-          <div style={{ display:"flex", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 8, padding: 3, flexWrap:"wrap" }}>
-            {PERIODOS.map(p => (
-              <button key={p} onClick={()=>setPeriodo(p)}
-                style={{
-                  padding: "6px 14px", borderRadius: 6, border: "none", cursor:"pointer",
-                  background: periodo===p ? sede.color : "transparent",
-                  color: periodo===p ? "#fff" : "var(--text-muted)",
-                  fontWeight: periodo===p ? 700 : 500, fontSize: 12,
-                  fontFamily:"'Bricolage Grotesque',sans-serif",
-                  minHeight: 30,
-                }}
-              >{PERIODO_LABEL[p]}</button>
-            ))}
-          </div>
-        </div>
-        <CajaBlock sede={sede} periodo={periodo} />
+      {/* ===== Tabs ===== */}
+      <div style={{
+        display: "flex", gap: 4, padding: 4,
+        background: "var(--card)", border: "1px solid var(--border)",
+        borderRadius: 10, alignSelf: "flex-start",
+      }}>
+        {([
+          { k: "caja",         label: "Caja",         icon: "money_bill"   },
+          { k: "trabajadores", label: "Trabajadores", icon: "trabajadores" },
+        ] as const).map(t => {
+          const active = tabActiva === t.k;
+          return (
+            <button key={t.k} onClick={() => setTab(t.k)}
+              style={{
+                padding: "8px 16px", borderRadius: 7, border: "none", cursor: "pointer",
+                background: active ? sede.color : "transparent",
+                color: active ? "#fff" : "var(--text-muted)",
+                fontWeight: active ? 700 : 600, fontSize: 13,
+                fontFamily: "'Bricolage Grotesque',sans-serif",
+                display: "inline-flex", alignItems: "center", gap: 6,
+              }}>
+              <Icon name={t.icon} size={14} color={active ? "#fff" : "var(--text-muted)"} />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Movimientos del periodo */}
-      <MovimientosLista sede={sede} periodo={periodo} color={sede.color} />
-
-      {/* Tabla de trabajadores */}
-      <div className="card" style={{ padding: 0, overflow:"hidden" }}>
-        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: 14 }}>
-          Trabajadores de {sede.nombre} ({workersSede.length})
-        </div>
-        <div className="table-wrap">
-          <table className="tramys-table">
-            <thead><tr><th>Trabajador</th><th>Apodo</th><th>Cargo</th><th>Turno</th><th>Estado</th></tr></thead>
-            <tbody>
-              {pag.pageItems.map(w => {
-                const rec = d.asistencia.find(a => a.workerId === w.id && a.fecha === hoy);
-                return (
-                  <tr key={w.id}>
-                    <td>
-                      <div style={{ display:"flex", alignItems:"center", gap: 8 }}>
-                        <PhotoAvatar src={w.avatarBase64} initials={(w.apodo || w.nombre)[0]} size={28} color={sede.color} />
-                        <span style={{ fontWeight: 600, fontSize: 13 }}>{w.nombre}</span>
-                      </div>
-                    </td>
-                    <td style={{ fontSize: 12, color: sede.color, fontWeight: 600 }}>{w.apodo}</td>
-                    <td style={{ fontSize: 12, color:"var(--text-muted)" }}>{w.cargo}</td>
-                    <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 11, color:"var(--text-muted)" }}>
-                      {w.turno.entrada}–{w.turno.salida}
-                    </td>
-                    <td><Badge variant={(rec?.estado ?? "ausente") as "presente" | "tardanza" | "ausente" | "permiso" | "feriado"} small /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {pag.needsPagination && (
-          <Pagination
-            page={pag.page}
-            totalPages={pag.totalPages}
-            total={pag.total}
-            rangeStart={pag.rangeStart}
-            rangeEnd={pag.rangeEnd}
-            onChange={pag.setPage}
-            label="trabajadores"
-          />
-        )}
-      </div>
+      {/* ===== Cuerpo de la tab activa ===== */}
+      {tabActiva === "caja"
+        ? <TabCaja sede={sede} />
+        : <TablaTrabajadores sede={sede} />}
     </div>
   );
 }

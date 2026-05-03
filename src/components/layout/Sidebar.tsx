@@ -34,10 +34,12 @@ const NAV_OWNER: NavItem[] = [
   { kind: "group", key: "finanzas",    label: "Finanzas",  icon: "money_bill", children: [
     { kind: "link", href: "/planilla",   label: "Planilla",   icon: "planilla" },
     { kind: "link", href: "/caja",       label: "Caja",       icon: "money_bill" },
-    { kind: "link", href: "/reportes",   label: "Reportes",   icon: "reportes" },
   ]},
   { kind: "link",  href: "/eventos", label: "Eventos", icon: "calendar" },
-  { kind: "link",  href: "/accesos", label: "Accesos", icon: "accesos" },
+  { kind: "group", key: "admin",       label: "Administración", icon: "lock", children: [
+    { kind: "link", href: "/reportes", label: "Reportes", icon: "reportes" },
+    { kind: "link", href: "/accesos",  label: "Accesos",  icon: "accesos" },
+  ]},
 ];
 
 const NAV_ENC: NavItem[] = [
@@ -79,18 +81,17 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
   const colSede = sede?.color ?? "#C41A3A";
   const titulo  = worker?.rol === "encargado" ? "PANEL ENCARGADO" : "PANEL OWNER";
 
-  /* Estado de grupos abiertos. Se hidrata desde el path activo: si estamos
-     en /trabajadores el grupo "personal" arranca abierto. */
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  /* Solo un grupo abierto a la vez (acordeón clásico). Se hidrata desde el
+     path activo: si estamos en /trabajadores el grupo "personal" arranca abierto. */
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   useEffect(() => {
-    const next: Record<string, boolean> = {};
-    navBase.forEach(it => {
-      if (it.kind === "group" && groupHasActive(pathname, it)) next[it.key] = true;
-    });
-    setOpenGroups(prev => ({ ...next, ...prev }));
+    const activeGroup = navBase.find(
+      it => it.kind === "group" && groupHasActive(pathname, it),
+    ) as NavGroup | undefined;
+    if (activeGroup) setOpenGroup(activeGroup.key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, worker?.rol]);
-  const toggleGroup = (k: string) => setOpenGroups(prev => ({ ...prev, [k]: !prev[k] }));
+  const toggleGroup = (k: string) => setOpenGroup(prev => (prev === k ? null : k));
 
   const Inner = ({ forceExpand = false }) => {
     const isCollapsed = forceExpand ? false : collapsed;
@@ -182,7 +183,7 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
 
             /* ====== Grupo desplegable ====== */
             const grpActive  = groupHasActive(pathname, item);
-            const grpOpen    = openGroups[item.key] ?? grpActive;
+            const grpOpen    = openGroup === item.key;
             /* Badge agregado del grupo (suma de hijos con badge). */
             const grpBadge   = item.children.reduce(
               (acc, c) => acc + (c.href === "/adelantos" ? adelantosPend : 0), 0,
@@ -261,7 +262,7 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
                 </button>
 
                 {grpOpen && (
-                  <div className="animate-fade-in" style={{
+                  <div style={{
                     marginTop: 2, marginLeft: 14, paddingLeft: 10,
                     borderLeft: "1px solid var(--border)",
                   }}>

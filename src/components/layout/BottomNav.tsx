@@ -19,6 +19,7 @@ const NAV_OWNER_MORE = [
   { href:"/planilla",   icon:"planilla",   label:"Planilla"   },
   { href:"/caja",       icon:"money_bill", label:"Caja"       },
   { href:"/eventos",    icon:"feriados",   label:"Eventos"    },
+  { href:"/reportes",   icon:"reportes",   label:"Reportes"   },
   { href:"/accesos",    icon:"accesos",    label:"Accesos"    },
 ];
 

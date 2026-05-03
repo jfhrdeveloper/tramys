@@ -6,6 +6,27 @@
 
 ## 🗓️ Bitácora de sesiones
 
+### 2026-05-02 — Unificación /sedes↔/caja, sidebar Admin, planilla por periodo
+- `src/app/(admin)/sedes/page.tsx` (`MovimientosLista`): completada la unificación con `/caja` — botones desktop y mobile ahora son "Registrar ganancia" (verde) / "Registrar gasto" (rojo), `<ModalMovimiento>` recibe `tipoInicial={tipoNuevo}` y `modo={editar ? "todos" : (tipoNuevo === "ingreso" ? "ingresos" : "gastos")}`.
+- `src/components/layout/Sidebar.tsx`: nuevo grupo `admin` "Administración" (icono `lock`) que agrupa `/reportes` + `/accesos`. `Reportes` se quitó de "Finanzas" y `Accesos` dejó de ser link suelto. `src/components/layout/BottomNav.tsx`: añadido `/reportes` a `NAV_OWNER_MORE` para mantener paridad mobile.
+- `src/app/(admin)/planilla/page.tsx`: filtro `month/year` reemplazado por toggle `Periodo` (`Diario · Semanal · Quincenal · Mensual`) consumiendo `rangoPeriodo` de `src/lib/utils/periodos.ts`. Default `"quincenal"`. Asistencia, adelantos e ingresos filtran por `[desdeISO, hastaISO]` — cuadra con `derivadosCaja` de `/caja` y `/sedes`. Topbar subtitle muestra `Periodo · desde→hasta · N trabajadores`. Constantes `MESES` y los `useState<year/month>` eliminados; ya no se usa `StatCard` ni `ganaCompania`.
+- Modal Desglose: nueva tarjeta índigo "Pagando · {Periodo} · {desde} → {hasta}" con icono `calendar`. Botón "Marcar / ✓ Pagado" muestra el rango vía `title` tooltip (interpretación cosmética, opción #1 — no se introdujo entidad `PagoPlanilla`).
+- Motivo: el usuario pidió uniformar UX de finanzas (sedes/caja/planilla) y que el cuadre de planilla siga la misma noción de periodo que el resto, además de visibilidad explícita del rango pagado.
+- Pendiente: persistencia del estado "pagado" sigue local (`useState<string[]>`); si se necesita historial real de pagos, implementar entidad `PagoPlanilla` (workerId, desdeISO, hastaISO, fechaPago, monto) en `DataProvider`, mappers y SQL — no se hizo en esta sesión por falta de confirmación explícita.
+
+### 2026-05-02 — Unificación parcial /sedes ↔ /caja + scoping planilla por periodo
+- `src/app/(admin)/sedes/page.tsx` (`MovimientosLista`): reemplazado el botón único "Registrar movimiento" por dos botones de colores ("Registrar ganancia" verde / "Registrar gasto" rojo) replicando el patrón de `/caja` (`PanelCaja`). Añadido estado `tipoNuevo` y helper `abrirRegistro(tipo)`. Pendiente: pasar `tipoInicial`/`modo` al `<ModalMovimiento />` (la línea 265 sigue sin estos props) y aplicar el patrón equivalente al botón mobile.
+- Discusión sobre `/planilla`: usuario pidió cuadrar por quincena/mensual usando `src/lib/utils/periodos.ts` en lugar del filtro mes/año actual. Reglas a respetar: usar `rangoPeriodo`, no redefinir el rango; usar `sedeDelDia`/`turnoDelDia` (no `worker.sedeId` directo); coherencia con `derivadosCaja` para que "Sueldos por pagar" en /caja cuadre con planilla.
+- Discusión sobre el modal "Desglose"/"Marcar pagado": usuario pidió que se muestre "desde cuándo le estamos pagando". Planteadas 2 opciones — (1) cosmética: mostrar rango del periodo activo; (2) modelo nuevo `PagoPlanilla` con persistencia para rastrear último pago real y derivar el rango automáticamente. Esperando decisión antes de implementar.
+- Motivo: el usuario quiere uniformar la UX de finanzas (sedes/caja/planilla) y que el flujo de pago de planilla sea trazable por periodo en lugar de un toggle local sin persistencia.
+- Pendiente: completar la unificación de `/sedes` (props del modal + botón mobile), elegir #1 o #2 para planilla, y migrar el filtro mes/año de planilla al toggle `Periodo`.
+
+### 2026-05-02 — Discusión: unificar UX de registro de movimiento entre /sedes y /caja
+- Sin cambios materiales en código. Sesión de scoping: usuario pidió que el registro de movimiento sea igual en `/sedes` y `/caja`.
+- Diagnóstico: el componente `ModalMovimiento` ya es compartido; lo que difiere es el disparador. `/sedes` (`MovimientosLista` en `src/app/(admin)/sedes/page.tsx:162`) usa un solo botón "Registrar movimiento" con modo `"todos"`. `/caja` (`PanelCaja` en `src/components/sedes/PanelCaja.tsx:204`) tiene dos botones de colores ("Registrar ganancia" verde / "Registrar gasto" rojo) que abren el modal con `modo` filtrado y `tipoInicial` preseleccionado.
+- Propuestas planteadas al usuario: (1) llevar el patrón de `/caja` a `/sedes` — recomendado, aprovecha props ya existentes; (2) unificar al revés con un único botón en ambos lados.
+- Pendiente: el usuario decida cuál de las dos opciones aplicar antes de implementar.
+
 ### 2026-05-02 — Asistencia con jaladores + perfil tabbed de jalador
 - `(admin)/asistencia/page.tsx`: filtros de personal reordenados a `Ambos · Trabajadores · Jaladores` con default "Ambos"; botón "Editar" siempre (sin "Registrar"); modal "Añadir registro" con selector de tipo (Trabajador/Jalador). Al elegir Jalador, "Continuar" hace `router.push('/jaladores?sede=…&jalador=…&fecha=…')` porque jaladores no tienen `AsistenciaRec`.
 - `(admin)/jaladores/page.tsx`: `PerfilJalador` rediseñado con tabs `Asistencia | Comisiones | Perfil` espejando la estructura del perfil de trabajador (header con KPI "Comisión mes", tabs con `Icon`+label, paneles con padding). Tab Asistencia usa `MultiverseCalendar` en modo `readonly` (worked = "tuvo ingreso ese día") + `onDayClick` para abrir modal de registrar ingreso prefijando fecha. Tab Comisiones absorbe el antiguo Cuadre de caja personal con selector de periodo. Tab Perfil muestra campos básicos + Editar.

@@ -39,8 +39,10 @@ interface RowReal {
 type Row = RowAuto | RowReal;
 
 interface Props {
-  sede: Sede;
+  sede:    Sede;
   periodo: Periodo;
+  /* offset = 0 → periodo en curso; -1 → anterior; +1 → siguiente. */
+  offset?: number;
 }
 
 /* ================= CONSTANTES ================= */
@@ -54,11 +56,6 @@ const TIPO_COLOR: Record<TipoGasto, string> = {
   "gasto-fijo":     "#d97706",
   "gasto-manual":   "#6366f1",
 };
-const TIPO_BG: Record<TipoGasto, string> = {
-  "gasto-personal": "rgba(196,26,58,0.08)",
-  "gasto-fijo":     "rgba(217,119,6,0.08)",
-  "gasto-manual":   "rgba(99,102,241,0.08)",
-};
 const CAT_LABEL: Record<CategoriaFijo, string> = {
   luz:      "Luz",
   agua:     "Agua",
@@ -68,7 +65,7 @@ const CAT_LABEL: Record<CategoriaFijo, string> = {
 };
 
 /* ================= COMPONENTE ================= */
-export function PanelCaja({ sede, periodo }: Props) {
+export function PanelCaja({ sede, periodo, offset = 0 }: Props) {
   const d = useData();
   const router  = useRouter();
   const confirm = useConfirm();
@@ -78,7 +75,21 @@ export function PanelCaja({ sede, periodo }: Props) {
   const [abrirNuevo, setAbrirNuevo]       = useState(false);
   const [tipoNuevo, setTipoNuevo]         = useState<TipoMovimiento>("gasto-personal");
 
-  const rango = useMemo(() => rangoPeriodo(periodo), [periodo]);
+  const rango = useMemo(() => rangoPeriodo(periodo, offset), [periodo, offset]);
+  /* Días que cubre el rango (inclusive). */
+  const diasPeriodo = useMemo(() => {
+    const a = new Date(rango.desdeISO);
+    const b = new Date(rango.hastaISO);
+    return Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
+  }, [rango.desdeISO, rango.hastaISO]);
+  /* Movimientos de esta sede que caen FUERA del rango activo: hint para que
+     el usuario no piense que se perdieron al cambiar el periodo. */
+  const fueraDelPeriodo = useMemo(
+    () => d.movimientosCaja.filter(
+      m => m.sedeId === sede.id && (m.fecha < rango.desdeISO || m.fecha > rango.hastaISO),
+    ).length,
+    [d.movimientosCaja, sede.id, rango.desdeISO, rango.hastaISO]
+  );
 
   const ag = useMemo(
     () => agregadoCaja({ movimientosCaja: d.movimientosCaja }, sede.id, rango.desdeISO, rango.hastaISO),
@@ -184,6 +195,16 @@ export function PanelCaja({ sede, periodo }: Props) {
     setAbrirNuevo(true);
   }
 
+  /* Filas de la "operación" vertical: ingresos en + y cada subtipo de gasto en −.
+     Tipografía monoespaciada para que `+/−/=` queden alineados verticalmente. */
+  const filasCuadre: { signo: "+" | "−"; label: string; valor: number; color: string; pct?: number }[] = [
+    { signo: "+", label: "Ingresos",  valor: ingresosTotal,  color: "#16a34a" },
+    { signo: "−", label: "Personal",  valor: totals["gasto-personal"], color: TIPO_COLOR["gasto-personal"], pct: totalGastos > 0 ? Math.round((totals["gasto-personal"] / totalGastos) * 100) : 0 },
+    { signo: "−", label: "Fijos",     valor: totals["gasto-fijo"],     color: TIPO_COLOR["gasto-fijo"],     pct: totalGastos > 0 ? Math.round((totals["gasto-fijo"] / totalGastos) * 100) : 0 },
+    { signo: "−", label: "Manuales",  valor: totals["gasto-manual"],   color: TIPO_COLOR["gasto-manual"],   pct: totalGastos > 0 ? Math.round((totals["gasto-manual"] / totalGastos) * 100) : 0 },
+  ];
+  const margenPct = ingresosTotal > 0 ? Math.round((balance / ingresosTotal) * 100) : 0;
+
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
       {/* ====== Header ====== */}
@@ -197,86 +218,108 @@ export function PanelCaja({ sede, periodo }: Props) {
             Caja · {sede.nombre}
           </div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
-            {formatFecha(rango.desdeISO)} → {formatFecha(rango.hastaISO)}
+            {formatFecha(rango.desdeISO)} → {formatFecha(rango.hastaISO)} · {diasPeriodo} {diasPeriodo === 1 ? "día" : "días"}
+            {fueraDelPeriodo > 0 && (
+              <span style={{ marginLeft: 8, color: "#6366f1" }}>
+                · {fueraDelPeriodo} fuera del periodo
+              </span>
+            )}
           </div>
-        </div>
-
-        <div className="hide-mobile" style={{ display: "flex", gap: 8 }}>
-          <button
-            className="btn-primary"
-            style={{ background: "#16a34a", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 170 }}
-            onClick={() => abrirRegistro("ingreso")}
-          >
-            <Icon name="plus" size={14} /> Registrar ganancia
-          </button>
-          <button
-            className="btn-primary"
-            style={{ background: "#C41A3A", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 170 }}
-            onClick={() => abrirRegistro("gasto-personal")}
-          >
-            <Icon name="plus" size={14} /> Registrar gasto
-          </button>
         </div>
       </div>
 
-      {/* ====== Cuadre del periodo: Ganancias − Gastos = Balance ====== */}
+      {/* ====== Cuadre vertical (operación) + dona ====== */}
       <div style={{
-        padding: 14,
-        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10,
-        borderBottom: "1px solid var(--border)",
+        padding: 16, borderBottom: "1px solid var(--border)",
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20,
+        alignItems: "center",
       }}>
-        <div style={{ padding: "10px 12px", background: "rgba(34,197,94,0.08)", borderRadius: 8, textAlign: "center" }}>
-          <div style={{ fontSize: 9, color: "#16a34a", fontWeight: 700, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: .6, marginBottom: 4 }}>
-            Ganancias
+        {/* Columna 1: la "operación" */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, fontFamily: "'DM Mono',monospace" }}>
+          {filasCuadre.map((f, i) => (
+            <div key={f.label} style={{
+              display: "grid", gridTemplateColumns: "16px 1fr auto",
+              alignItems: "baseline", columnGap: 10,
+              padding: "6px 4px",
+              borderTop: i === 0 ? "none" : "1px dashed var(--border)",
+            }}>
+              <span style={{ color: f.color, fontWeight: 800, fontSize: 16, textAlign: "center" }}>
+                {f.signo}
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "'Bricolage Grotesque',sans-serif" }}>
+                <span style={{ width: 8, height: 8, borderRadius: 99, background: f.color }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{f.label}</span>
+                {f.pct != null && f.pct > 0 && (
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace" }}>
+                    {f.pct}%
+                  </span>
+                )}
+              </span>
+              <HideableAmount
+                value={money(f.valor)}
+                size={14}
+                color={f.color}
+                weight={700}
+                fontFamily="'DM Mono',monospace"
+                align="right"
+              />
+            </div>
+          ))}
+          {/* Línea de "= Neta" */}
+          <div style={{
+            display: "grid", gridTemplateColumns: "16px 1fr auto",
+            alignItems: "baseline", columnGap: 10,
+            padding: "10px 4px 4px",
+            borderTop: "2px solid var(--text)",
+            marginTop: 4,
+          }}>
+            <span style={{
+              color: balance >= 0 ? "#16a34a" : "var(--brand)",
+              fontWeight: 800, fontSize: 18, textAlign: "center",
+            }}>
+              =
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "'Bricolage Grotesque',sans-serif" }}>
+              <span style={{
+                fontSize: 14, fontWeight: 800,
+                color: balance >= 0 ? "#16a34a" : "var(--brand)",
+              }}>
+                Neta
+              </span>
+              <span style={{
+                fontSize: 11, fontWeight: 700, fontFamily: "'DM Mono',monospace",
+                background: balance >= 0 ? "rgba(34,197,94,0.15)" : "rgba(196,26,58,0.15)",
+                color: balance >= 0 ? "#16a34a" : "var(--brand)",
+                padding: "2px 8px", borderRadius: 99,
+              }}>
+                {margenPct}%
+              </span>
+            </span>
+            <HideableAmount
+              value={money(balance)}
+              size={20}
+              color={balance >= 0 ? "#16a34a" : "var(--brand)"}
+              weight={800}
+              fontFamily="'DM Mono',monospace"
+              align="right"
+            />
           </div>
-          <HideableAmount value={money(ingresosTotal)} size={15} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" align="center" />
           {ingJal.total > 0 && (
-            <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
-              caja {money(ag.ingresos)} · jaladores {money(ingJal.total)}
+            <div style={{
+              fontSize: 10, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace",
+              marginTop: 6, paddingLeft: 26,
+            }}>
+              Ingresos: caja {money(ag.ingresos)} · jaladores {money(ingJal.total)}
+              {personalAuto > 0 && ` · personal auto ${money(personalAuto)}`}
             </div>
           )}
         </div>
 
-        <div style={{ padding: "10px 12px", background: "rgba(196,26,58,0.08)", borderRadius: 8, textAlign: "center" }}>
-          <div style={{ fontSize: 9, color: "var(--brand)", fontWeight: 700, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: .6, marginBottom: 4 }}>
-            − Gastos
-          </div>
-          <HideableAmount value={money(totalGastos)} size={15} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" align="center" />
-          <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
-            {rowsAll.length} {rowsAll.length === 1 ? "registro" : "registros"}
-            {personalAuto > 0 && ` · auto ${money(personalAuto)}`}
-          </div>
-        </div>
-
-        <div style={{
-          padding: "10px 12px",
-          background: balance >= 0 ? "rgba(34,197,94,0.10)" : "rgba(196,26,58,0.10)",
-          border: `1px solid ${balance >= 0 ? "rgba(34,197,94,0.25)" : "rgba(196,26,58,0.25)"}`,
-          borderRadius: 8, textAlign: "center",
-        }}>
-          <div style={{
-            fontSize: 9, color: balance >= 0 ? "#16a34a" : "var(--brand)", fontWeight: 700,
-            fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: .6, marginBottom: 4,
-          }}>
-            Balance
-          </div>
-          <HideableAmount
-            value={money(balance)} size={15}
-            color={balance >= 0 ? "#16a34a" : "var(--brand)"} weight={800}
-            fontFamily="'DM Mono',monospace" align="center"
-          />
-        </div>
-      </div>
-
-      {/* ====== Visualización: dona de gastos + barras Ganancia vs Gasto ====== */}
-      <div style={{
-        padding: 14, borderBottom: "1px solid var(--border)",
-        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16,
-        alignItems: "center",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ position: "relative", flexShrink: 0 }}>
+        {/* Columna 2: dona */}
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <div style={{ position: "relative" }}>
             <MiniDona
+              size={160}
               total={totalGastos}
               segments={(Object.keys(TIPO_LABEL) as TipoGasto[]).map(t => ({
                 color: TIPO_COLOR[t], value: totals[t], label: TIPO_LABEL[t],
@@ -287,60 +330,42 @@ export function PanelCaja({ sede, periodo }: Props) {
               flexDirection: "column", alignItems: "center", justifyContent: "center",
               fontFamily: "'DM Mono',monospace", pointerEvents: "none",
             }}>
-              <span style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Total</span>
-              <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text)" }}>
+              <span style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Gastos</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>
                 {moneyShort(totalGastos)}
               </span>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
-            {(Object.keys(TIPO_LABEL) as TipoGasto[]).map(t => {
-              const pct = totalGastos > 0 ? Math.round((totals[t] / totalGastos) * 100) : 0;
-              return (
-                <div key={t} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 99, background: TIPO_COLOR[t] }} />
-                  <span style={{ color: "var(--text)", fontWeight: 600, minWidth: 60 }}>{TIPO_LABEL[t]}</span>
-                  <span style={{ color: TIPO_COLOR[t], fontWeight: 700 }}>{pct}%</span>
-                </div>
-              );
-            })}
-          </div>
         </div>
-
-        <MiniBarras ganancia={ingresosTotal} gasto={totalGastos} />
       </div>
 
-      {/* ====== Resumen por tipo de gasto ====== */}
+      {/* ====== Botones ganancia / gasto (entre cuadre y movimientos) ====== */}
       <div style={{
-        padding: 14,
-        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10,
-        borderBottom: "1px solid var(--border)",
+        padding: 14, borderBottom: "1px solid var(--border)",
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10,
       }}>
-        {(Object.keys(TIPO_LABEL) as TipoGasto[]).map(t => (
-          <div key={t} style={{ padding: "10px 12px", background: TIPO_BG[t], borderRadius: 8, textAlign: "center" }}>
-            <div style={{
-              fontSize: 9, color: TIPO_COLOR[t], fontWeight: 700,
-              fontFamily: "'DM Mono',monospace", textTransform: "uppercase",
-              letterSpacing: .6, marginBottom: 4,
-            }}>
-              − {TIPO_LABEL[t]}
-            </div>
-            <HideableAmount
-              value={money(totals[t])}
-              size={15}
-              color={TIPO_COLOR[t]}
-              weight={800}
-              fontFamily="'DM Mono',monospace"
-              align="center"
-            />
-            <div style={{
-              fontSize: 9, color: "var(--text-muted)",
-              fontFamily: "'DM Mono',monospace", marginTop: 2,
-            }}>
-              {counts[t]} {counts[t] === 1 ? "registro" : "registros"}
-            </div>
-          </div>
-        ))}
+        <button
+          className="btn-primary"
+          style={{
+            background: "#16a34a",
+            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+            minHeight: 42,
+          }}
+          onClick={() => abrirRegistro("ingreso")}
+        >
+          <Icon name="plus" size={14} /> Registrar ganancia
+        </button>
+        <button
+          className="btn-primary"
+          style={{
+            background: "#C41A3A",
+            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+            minHeight: 42,
+          }}
+          onClick={() => abrirRegistro("gasto-personal")}
+        >
+          <Icon name="plus" size={14} /> Registrar gasto
+        </button>
       </div>
 
       {/* ====== Filtros + buscador ====== */}
@@ -543,24 +568,6 @@ export function PanelCaja({ sede, periodo }: Props) {
         />
       )}
 
-      {/* ====== Botones mobile ====== */}
-      <div className="show-mobile" style={{ padding: 12, borderTop: "1px solid var(--border)", flexDirection: "column", gap: 8 }}>
-        <button
-          className="btn-primary"
-          style={{ background: "#16a34a", width: "100%", minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-          onClick={() => abrirRegistro("ingreso")}
-        >
-          <Icon name="plus" size={14} /> Registrar ganancia
-        </button>
-        <button
-          className="btn-primary"
-          style={{ background: "#C41A3A", width: "100%", minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-          onClick={() => abrirRegistro("gasto-personal")}
-        >
-          <Icon name="plus" size={14} /> Registrar gasto
-        </button>
-      </div>
-
       {/* ====== Modal de registro / edición ======
            - Editar: respeta el tipo del item (modo "todos" para no esconder
              el botón si el usuario corrige).
@@ -616,47 +623,7 @@ function MiniDona({ segments, total, size = 96 }: MiniDonaProps) {
   );
 }
 
-/* ================= MINI BARRAS (Ganancia vs Gasto) ================= */
-function MiniBarras({ ganancia, gasto }: { ganancia: number; gasto: number }) {
-  const max = Math.max(ganancia, gasto, 1);
-  const filaStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8 };
-  const labelStyle: React.CSSProperties = {
-    width: 70, fontSize: 10, color: "var(--text-muted)",
-    fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5,
-  };
-  const trackStyle: React.CSSProperties = {
-    flex: 1, height: 12, background: "var(--hover)", borderRadius: 99, position: "relative", overflow: "hidden",
-  };
-  const valStyle: React.CSSProperties = {
-    width: 80, textAlign: "right", fontSize: 11, fontFamily: "'DM Mono',monospace", fontWeight: 700,
-  };
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 }}>
-      <div style={filaStyle}>
-        <span style={labelStyle}>Ganancia</span>
-        <div style={trackStyle}>
-          <div style={{
-            position: "absolute", inset: 0, width: `${(ganancia / max) * 100}%`,
-            background: "#16a34a", borderRadius: 99, transition: "width 0.4s ease",
-          }} />
-        </div>
-        <span style={{ ...valStyle, color: "#16a34a" }}>{moneyShort(ganancia)}</span>
-      </div>
-      <div style={filaStyle}>
-        <span style={labelStyle}>Gasto</span>
-        <div style={trackStyle}>
-          <div style={{
-            position: "absolute", inset: 0, width: `${(gasto / max) * 100}%`,
-            background: "#C41A3A", borderRadius: 99, transition: "width 0.4s ease",
-          }} />
-        </div>
-        <span style={{ ...valStyle, color: "#C41A3A" }}>{moneyShort(gasto)}</span>
-      </div>
-    </div>
-  );
-}
-
-/* Versión compacta del monto para cabezas de barra (S/ 1.2k). */
+/* Versión compacta del monto para el centro de la dona (S/ 1.2k). */
 function moneyShort(n: number): string {
   if (n >= 1000) return `S/ ${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
   return `S/ ${n.toFixed(0)}`;

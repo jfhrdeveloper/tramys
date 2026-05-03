@@ -22,26 +22,46 @@ export interface RangoPeriodo {
 }
 
 /* ================= RANGO POR PERIODO =================
-   - diario     → solo hoy.
-   - semanal    → últimos 7 días (hoy y los 6 anteriores).
-   - quincenal  → quincena calendario en curso (1–15 si hoy ≤ 15, sino 16–fin de mes,
-                  hasta hoy).
-   - mensual    → del día 1 del mes en curso hasta hoy. */
-export function rangoPeriodo(periodo: Periodo): RangoPeriodo {
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-  let desde = hoy;
+   - diario     → un día completo (hoy si offset = 0, ayer si -1, etc.).
+   - semanal    → 7 días terminando en hoy; offset retrocede 7 días por unidad.
+   - quincenal  → quincena calendario completa (1–15 o 16–fin). Offset retrocede
+                  quincenas. Si es la quincena en curso, cierra en `hoy` (no en
+                  el último día, para no sumar el futuro).
+   - mensual    → mes calendario completo. Offset retrocede meses. Cierra en
+                  `hoy` solo cuando es el mes actual.
 
-  if (periodo === "semanal") {
-    const d = new Date(hoy); d.setDate(hoy.getDate() - 6);
-    desde = d;
+   `offset = 0` = periodo actual, `-1` = anterior, `+1` = siguiente, etc. */
+export function rangoPeriodo(periodo: Periodo, offset: number = 0): RangoPeriodo {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  let desde: Date;
+  let hasta: Date;
+
+  if (periodo === "diario") {
+    desde = new Date(hoy); desde.setDate(hoy.getDate() + offset);
+    hasta = new Date(desde);
+  } else if (periodo === "semanal") {
+    hasta = new Date(hoy); hasta.setDate(hoy.getDate() + offset * 7);
+    desde = new Date(hasta); desde.setDate(hasta.getDate() - 6);
   } else if (periodo === "quincenal") {
-    const dia = hoy.getDate();
-    if (dia <= 15) desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    else           desde = new Date(hoy.getFullYear(), hoy.getMonth(), 16);
-  } else if (periodo === "mensual") {
-    desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const dia       = hoy.getDate();
+    const esPrimera = dia <= 15;
+    /* Índice global de quincena (year*24 + month*2 + half). */
+    const idxActual = hoy.getFullYear() * 24 + hoy.getMonth() * 2 + (esPrimera ? 0 : 1);
+    const idx       = idxActual + offset;
+    const y         = Math.floor(idx / 24);
+    const m         = Math.floor((idx % 24) / 2);
+    const half      = idx % 2; // 0 = primera (1-15), 1 = segunda (16-fin)
+    desde = new Date(y, m, half === 0 ? 1 : 16);
+    hasta = half === 0 ? new Date(y, m, 15) : new Date(y, m + 1, 0);
+    if (offset === 0 && hasta > hoy) hasta = hoy;
+  } else /* mensual */ {
+    const y = hoy.getFullYear();
+    const m = hoy.getMonth() + offset;
+    desde = new Date(y, m, 1);
+    hasta = new Date(y, m + 1, 0);
+    if (offset === 0 && hasta > hoy) hasta = hoy;
   }
 
   const isoOf = (d: Date) => d.toISOString().slice(0, 10);
-  return { desde, hasta: hoy, desdeISO: isoOf(desde), hastaISO: isoOf(hoy) };
+  return { desde, hasta, desdeISO: isoOf(desde), hastaISO: isoOf(hasta) };
 }
