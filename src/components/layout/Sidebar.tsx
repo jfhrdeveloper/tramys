@@ -29,11 +29,11 @@ const NAV_OWNER: NavItem[] = [
     { kind: "link", href: "/trabajadores", label: "Trabajadores", icon: "trabajadores" },
     { kind: "link", href: "/jaladores",    label: "Jaladores",    icon: "jaladores" },
     { kind: "link", href: "/asistencia",   label: "Asistencia",   icon: "asistencia" },
-    { kind: "link", href: "/adelantos",    label: "Adelantos",    icon: "adelantos" },
   ]},
   { kind: "group", key: "finanzas",    label: "Finanzas",  icon: "money_bill", children: [
     { kind: "link", href: "/planilla",   label: "Planilla",   icon: "planilla" },
     { kind: "link", href: "/caja",       label: "Caja",       icon: "money_bill" },
+    { kind: "link", href: "/adelantos",  label: "Adelantos",  icon: "adelantos" },
   ]},
   { kind: "link",  href: "/eventos", label: "Eventos", icon: "calendar" },
   { kind: "group", key: "admin",       label: "Administración", icon: "lock", children: [
@@ -48,9 +48,11 @@ const NAV_ENC: NavItem[] = [
   { kind: "group", key: "personal",    label: "Personal",  icon: "trabajadores", children: [
     { kind: "link", href: "/trabajadores", label: "Trabajadores", icon: "trabajadores" },
     { kind: "link", href: "/asistencia",   label: "Asistencia",   icon: "asistencia" },
-    { kind: "link", href: "/adelantos",    label: "Adelantos",    icon: "adelantos" },
   ]},
-  { kind: "link",  href: "/caja",       label: "Caja",       icon: "money_bill" },
+  { kind: "group", key: "finanzas",    label: "Finanzas",  icon: "money_bill", children: [
+    { kind: "link", href: "/caja",       label: "Caja",       icon: "money_bill" },
+    { kind: "link", href: "/adelantos",  label: "Adelantos",  icon: "adelantos" },
+  ]},
   { kind: "link",  href: "/eventos",    label: "Eventos",    icon: "calendar" },
 ];
 

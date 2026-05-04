@@ -1,11 +1,27 @@
 "use client";
 
 /* ================= DATA PROVIDER ================= */
-/* Store global compartido entre admin/encargado/trabajador. */
-/* Persistencia en localStorage. Fuente única de verdad.       */
+/* Store global compartido entre admin/encargado/trabajador.    */
+/* Backend unico: Supabase + Realtime. Toda la UI consume       */
+/* useData() y los helpers exportados sin saber que es Supabase.*/
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { esFeriadoOficial as _esFerOf } from "@/lib/utils/peruHolidays";
+import {
+  rowToSede, sedeToRow,
+  rowToWorker, workerToRow,
+  rowToAsistencia, asistenciaToRow,
+  rowToAdelanto, adelantoToRow,
+  rowToPermiso, permisoToRow,
+  rowToEvento, eventoToRow,
+  rowToJalador, jaladorToRow,
+  rowToIngreso, ingresoToRow,
+  rowToAccesoTemp, accesoTempToRow,
+  rowToMovimientoCaja, movimientoCajaToRow,
+  rowToCuadrePersonal, cuadrePersonalToRow,
+  rowToPagoPlanilla, pagoPlanillaToRow,
+} from "@/lib/data/mappers";
 
 /* ================= TIPOS ================= */
 export type EstadoAsist = "presente" | "tardanza" | "ausente" | "permiso" | "feriado";
@@ -91,6 +107,14 @@ export interface AsistenciaRec {
   sedeIdDia?:    string;             // sede donde marcó ese día específico
   turnoEntrada?: string;             // horario esperado entrada del día (override)
   turnoSalida?:  string;             // horario esperado salida del día (override)
+  /* ===== Verificación laxa (Opción B) =====
+     - marcadoPor: quién registró este día (trabajador desde su modal, o
+       owner/encargado desde el panel admin). Si null → registro de semilla.
+     - verificadoPor: id del actor admin que dio el ack. null = pendiente.
+     - verificadoAt: timestamp del ack. */
+  marcadoPor?:    "trabajador" | "owner" | "encargado";
+  verificadoPor?: string | null;
+  verificadoAt?:  string;
 }
 
 export interface Adelanto {
@@ -148,6 +172,36 @@ export interface IngresoJalador {
   nota?: string;
 }
 
+/* Método con que se efectuó el pago — para auditoría del trabajador. */
+export type MetodoPago = "efectivo" | "yape" | "transferencia";
+
+/* Anotación personal del trabajador (sandbox). NO afecta la asistencia oficial.
+   El trabajador la usa para llevar su propio control y compararla con el registro
+   oficial que mantiene el owner/encargado. Solo el dueño la lee/escribe. */
+export interface CuadrePersonal {
+  id: string;
+  workerId: string;
+  fecha: string;       // ISO yyyy-mm-dd
+  worked: boolean;
+  late: boolean;
+}
+
+/* Registro de pago de planilla. Un PagoPlanilla cubre el rango [desdeISO, hastaISO]
+   de un trabajador. La presencia del registro es la verdad: si existe, ese rango
+   ya fue pagado. La página de planilla y el calendario de asistencia leen esto
+   para mostrar el estado real de pagos. */
+export interface PagoPlanilla {
+  id: string;
+  workerId: string;
+  desdeISO: string;
+  hastaISO: string;
+  fechaPago: string;          // ISO yyyy-mm-dd (cuándo se efectuó el pago)
+  montoNeto: number;
+  metodoPago: MetodoPago;
+  periodo?: "quincenal" | "mensual";
+  nota?: string;
+}
+
 export interface AccesoTemporal {
   id: string;
   workerId: string;
@@ -171,163 +225,14 @@ export interface DataState {
   ingresosJaladores: IngresoJalador[];
   accesosTemporales: AccesoTemporal[];
   movimientosCaja: MovimientoCaja[];
+  pagosPlanilla: PagoPlanilla[];
+  cuadresPersonales: CuadrePersonal[];
   mostrarFeriadosOficiales: boolean;
-}
-
-/* ================= SEMILLA POR DEFECTO ================= */
-function seed(): DataState {
-  const YEAR = new Date().getFullYear();
-
-  const sedes: Sede[] = [
-    { id:"sa", nombre:"Santa Anita",  color:"#C41A3A", direccion:"Av. Los Chancas 456", telefono:"01 234-5678", horario:"08:00–18:00", encargadoId:"w_rp",  activa:true },
-    { id:"pp", nombre:"Puente Piedra", color:"#1d6fa4", direccion:"Jr. Comercio 123",    telefono:"01 876-5432", horario:"08:00–18:00", encargadoId:undefined, activa:true },
-    { id:"li", nombre:"Lima Centro",   color:"#16a34a", direccion:"Jr. de la Unión 800", telefono:"01 555-0100", horario:"08:00–18:00", encargadoId:undefined, activa:true },
-  ];
-
-  const TARIFAS_DEF: TarifasWorker = { diaNormal: 60, tardanza: 45, finSemana: 75, feriado: 90 };
-
-  const workers: Worker[] = [
-    { id:"w_du",  nombre:"Dueña del Negocio", apodo:"Owner",   avatarBase64:null, rol:"owner",     sedeId:"sa", cargo:"Propietaria", turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2020-01-01", activo:true, email:"owner@tramys.pe" },
-    { id:"w_rp",  nombre:"Ricardo Palma",      apodo:"Ricky",   avatarBase64:null, rol:"encargado", sedeId:"sa", cargo:"Encargado",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2021-06-15", activo:true, email:"rpalma@tramys.pe" },
-    { id:"w_at",  nombre:"Ana Torres",         apodo:"Ani",     avatarBase64:null, rol:"trabajador",sedeId:"sa", cargo:"Asistente",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2023-03-01", activo:true, email:"atorres@tramys.pe" },
-    { id:"w_lv",  nombre:"Luis Vera",          apodo:"Lucho",   avatarBase64:null, rol:"trabajador",sedeId:"sa", cargo:"Asistente",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2022-06-01", activo:true, email:"lvera@tramys.pe" },
-    { id:"w_md",  nombre:"Marco Díaz",         apodo:"Marco",   avatarBase64:null, rol:"trabajador",sedeId:"pp", cargo:"Asistente",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2024-01-01", activo:true, email:"mdiaz@tramys.pe" },
-    { id:"w_sr",  nombre:"Sofía Ríos",         apodo:"Sofi",    avatarBase64:null, rol:"trabajador",sedeId:"sa", cargo:"Asistente",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2023-09-01", activo:true, email:"srios@tramys.pe" },
-    { id:"w_cf",  nombre:"Carmen Flores",      apodo:"Carmen",  avatarBase64:null, rol:"trabajador",sedeId:"pp", cargo:"Operadora",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2022-02-01", activo:true, email:"cflores@tramys.pe" },
-    { id:"w_pc",  nombre:"Pedro Chávez",       apodo:"Pedro",   avatarBase64:null, rol:"trabajador",sedeId:"sa", cargo:"Operador",    turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2023-11-01", activo:false, email:"pchavez@tramys.pe" },
-    { id:"w_rh",  nombre:"Rosa Huanca",        apodo:"Rosi",    avatarBase64:null, rol:"trabajador",sedeId:"pp", cargo:"Operadora",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2021-04-01", activo:true, email:"rhuanca@tramys.pe" },
-    { id:"w_jq",  nombre:"Jorge Quispe",       apodo:"Jorge",   avatarBase64:null, rol:"trabajador",sedeId:"pp", cargo:"Asistente",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2023-07-01", activo:true, email:"jquispe@tramys.pe" },
-    { id:"w_ms",  nombre:"María Soto",         apodo:"Mary",    avatarBase64:null, rol:"trabajador",sedeId:"li", cargo:"Operadora",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2024-02-01", activo:true, email:"msoto@tramys.pe" },
-    { id:"w_cr",  nombre:"Carlos Ramos",       apodo:"Carlitos",avatarBase64:null, rol:"trabajador",sedeId:"li", cargo:"Asistente",   turno:{ entrada:"08:00", salida:"18:00" }, tarifas: TARIFAS_DEF, fechaIngreso:"2023-08-15", activo:true, email:"cramos@tramys.pe" },
-  ];
-
-  /* Asistencia últimas 3 semanas para trabajadores activos */
-  const asistencia: AsistenciaRec[] = [];
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
-  const SEED: EstadoAsist[] = ["presente","presente","presente","tardanza","presente","presente","ausente"];
-  for (const w of workers) {
-    if (!w.activo) continue;
-    if (w.rol === "owner") continue;
-    for (let i = 21; i >= 0; i--) {
-      const d = new Date(hoy); d.setDate(hoy.getDate()-i);
-      const est = SEED[(i + w.id.length) % SEED.length];
-      const entrada = est === "ausente" ? null : est === "tardanza" ? "09:05" : "08:00";
-      const salida  = est === "ausente" ? null : "18:00";
-      asistencia.push({
-        id: `a_${w.id}_${d.toISOString().slice(0,10)}`,
-        workerId: w.id,
-        fecha: d.toISOString().slice(0,10),
-        entrada, salida, estado: est,
-        overrideIngreso: null,
-      });
-    }
-  }
-
-  const adelantos: Adelanto[] = [
-    { id:"ad1", workerId:"w_md", monto:350, motivo:"Emergencia familiar", estado:"pendiente", fecha: new Date().toISOString().slice(0,10) },
-    { id:"ad2", workerId:"w_cf", monto:200, motivo:"Pago de alquiler",    estado:"pendiente", fecha: new Date().toISOString().slice(0,10) },
-    { id:"ad3", workerId:"w_sr", monto:150, motivo:"Útiles escolares",    estado:"pendiente", fecha: new Date().toISOString().slice(0,10) },
-    { id:"ad4", workerId:"w_at", monto:300, motivo:"Gastos médicos",      estado:"aprobado",  fecha: "2026-04-10", aprobadoPor:"w_du" },
-  ];
-
-  const permisos: Permiso[] = [
-    { id:"p1", workerId:"w_sr", fecha:"2026-04-18", tipo:"personal", motivo:"Trámite familiar", estado:"aprobado", aprobadoPor:"w_du" },
-  ];
-
-  const eventos: Evento[] = [
-    { id:"ev1", nombre:"Ana Torres",    date:`${YEAR}-04-19`, tipo:"cumpleanos",       workerId:"w_at" },
-    { id:"ev2", nombre:"Marco Díaz",    date:`${YEAR}-05-03`, tipo:"cumpleanos",       workerId:"w_md" },
-    { id:"ev3", nombre:"Luis Vera",     date:`${YEAR}-06-22`, tipo:"cumpleanos",       workerId:"w_lv" },
-    { id:"ev4", nombre:"Día de la Madre", date:`${YEAR}-05-10`, tipo:"feriado-empresa",  pagado:false },
-  ];
-
-  const jaladores: Jalador[] = [
-    { id:"j1", nombre:"Miguel Torres",  apodo:"Miguelón", avatarBase64:null, sedeId:"pp", porcentajeComision:10, activo:true, fechaIngreso:"2023-01-01" },
-    { id:"j2", nombre:"Carlos Mendoza", apodo:"Mendo",    avatarBase64:null, sedeId:"sa", porcentajeComision:10, activo:true, fechaIngreso:"2023-03-01" },
-    { id:"j3", nombre:"Luis Ramos",     apodo:"Luigi",    avatarBase64:null, sedeId:"sa", porcentajeComision:10, activo:true, fechaIngreso:"2024-01-01" },
-    { id:"j4", nombre:"Jhon Paredes",   apodo:"Jhon",     avatarBase64:null, sedeId:"pp", porcentajeComision:10, activo:true, fechaIngreso:"2024-05-01" },
-    { id:"j5", nombre:"Roberto Asto",   apodo:"Robert",   avatarBase64:null, sedeId:"li", porcentajeComision:10, activo:true, fechaIngreso:"2024-08-01" },
-  ];
-
-  const ingresosJaladores: IngresoJalador[] = [];
-  for (const j of jaladores) {
-    for (let i = 14; i >= 0; i--) {
-      const d = new Date(hoy); d.setDate(hoy.getDate()-i);
-      const monto = Math.round((100 + Math.random()*400) / 10) * 10;
-      if (Math.random() > 0.2) {
-        ingresosJaladores.push({
-          id:`ij_${j.id}_${d.toISOString().slice(0,10)}`,
-          jaladorId: j.id,
-          fecha: d.toISOString().slice(0,10),
-          monto,
-        });
-      }
-    }
-  }
-
-  /* ====== Semilla de movimientos de caja ====== */
-  const movimientosCaja: MovimientoCaja[] = [];
-  const SEDE_PERFIL: Record<string, { ingDia: number; clientesDia: number; luz: number; agua: number; internet: number; local: number }> = {
-    sa: { ingDia: 1850, clientesDia: 30, luz: 320, agua: 90,  internet: 150, local: 1800 },
-    pp: { ingDia: 1210, clientesDia: 22, luz: 240, agua: 75,  internet: 130, local: 1400 },
-    li: { ingDia: 920,  clientesDia: 18, luz: 200, agua: 60,  internet: 130, local: 1100 },
-  };
-  for (const s of sedes) {
-    const perfil = SEDE_PERFIL[s.id];
-    if (!perfil) continue;
-    /* Ingresos diarios de las últimas 4 semanas (con variación) */
-    for (let i = 27; i >= 0; i--) {
-      const d = new Date(hoy); d.setDate(hoy.getDate() - i);
-      const iso = d.toISOString().slice(0, 10);
-      const dow = d.getDay();
-      const factor = dow === 0 || dow === 6 ? 1.25 : 1;
-      const ruido = 0.85 + Math.random() * 0.3;
-      const cant = Math.max(1, Math.round(perfil.clientesDia * factor * ruido));
-      const unit = Math.round(perfil.ingDia / perfil.clientesDia);
-      const monto = cant * unit;
-      movimientosCaja.push({
-        id: `mc_${s.id}_in_${iso}`,
-        sedeId: s.id, fecha: iso, tipo: "ingreso",
-        monto, cantidad: cant, unitario: unit,
-        concepto: "Ventas del día",
-        createdAt: d.toISOString(),
-      });
-    }
-    /* Consumos fijos: uno por mes (luz/agua/internet/local) — día 5 del mes actual y anterior */
-    for (let mOff = 1; mOff >= 0; mOff--) {
-      const base = new Date(hoy.getFullYear(), hoy.getMonth() - mOff, 5);
-      if (base > hoy) continue;
-      const isoBase = base.toISOString().slice(0, 10);
-      const items: { cat: CategoriaFijo; concepto: string; monto: number }[] = [
-        { cat: "luz",      concepto: "Recibo de luz",      monto: perfil.luz },
-        { cat: "agua",     concepto: "Recibo de agua",     monto: perfil.agua },
-        { cat: "internet", concepto: "Internet del local", monto: perfil.internet },
-        { cat: "local",    concepto: "Alquiler de local",  monto: perfil.local },
-      ];
-      for (const it of items) {
-        movimientosCaja.push({
-          id: `mc_${s.id}_${it.cat}_${isoBase}`,
-          sedeId: s.id, fecha: isoBase, tipo: "gasto-fijo",
-          monto: it.monto, categoria: it.cat,
-          concepto: it.concepto,
-          createdAt: base.toISOString(),
-        });
-      }
-    }
-  }
-
-  return {
-    sedes, workers, asistencia, adelantos, permisos,
-    eventos, jaladores, ingresosJaladores,
-    accesosTemporales: [],
-    movimientosCaja,
-    mostrarFeriadosOficiales: true,
-  };
 }
 
 /* ================= CONTEXT ================= */
 interface DataCtx extends DataState {
-  /* Estado de hidratación (false hasta leer localStorage) */
+  /* Estado de hidratación (false hasta primer fetch a Supabase) */
   ready: boolean;
   /* Sedes */
   updateSede:  (id: string, patch: Partial<Sede>) => void;
@@ -364,273 +269,332 @@ interface DataCtx extends DataState {
   addMovimientoCaja:    (m: Omit<MovimientoCaja, "id" | "createdAt">) => void;
   updateMovimientoCaja: (id: string, patch: Partial<MovimientoCaja>) => void;
   deleteMovimientoCaja: (id: string) => void;
-  /* Reset */
+  /* Pagos de planilla */
+  addPagoPlanilla:    (p: Omit<PagoPlanilla, "id">) => void;
+  deletePagoPlanilla: (id: string) => void;
+  /* Cuadres personales (sandbox del trabajador) */
+  setCuadrePersonal: (workerId: string, fechaISO: string, patch: Partial<Pick<CuadrePersonal, "worked"|"late">>) => void;
+  getCuadrePersonal: (workerId: string, fechaISO: string) => CuadrePersonal | undefined;
+  clearCuadrePersonal: (workerId: string, fechaISO: string) => void;
+  /* Verificación de asistencia (Opción B) */
+  verificarAsistencia: (recId: string, verificadoPor: string) => void;
+  desverificarAsistencia: (recId: string) => void;
+  /* Reset (no-op en Supabase: el wipe se hace desde SQL Editor) */
   resetAll: () => void;
 }
 
-/* Context compartido — exportado para que un provider alternativo (Supabase) pueda inyectarlo */
+/* Context exportado por si algún componente quiere consumirlo crudo. */
 const Ctx = createContext<DataCtx | null>(null);
 export const DataContext = Ctx;
-/* Tipo expuesto para implementaciones alternativas */
 export type DataCtxValue = DataCtx;
 
-const STORAGE_KEY = "tramys_data_v1";
+const EMPTY_STATE: DataState = {
+  sedes: [], workers: [], asistencia: [], adelantos: [], permisos: [],
+  eventos: [], jaladores: [], ingresosJaladores: [], accesosTemporales: [],
+  movimientosCaja: [], pagosPlanilla: [], cuadresPersonales: [],
+  mostrarFeriadosOficiales: true,
+};
 
+/* ================= PROVIDER (Supabase) ================= */
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<DataState>(() => seed());
-  const [hydrated, setHydrated] = useState(false);
+  const supabase = useRef(createClient()).current;
+  const [state, setState] = useState<DataState>(EMPTY_STATE);
+  const [ready, setReady] = useState(false);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as DataState;
-        /* Merge conservador: si falla cualquier sección caemos a seed */
-        setState(prev => ({ ...prev, ...parsed }));
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
+  /* ====== Carga inicial: TODAS las tablas en paralelo ====== */
+  const cargar = useCallback(async () => {
+    const [
+      sedes, profiles, asist, adel, perm, ev, jal, ij, at, mc, ajustes, cp, pp,
+    ] = await Promise.all([
+      supabase.from("sedes").select("*"),
+      supabase.from("profiles").select("*"),
+      supabase.from("asistencia").select("*"),
+      supabase.from("adelantos").select("*"),
+      supabase.from("permisos").select("*"),
+      supabase.from("eventos").select("*"),
+      supabase.from("jaladores").select("*"),
+      supabase.from("ingresos_jaladores").select("*"),
+      supabase.from("accesos_temporales").select("*"),
+      supabase.from("movimientos_caja").select("*"),
+      supabase.from("ajustes").select("*").eq("id", 1).maybeSingle(),
+      supabase.from("cuadres_personales").select("*"),
+      supabase.from("pagos_planilla").select("*"),
+    ]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
-  }, [state, hydrated]);
-
-  const updateSede = useCallback((id: string, patch: Partial<Sede>) => {
-    setState(s => ({ ...s, sedes: s.sedes.map(x => x.id === id ? { ...x, ...patch } : x) }));
-  }, []);
-
-  const addWorker = useCallback((w: Omit<Worker, "id">): Worker => {
-    const id = `w_${Date.now().toString(36)}`;
-    const nuevo: Worker = { ...w, id };
-    setState(s => ({ ...s, workers: [...s.workers, nuevo] }));
-    return nuevo;
-  }, []);
-
-  const updateWorker = useCallback((id: string, patch: Partial<Worker>) => {
-    setState(s => ({ ...s, workers: s.workers.map(x => x.id === id ? { ...x, ...patch } : x) }));
-  }, []);
-
-  const deleteWorker = useCallback((id: string) => {
-    setState(s => ({ ...s, workers: s.workers.filter(x => x.id !== id) }));
-  }, []);
-
-  const setAsistencia = useCallback((workerId: string, fechaISO: string, patch: Partial<AsistenciaRec>) => {
-    setState(s => {
-      const idx = s.asistencia.findIndex(a => a.workerId === workerId && a.fecha === fechaISO);
-      if (idx >= 0) {
-        const copia = [...s.asistencia];
-        copia[idx] = { ...copia[idx], ...patch };
-        return { ...s, asistencia: copia };
-      }
-      return {
-        ...s,
-        asistencia: [
-          ...s.asistencia,
-          {
-            id: `a_${workerId}_${fechaISO}`,
-            workerId, fecha: fechaISO,
-            entrada: null, salida: null,
-            estado: "presente", overrideIngreso: null,
-            ...patch,
-          },
-        ],
-      };
+    setState({
+      sedes:             (sedes.data    ?? []).map(rowToSede),
+      workers:           (profiles.data ?? []).map(rowToWorker),
+      asistencia:        (asist.data    ?? []).map(rowToAsistencia),
+      adelantos:         (adel.data     ?? []).map(rowToAdelanto),
+      permisos:          (perm.data     ?? []).map(rowToPermiso),
+      eventos:           (ev.data       ?? []).map(rowToEvento),
+      jaladores:         (jal.data      ?? []).map(rowToJalador),
+      ingresosJaladores: (ij.data       ?? []).map(rowToIngreso),
+      accesosTemporales: (at.data       ?? []).map(rowToAccesoTemp),
+      movimientosCaja:   (mc.data       ?? []).map(rowToMovimientoCaja),
+      pagosPlanilla:     (pp.data       ?? []).map(rowToPagoPlanilla),
+      cuadresPersonales: (cp.data       ?? []).map(rowToCuadrePersonal),
+      mostrarFeriadosOficiales: ajustes.data?.mostrar_feriados_oficiales ?? true,
     });
-  }, []);
+    setReady(true);
+  }, [supabase]);
 
+  useEffect(() => { void cargar(); }, [cargar]);
+
+  /* ====== Realtime: cualquier cambio en public.* re-fetchea todo ====== */
+  useEffect(() => {
+    const channel = supabase
+      .channel("tramys_realtime")
+      .on("postgres_changes", { event: "*", schema: "public" }, () => { void cargar(); })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [supabase, cargar]);
+
+  /* =============== ACCIONES =============== */
+
+  /* ====== Sedes ====== */
+  const updateSede = useCallback(async (id: string, patch: Partial<Sede>) => {
+    await supabase.from("sedes").update(sedeToRow(patch)).eq("id", id);
+  }, [supabase]);
+
+  /* ====== Workers (profiles) ======
+     Crear un worker requiere primero invitarlo en Supabase Auth — el trigger
+     `on_auth_user_created` crea automáticamente la fila en `profiles`. Luego el
+     admin completa el patch desde la UI. Aquí devolvemos un placeholder local
+     para que la firma siga igual; el realtime traerá el worker real. */
+  const addWorker = useCallback((w: Omit<Worker, "id">): Worker => {
+    const fake: Worker = { ...w, id: `pending_${Date.now().toString(36)}` };
+    void supabase.from("profiles").insert(workerToRow(w));
+    return fake;
+  }, [supabase]);
+  const updateWorker = useCallback(async (id: string, patch: Partial<Worker>) => {
+    await supabase.from("profiles").update(workerToRow(patch)).eq("id", id);
+  }, [supabase]);
+  const deleteWorker = useCallback(async (id: string) => {
+    await supabase.from("profiles").delete().eq("id", id);
+  }, [supabase]);
+
+  /* ====== Asistencia (upsert por unique constraint worker_id+fecha) ====== */
+  const setAsistencia = useCallback(async (workerId: string, fechaISO: string, patch: Partial<AsistenciaRec>) => {
+    await supabase.from("asistencia").upsert(
+      asistenciaToRow({ ...patch, workerId, fecha: fechaISO }),
+      { onConflict: "worker_id,fecha" }
+    );
+  }, [supabase]);
   const getAsistencia = useCallback((workerId: string, fechaISO: string) =>
     state.asistencia.find(a => a.workerId === workerId && a.fecha === fechaISO),
   [state.asistencia]);
 
-  const addAdelanto = useCallback((a: Omit<Adelanto, "id" | "estado">) => {
-    setState(s => ({ ...s, adelantos: [...s.adelantos, { ...a, id:`ad_${Date.now().toString(36)}`, estado:"pendiente" }] }));
-  }, []);
-  const updateAdelanto = useCallback((id: string, patch: Partial<Adelanto>) => {
-    setState(s => ({ ...s, adelantos: s.adelantos.map(x => x.id === id ? { ...x, ...patch } : x) }));
-  }, []);
+  /* ====== Adelantos ====== */
+  const addAdelanto = useCallback(async (a: Omit<Adelanto, "id" | "estado">) => {
+    await supabase.from("adelantos").insert({ ...adelantoToRow(a as Partial<Adelanto>), estado: "pendiente" });
+  }, [supabase]);
+  const updateAdelanto = useCallback(async (id: string, patch: Partial<Adelanto>) => {
+    await supabase.from("adelantos").update(adelantoToRow(patch)).eq("id", id);
+  }, [supabase]);
 
-  const addPermiso = useCallback((p: Omit<Permiso, "id" | "estado">) => {
-    setState(s => ({ ...s, permisos: [...s.permisos, { ...p, id:`p_${Date.now().toString(36)}`, estado:"pendiente" }] }));
-  }, []);
-  const updatePermiso = useCallback((id: string, patch: Partial<Permiso>) => {
-    setState(s => {
-      const permActualizado = s.permisos.find(x => x.id === id);
-      if (!permActualizado) return s;
-      const nuevo: Permiso = { ...permActualizado, ...patch };
+  /* ====== Permisos ======
+     Al APROBAR un permiso, marcamos los días del rango en asistencia con
+     estado "permiso", calculando el override de ingreso según pagado/feriado/
+     fin-de-semana. Replica la regla del dominio (mismo comportamiento que la
+     versión demo previa). Las marcas de asistencia son upserts en paralelo. */
+  const addPermiso = useCallback(async (p: Omit<Permiso, "id" | "estado">) => {
+    await supabase.from("permisos").insert({ ...permisoToRow(p as Partial<Permiso>), estado: "pendiente" });
+  }, [supabase]);
+  const updatePermiso = useCallback(async (id: string, patch: Partial<Permiso>) => {
+    await supabase.from("permisos").update(permisoToRow(patch)).eq("id", id);
 
-      let asistencia = s.asistencia;
-      /* Si pasa a "aprobado" → marcar todos los días del rango como permiso */
-      if (patch.estado === "aprobado") {
-        const w = s.workers.find(x => x.id === nuevo.workerId);
-        if (w) {
-          const dias = diasDePermiso(nuevo);
-          for (const iso of dias) {
-            const idx = asistencia.findIndex(a => a.workerId === w.id && a.fecha === iso);
-            const tarifa = nuevo.pagado
-              ? (esFeriadoOficialFn(iso) ? w.tarifas.feriado
-                  : isWeekendISO(iso) ? w.tarifas.finSemana
-                  : w.tarifas.diaNormal)
-              : null;
-            const tipoLabel = nuevo.tipo === "vacaciones" ? "Vacaciones"
-                            : nuevo.tipo === "medico"     ? "Permiso médico"
-                            :                                "Permiso personal";
-            const motivoEdit = nuevo.pagado ? `${tipoLabel} (pagado)` : tipoLabel;
-            const base = {
-              workerId: w.id, fecha: iso,
-              entrada: null as string | null, salida: null as string | null,
-              estado: "permiso" as EstadoAsist,
-              overrideIngreso: tarifa,
-              motivoEdit,
-            };
-            if (idx >= 0) asistencia = asistencia.map((a, i) => i === idx ? { ...a, ...base } : a);
-            else asistencia = [...asistencia, { ...base, id: `as_${Date.now().toString(36)}_${iso}` }];
-          }
-        }
-      }
-      return {
-        ...s,
-        permisos: s.permisos.map(x => x.id === id ? nuevo : x),
-        asistencia,
-      };
-    });
-  }, []);
+    if (patch.estado !== "aprobado") return;
+    /* Releer el permiso desde el state local: el patch puede ser parcial. */
+    const prev = state.permisos.find(p => p.id === id);
+    if (!prev) return;
+    const nuevo: Permiso = { ...prev, ...patch };
+    const w = state.workers.find(x => x.id === nuevo.workerId);
+    if (!w) return;
+    const dias = diasDePermiso(nuevo);
+    const tipoLabel = nuevo.tipo === "vacaciones" ? "Vacaciones"
+                    : nuevo.tipo === "medico"     ? "Permiso médico"
+                    :                                "Permiso personal";
+    const motivoEdit = nuevo.pagado ? `${tipoLabel} (pagado)` : tipoLabel;
 
-  const addEvento = useCallback((e: Omit<Evento, "id">) => {
-    setState(s => ({ ...s, eventos: [...s.eventos, { ...e, id:`ev_${Date.now().toString(36)}` }] }));
-  }, []);
-  const updateEvento = useCallback((id: string, patch: Partial<Evento>) => {
-    setState(s => ({ ...s, eventos: s.eventos.map(x => x.id === id ? { ...x, ...patch } : x) }));
-  }, []);
-  const deleteEvento = useCallback((id: string) => {
-    setState(s => ({ ...s, eventos: s.eventos.filter(x => x.id !== id) }));
-  }, []);
-  const toggleFeriadosOficiales = useCallback((v: boolean) => {
-    setState(s => ({ ...s, mostrarFeriadosOficiales: v }));
-  }, []);
+    await Promise.all(dias.map(iso => {
+      const tarifa = nuevo.pagado
+        ? (esFeriadoOficialFn(iso) ? w.tarifas.feriado
+            : isWeekendISO(iso)     ? w.tarifas.finSemana
+            : w.tarifas.diaNormal)
+        : null;
+      return supabase.from("asistencia").upsert(asistenciaToRow({
+        workerId: w.id, fecha: iso,
+        entrada: null, salida: null,
+        estado: "permiso",
+        overrideIngreso: tarifa,
+        motivoEdit,
+      }), { onConflict: "worker_id,fecha" });
+    }));
+  }, [supabase, state.permisos, state.workers]);
 
-  const addJalador = useCallback((j: Omit<Jalador, "id">) => {
-    setState(s => ({ ...s, jaladores: [...s.jaladores, { ...j, id:`j_${Date.now().toString(36)}` }] }));
-  }, []);
-  const updateJalador = useCallback((id: string, patch: Partial<Jalador>) => {
-    setState(s => ({ ...s, jaladores: s.jaladores.map(x => x.id === id ? { ...x, ...patch } : x) }));
-  }, []);
-  const deleteJalador = useCallback((id: string) => {
-    setState(s => ({ ...s, jaladores: s.jaladores.filter(x => x.id !== id) }));
-  }, []);
+  /* ====== Eventos ====== */
+  const addEvento = useCallback(async (e: Omit<Evento, "id">) => {
+    await supabase.from("eventos").insert(eventoToRow(e as Partial<Evento>));
+  }, [supabase]);
+  const updateEvento = useCallback(async (id: string, patch: Partial<Evento>) => {
+    await supabase.from("eventos").update(eventoToRow(patch)).eq("id", id);
+  }, [supabase]);
+  const deleteEvento = useCallback(async (id: string) => {
+    await supabase.from("eventos").delete().eq("id", id);
+  }, [supabase]);
+  const toggleFeriadosOficiales = useCallback(async (v: boolean) => {
+    await supabase.from("ajustes").update({ mostrar_feriados_oficiales: v }).eq("id", 1);
+  }, [supabase]);
 
-  const addIngreso = useCallback((i: Omit<IngresoJalador, "id">) => {
-    setState(s => ({ ...s, ingresosJaladores: [...s.ingresosJaladores, { ...i, id:`ij_${Date.now().toString(36)}` }] }));
-  }, []);
-  const updateIngreso = useCallback((id: string, patch: Partial<IngresoJalador>) => {
-    setState(s => ({ ...s, ingresosJaladores: s.ingresosJaladores.map(x => x.id === id ? { ...x, ...patch } : x) }));
-  }, []);
-  const deleteIngreso = useCallback((id: string) => {
-    setState(s => ({ ...s, ingresosJaladores: s.ingresosJaladores.filter(x => x.id !== id) }));
-  }, []);
+  /* ====== Jaladores + ingresos ====== */
+  const addJalador = useCallback(async (j: Omit<Jalador, "id">) => {
+    await supabase.from("jaladores").insert(jaladorToRow(j as Partial<Jalador>));
+  }, [supabase]);
+  const updateJalador = useCallback(async (id: string, patch: Partial<Jalador>) => {
+    await supabase.from("jaladores").update(jaladorToRow(patch)).eq("id", id);
+  }, [supabase]);
+  const deleteJalador = useCallback(async (id: string) => {
+    await supabase.from("jaladores").delete().eq("id", id);
+  }, [supabase]);
 
-  /* Concede acceso temporal y aplica el rol otorgado al worker */
-  const addAccesoTemp = useCallback((a: Omit<AccesoTemporal, "id" | "rolOriginal">) => {
-    setState(s => {
-      const w = s.workers.find(x => x.id === a.workerId);
-      const rolOriginal = w?.rol ?? "trabajador";
-      const nuevoAcceso: AccesoTemporal = {
-        ...a,
-        id: `at_${Date.now().toString(36)}`,
-        rolOriginal,
-      };
-      const workers = w
-        ? s.workers.map(x => x.id === w.id ? { ...x, rol: a.rolOtorgado } : x)
-        : s.workers;
-      return { ...s, accesosTemporales: [...s.accesosTemporales, nuevoAcceso], workers };
-    });
-  }, []);
+  const addIngreso = useCallback(async (i: Omit<IngresoJalador, "id">) => {
+    await supabase.from("ingresos_jaladores").insert(ingresoToRow(i as Partial<IngresoJalador>));
+  }, [supabase]);
+  const updateIngreso = useCallback(async (id: string, patch: Partial<IngresoJalador>) => {
+    await supabase.from("ingresos_jaladores").update(ingresoToRow(patch)).eq("id", id);
+  }, [supabase]);
+  const deleteIngreso = useCallback(async (id: string) => {
+    await supabase.from("ingresos_jaladores").delete().eq("id", id);
+  }, [supabase]);
 
-  /* Revoca el acceso. Si seguía activo, restaura el rol original. */
-  const removeAccesoTemp = useCallback((id: string) => {
-    setState(s => {
-      const acceso = s.accesosTemporales.find(x => x.id === id);
-      if (!acceso) return s;
-      const ahora = Date.now();
-      const activo = new Date(acceso.hasta).getTime() > ahora;
-      const workers = activo && acceso.rolOriginal
-        ? s.workers.map(x => x.id === acceso.workerId ? { ...x, rol: acceso.rolOriginal! } : x)
-        : s.workers;
-      return {
-        ...s,
-        accesosTemporales: s.accesosTemporales.filter(x => x.id !== id),
-        workers,
-      };
-    });
-  }, []);
+  /* ====== Accesos temporales con caducidad ======
+     Crear: lee rol vigente del worker, lo guarda como rol_original, aplica
+     rol_otorgado en profiles. Revocar: si seguía activo, restaura rol_original. */
+  const addAccesoTemp = useCallback(async (a: Omit<AccesoTemporal, "id" | "rolOriginal">) => {
+    const w = state.workers.find(x => x.id === a.workerId);
+    const rolOriginal = w?.rol ?? "trabajador";
+    await supabase.from("accesos_temporales").insert(
+      accesoTempToRow({ ...a, rolOriginal } as Partial<AccesoTemporal>)
+    );
+    await supabase.from("profiles").update({ rol: a.rolOtorgado, rol_original: rolOriginal }).eq("id", a.workerId);
+  }, [supabase, state.workers]);
 
-  /* Caducidad automática: cada 30s, expirados restauran el rol y se eliminan */
-  useEffect(() => {
-    if (!hydrated) return;
-    function tick() {
-      setState(s => {
-        const ahora = Date.now();
-        const expirados = s.accesosTemporales.filter(x => new Date(x.hasta).getTime() <= ahora);
-        if (expirados.length === 0) return s;
-        let workers = s.workers;
-        for (const e of expirados) {
-          if (!e.rolOriginal) continue;
-          workers = workers.map(w => w.id === e.workerId ? { ...w, rol: e.rolOriginal! } : w);
-        }
-        return {
-          ...s,
-          accesosTemporales: s.accesosTemporales.filter(x => new Date(x.hasta).getTime() > ahora),
-          workers,
-        };
-      });
+  const removeAccesoTemp = useCallback(async (id: string) => {
+    const acceso = state.accesosTemporales.find(x => x.id === id);
+    if (!acceso) return;
+    const sigueActivo = new Date(acceso.hasta).getTime() > Date.now();
+    if (sigueActivo && acceso.rolOriginal) {
+      await supabase.from("profiles").update({ rol: acceso.rolOriginal, rol_original: null }).eq("id", acceso.workerId);
     }
-    tick();
+    await supabase.from("accesos_temporales").delete().eq("id", id);
+  }, [supabase, state.accesosTemporales]);
+
+  /* ====== Caducidad: ticker cada 30s (defensa-en-profundidad).
+     El backstop autoritativo es pg_cron en backend (`tramys_expirar_accesos`). */
+  useEffect(() => {
+    if (!ready) return;
+    async function tick() {
+      const ahora = new Date().toISOString();
+      const { data: expirados } = await supabase
+        .from("accesos_temporales").select("*").lte("hasta", ahora);
+      if (!expirados || expirados.length === 0) return;
+      for (const e of expirados) {
+        const original = (e.rol_original as string) ?? "trabajador";
+        await supabase.from("profiles").update({ rol: original, rol_original: null }).eq("id", e.worker_id);
+      }
+      await supabase.from("accesos_temporales").delete().lte("hasta", ahora);
+    }
+    void tick();
     const id = window.setInterval(tick, 30_000);
     return () => window.clearInterval(id);
-  }, [hydrated]);
+  }, [supabase, ready]);
 
-  const addMovimientoCaja = useCallback((m: Omit<MovimientoCaja, "id" | "createdAt">) => {
-    setState(s => ({
-      ...s,
-      movimientosCaja: [...s.movimientosCaja, {
-        ...m,
-        id: `mc_${Date.now().toString(36)}`,
-        createdAt: new Date().toISOString(),
-      }],
-    }));
-  }, []);
-  const updateMovimientoCaja = useCallback((id: string, patch: Partial<MovimientoCaja>) => {
-    setState(s => ({ ...s, movimientosCaja: s.movimientosCaja.map(x => x.id === id ? { ...x, ...patch } : x) }));
-  }, []);
-  const deleteMovimientoCaja = useCallback((id: string) => {
-    setState(s => ({ ...s, movimientosCaja: s.movimientosCaja.filter(x => x.id !== id) }));
-  }, []);
+  /* ====== Movimientos de caja ====== */
+  const addMovimientoCaja = useCallback(async (m: Omit<MovimientoCaja, "id" | "createdAt">) => {
+    await supabase.from("movimientos_caja").insert(movimientoCajaToRow(m as Partial<MovimientoCaja>));
+  }, [supabase]);
+  const updateMovimientoCaja = useCallback(async (id: string, patch: Partial<MovimientoCaja>) => {
+    await supabase.from("movimientos_caja").update(movimientoCajaToRow(patch)).eq("id", id);
+  }, [supabase]);
+  const deleteMovimientoCaja = useCallback(async (id: string) => {
+    await supabase.from("movimientos_caja").delete().eq("id", id);
+  }, [supabase]);
 
+  /* ====== Pagos de planilla ====== */
+  const addPagoPlanilla = useCallback(async (p: Omit<PagoPlanilla, "id">) => {
+    await supabase.from("pagos_planilla").insert(pagoPlanillaToRow(p as Partial<PagoPlanilla>));
+  }, [supabase]);
+  const deletePagoPlanilla = useCallback(async (id: string) => {
+    await supabase.from("pagos_planilla").delete().eq("id", id);
+  }, [supabase]);
+
+  /* ====== Cuadres personales (sandbox del trabajador) ======
+     Upsert por (worker_id, fecha) — RLS cp_self garantiza que solo el dueño
+     lee/escribe lo suyo. Read-modify-write para preservar el otro flag cuando
+     el patch trae solo uno. */
+  const setCuadrePersonal = useCallback(async (workerId: string, fechaISO: string, patch: Partial<Pick<CuadrePersonal, "worked"|"late">>) => {
+    const prev = state.cuadresPersonales.find(c => c.workerId === workerId && c.fecha === fechaISO);
+    const next = {
+      workerId,
+      fecha: fechaISO,
+      worked: patch.worked ?? prev?.worked ?? false,
+      late:   patch.late   ?? prev?.late   ?? false,
+    };
+    await supabase.from("cuadres_personales").upsert(
+      cuadrePersonalToRow(next),
+      { onConflict: "worker_id,fecha" }
+    );
+  }, [supabase, state.cuadresPersonales]);
+  const getCuadrePersonal = useCallback((workerId: string, fechaISO: string) =>
+    state.cuadresPersonales.find(c => c.workerId === workerId && c.fecha === fechaISO),
+  [state.cuadresPersonales]);
+  const clearCuadrePersonal = useCallback(async (workerId: string, fechaISO: string) => {
+    await supabase.from("cuadres_personales").delete()
+      .eq("worker_id", workerId).eq("fecha", fechaISO);
+  }, [supabase]);
+
+  /* ====== Verificación de asistencia (Opción B) ====== */
+  const verificarAsistencia = useCallback(async (recId: string, verificadoPor: string) => {
+    await supabase.from("asistencia").update({
+      verificado_por: verificadoPor,
+      verificado_at: new Date().toISOString(),
+    }).eq("id", recId);
+  }, [supabase]);
+  const desverificarAsistencia = useCallback(async (recId: string) => {
+    await supabase.from("asistencia").update({
+      verificado_por: null,
+      verificado_at: null,
+    }).eq("id", recId);
+  }, [supabase]);
+
+  /* ====== Reset: en Supabase no se hace desde el cliente ====== */
   const resetAll = useCallback(() => {
-    try { localStorage.removeItem(STORAGE_KEY); } catch {}
-    setState(seed());
+    if (typeof window !== "undefined") {
+      console.warn("[Supabase] Reset deshabilitado: para limpiar datos, usa el SQL Editor (ver LAUNCH_PLAN §1).");
+    }
   }, []);
 
-  return (
-    <Ctx.Provider value={{
-      ...state,
-      ready: hydrated,
-      updateSede,
-      addWorker, updateWorker, deleteWorker,
-      setAsistencia, getAsistencia,
-      addAdelanto, updateAdelanto,
-      addPermiso, updatePermiso,
-      addEvento, updateEvento, deleteEvento, toggleFeriadosOficiales,
-      addJalador, updateJalador, deleteJalador,
-      addIngreso, updateIngreso, deleteIngreso,
-      addAccesoTemp, removeAccesoTemp,
-      addMovimientoCaja, updateMovimientoCaja, deleteMovimientoCaja,
-      resetAll,
-    }}>
-      {children}
-    </Ctx.Provider>
-  );
+  const value: DataCtx = {
+    ...state,
+    ready,
+    updateSede,
+    addWorker, updateWorker, deleteWorker,
+    setAsistencia, getAsistencia,
+    addAdelanto, updateAdelanto,
+    addPermiso, updatePermiso,
+    addEvento, updateEvento, deleteEvento, toggleFeriadosOficiales,
+    addJalador, updateJalador, deleteJalador,
+    addIngreso, updateIngreso, deleteIngreso,
+    addAccesoTemp, removeAccesoTemp,
+    addMovimientoCaja, updateMovimientoCaja, deleteMovimientoCaja,
+    addPagoPlanilla, deletePagoPlanilla,
+    setCuadrePersonal, getCuadrePersonal, clearCuadrePersonal,
+    verificarAsistencia, desverificarAsistencia,
+    resetAll,
+  };
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export function useData(): DataCtx {
@@ -640,6 +604,23 @@ export function useData(): DataCtx {
 }
 
 /* ================= HELPERS DERIVADOS ================= */
+/* Devuelve el PagoPlanilla que cubre la fecha dada para ese trabajador, o
+   undefined si no hay ninguno. Comparación inclusiva en ambos extremos. */
+export function pagoQueCubre(pagos: PagoPlanilla[], workerId: string, fechaISO: string): PagoPlanilla | undefined {
+  return pagos.find(p =>
+    p.workerId === workerId && p.desdeISO <= fechaISO && fechaISO <= p.hastaISO,
+  );
+}
+
+/* True si existe un PagoPlanilla cuyo rango cubre exactamente o engloba el rango
+   solicitado para ese trabajador. Útil para saber si el periodo activo de planilla
+   ya fue pagado. */
+export function estaPagado(pagos: PagoPlanilla[], workerId: string, desdeISO: string, hastaISO: string): PagoPlanilla | undefined {
+  return pagos.find(p =>
+    p.workerId === workerId && p.desdeISO <= desdeISO && hastaISO <= p.hastaISO,
+  );
+}
+
 export function ingresoDia(rec: AsistenciaRec, tarifas: TarifasWorker, esFinDeSemana: boolean, esFeriado: boolean): number {
   if (rec.overrideIngreso !== null) return rec.overrideIngreso;
   if (rec.estado === "ausente") return 0;

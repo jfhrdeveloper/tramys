@@ -8,9 +8,13 @@ interface ModalProps {
   title?:    string;
   children:  React.ReactNode;
   width?:    number;
+  /* Override del z-index del overlay. Default 300. Subir a >400 cuando el
+     modal se monta por encima de otro modal "personalizado" (ej: el confirm
+     dialog de Feedback debe quedar arriba del ModalAsistencia que usa 400). */
+  zIndex?:   number;
 }
 
-export function Modal({ open, onClose, title, children, width = 420 }: ModalProps) {
+export function Modal({ open, onClose, title, children, width = 420, zIndex = 300 }: ModalProps) {
   /* Cerrar con Escape */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -34,7 +38,7 @@ export function Modal({ open, onClose, title, children, width = 420 }: ModalProp
         position:       "fixed", inset: 0,
         background:     "rgba(0,0,0,0.55)",
         display:        "flex", alignItems: "center", justifyContent: "center",
-        zIndex:         300, backdropFilter: "blur(3px)",
+        zIndex,         backdropFilter: "blur(3px)",
       }}
       onMouseDown={e => { downOnOverlay.current = e.target === e.currentTarget; }}
       onMouseUp={e => {

@@ -17,7 +17,7 @@ cp .env.local.example .env.local
 
 # 3. Configurar base de datos
 # Ir a Supabase Dashboard → SQL Editor → New Query
-# Pegar y ejecutar el contenido de: supabase-schema.sql
+# Pegar y ejecutar el contenido de: docs/supabase-schema.sql
 
 # 4. Crear usuarios en Supabase Auth
 # Dashboard → Authentication → Users → Add user

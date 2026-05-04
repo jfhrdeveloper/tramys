@@ -151,14 +151,7 @@
   - `sedeDelDia(rec, worker)` → `rec.sedeIdDia ?? worker.sedeId`.
   - `turnoDelDia(rec, worker)` → `{ entrada, salida }` con fallback al turno del worker.
 - **Mappers Supabase** (`src/lib/data/mappers.ts`): añadir `sede_id_dia`, `turno_entrada` (override), `turno_salida` (override) a `rowToAsistencia` / `asistenciaToRow`.
-- **SQL §6.2** — extender `public.asistencia`:
-  ```sql
-  alter table public.asistencia
-    add column if not exists sede_id_dia    uuid references public.sedes(id) on delete set null,
-    add column if not exists turno_entrada  text,
-    add column if not exists turno_salida   text;
-  create index if not exists idx_asist_sede_dia on public.asistencia(sede_id_dia);
-  ```
+- **Schema**: la columna `sede_id_dia` + `turno_entrada` / `turno_salida` (override) ya viven en `public.asistencia` — ver [`docs/supabase-schema.sql`](docs/supabase-schema.sql).
 
 ### 10.2 UI: editar/agregar registros desde la vista Asistencia (admin/encargado) — [x]
 - Hoy `(admin)/asistencia/page.tsx` solo muestra los registros existentes, no permite **agregar** un día nuevo ni editar libremente. Hace falta:
@@ -187,549 +180,58 @@
   - El dashboard del owner / encargado correspondiente.
 - Esto ya está garantizado por el `DataProvider` único + Realtime en modo Supabase.
 
-## 🐘 6. Esquema Supabase (pegar en SQL Editor)
+## 🐘 6. Esquema Supabase
 
-> Script idempotente. Crea extensiones, enums, tablas, índices, trigger de `updated_at`, RLS y políticas. Está pensado para correr **una sola vez** en un proyecto nuevo. Re-ejecutarlo no rompe datos: usa `IF NOT EXISTS` y `CREATE OR REPLACE` donde aplica.
+> **Fuente única ejecutable:** [`docs/supabase-schema.sql`](docs/supabase-schema.sql) — script idempotente, pegar tal cual en Project → SQL Editor → New query → Run. Esta sección documenta el **modelo** (qué hay y por qué); el SQL crudo vive **solo** en el `.sql` para evitar divergencia.
 
-### 6.1 Tabla `profiles` + bucket `avatars` (auth + foto de perfil)
+### 6.1 Qué incluye el script
 
-```sql
-/* ============================================================
-   TRAMYS — Esquema Supabase completo
-   Pegar tal cual en Project → SQL Editor → New query → Run
-   ============================================================ */
+- **Extensiones:** `pgcrypto`, `uuid-ossp`, `pg_cron` (para expiración de accesos).
+- **Enums:** `rol_usuario` (owner/encargado/trabajador), `estado_asist`, `estado_solicitud`, `tipo_permiso`, `tipo_evento`, `tipo_movimiento` (ingreso/gasto-personal/gasto-fijo/gasto-manual), `categoria_fijo` (luz/agua/internet/local/otro).
+- **Tablas:** `sedes`, `profiles` (1:1 con `auth.users`), `asistencia` (con `sede_id_dia` + `turno_*` para multi-sede por día), `adelantos`, `permisos`, `eventos`, `jaladores`, `ingresos_jaladores`, `accesos_temporales`, `movimientos_caja` (line items por sede — reemplaza al `caja_*` agregado), `ajustes` (singleton), `cuadres_personales` (sandbox del trabajador, RLS solo dueño), `pagos_planilla` (registro de pagos efectivamente realizados).
+- **Trigger genérico `set_updated_at`** aplicado a todas las tablas con esa columna.
+- **Trigger `on_auth_user_created`** que crea fila en `profiles` automáticamente al registrar un usuario en `auth.users`.
+- **Helpers RLS:** `current_rol()`, `is_owner()`, `is_encargado()`, `current_sede()`.
+- **Políticas RLS:** ver tabla resumen en §6.3.
+- **Storage opcional:** bucket `avatars` con políticas (alternativa al `profiles.avatar_base64`).
+- **Sin seed:** el script no inserta sedes ni usuarios — el primer owner se crea registrándose en Auth y promoviendo con `update profiles set rol='owner' where id='<uuid>';`. El resto se crea desde la UI.
+- **`pg_cron` job `tramys_expirar_accesos`:** corre cada minuto `expirar_accesos_temporales()` (restaura `rol_original` y borra accesos vencidos).
 
-/* ====== Extensiones ====== */
-create extension if not exists "pgcrypto";
-create extension if not exists "uuid-ossp";
+### 6.2 Reglas de modelado críticas
 
-/* ====== Enums ====== */
-do $$ begin
-  create type rol_usuario as enum ('owner', 'encargado', 'trabajador');
-exception when duplicate_object then null; end $$;
+- **No hay sueldo base.** Las tarifas viven en `profiles`: `tarifa_normal`, `tarifa_tardanza`, `tarifa_finsem`, `tarifa_feriado`. El sueldo se calcula como `Σ(asistencia × tarifa del día) + override_ingreso`.
+- **Multi-sede por día.** `profiles.sede_id` es la sede "habitual"; el día concreto vive en `asistencia.sede_id_dia` (override, nullable → cae al de profiles). Mismo patrón con `turno_entrada` / `turno_salida` por día.
+- **Caja por sede.** Los antiguos `caja_dia/semana/mes` de `sedes` ya **no existen** — la caja se calcula como agregado de `movimientos_caja` filtrando por `sede_id` y rango de `fecha`. Tipos: `ingreso` · `gasto-personal` (extras al sueldo automático) · `gasto-fijo` (subcategoría `luz`/`agua`/`internet`/`local`/`otro`) · `gasto-manual`.
+- **`accesos_temporales`.** El cliente escribe `rol_original` con el rol vigente del worker, aplica `rol_otorgado` en `profiles.rol`, y al expirar (cron / acción manual) restaura `rol_original`. Backstop en backend: `pg_cron` cada minuto.
+- **Singleton `ajustes`.** Una sola fila (`id = 1`), `check constraint` lo enforce. `mostrar_feriados_oficiales` es la única bandera global por ahora.
+- **`cuadres_personales` es sandbox privado.** Solo el propio worker lee y escribe sus filas (RLS `cp_self` con `worker_id = auth.uid()`). El owner **no puede leer** estos registros — es deliberado, son anotaciones personales del trabajador para comparar contra lo oficial.
+- **`pagos_planilla` registra los pagos efectivamente realizados** (no calculados). Lleva `desde_iso`/`hasta_iso` (rango cubierto), `fecha_pago`, `monto_neto`, `metodo_pago` (efectivo/yape/transferencia), `periodo` opcional (quincenal/mensual). Owner y encargado escriben; el trabajador solo lee los suyos.
 
-do $$ begin
-  create type estado_asist as enum ('presente', 'tardanza', 'ausente', 'permiso', 'feriado');
-exception when duplicate_object then null; end $$;
+### 6.3 Reglas RLS resumidas
 
-do $$ begin
-  create type estado_solicitud as enum ('pendiente', 'aprobado', 'rechazado');
-exception when duplicate_object then null; end $$;
+| Tabla | Owner | Encargado | Trabajador |
+|---|---|---|---|
+| `sedes` | RW | R | R |
+| `profiles` | RW todo | R (workers de su sede) + RW (sí mismo) | R + RW (sí mismo) |
+| `asistencia` | RW todo | RW (workers de su sede o `sede_id_dia` = su sede) | RW (suya) |
+| `adelantos` / `permisos` | RW todo | RW todo | R + INSERT (suya) |
+| `eventos` | RW | RW | R |
+| `jaladores` / `ingresos_jaladores` | RW | RW | R |
+| `accesos_temporales` | RW | R | R (suyos) |
+| `movimientos_caja` | RW todo | RW (solo su sede vía `sede_id = current_sede()`) | — |
+| `ajustes` | RW | R | R |
+| `cuadres_personales` | — | — | RW (solo suyos, sandbox privado — ni el owner los lee) |
+| `pagos_planilla` | RW todo | RW (workers de su sede) | R (suyos) |
 
-do $$ begin
-  create type tipo_permiso as enum ('personal', 'medico', 'vacaciones');
-exception when duplicate_object then null; end $$;
+### 6.4 Setup del primer owner
 
-do $$ begin
-  create type tipo_evento as enum ('cumpleanos', 'feriado-nacional', 'feriado-empresa', 'otro');
-exception when duplicate_object then null; end $$;
-
-/* ====== Trigger genérico updated_at ====== */
-create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$
-begin new.updated_at := now(); return new; end $$;
-```
-
-### 6.2 Tablas operativas
-
-```sql
-/* ============================================================
-   SEDES
-   ============================================================ */
-create table if not exists public.sedes (
-  id              uuid primary key default gen_random_uuid(),
-  nombre          text not null,
-  color           text not null default '#C41A3A',
-  direccion       text default '',
-  telefono        text default '',
-  horario         text default '',
-  encargado_id    uuid,
-  activa          boolean not null default true,
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
-);
-create index if not exists idx_sedes_activa on public.sedes(activa);
-/* Limpia campos legacy si la tabla ya existía (caja_* migrado a movimientos_caja). */
-alter table public.sedes drop column if exists caja_dia;
-alter table public.sedes drop column if exists caja_semana;
-alter table public.sedes drop column if exists caja_mes;
-
-/* ============================================================
-   PROFILES (1:1 con auth.users) — incluye perfil editable
-   ============================================================ */
-create table if not exists public.profiles (
-  id              uuid primary key references auth.users(id) on delete cascade,
-  nombre          text not null default '',
-  apodo           text default '',
-  avatar_base64   text,
-  rol             rol_usuario not null default 'trabajador',
-  sede_id         uuid references public.sedes(id) on delete set null,
-  cargo           text default '',
-  turno_entrada   text default '08:00',
-  turno_salida    text default '18:00',
-  tarifa_normal   numeric(10,2) not null default 0,
-  tarifa_tardanza numeric(10,2) not null default 0,
-  tarifa_finsem   numeric(10,2) not null default 0,
-  tarifa_feriado  numeric(10,2) not null default 0,
-  fecha_ingreso   date not null default current_date,
-  email           text,
-  dni             text,
-  telefono        text,
-  activo          boolean not null default true,
-  rol_original    rol_usuario,            /* para accesos temporales */
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
-);
-create index if not exists idx_profiles_sede   on public.profiles(sede_id);
-create index if not exists idx_profiles_rol    on public.profiles(rol);
-create index if not exists idx_profiles_activo on public.profiles(activo);
-
-/* FK diferida sedes.encargado_id → profiles(id) */
-alter table public.sedes
-  drop constraint if exists fk_sedes_encargado,
-  add  constraint fk_sedes_encargado
-       foreign key (encargado_id) references public.profiles(id) on delete set null;
-
-/* ============================================================
-   ASISTENCIA
-   ============================================================ */
-create table if not exists public.asistencia (
-  id                uuid primary key default gen_random_uuid(),
-  worker_id         uuid not null references public.profiles(id) on delete cascade,
-  fecha             date not null,
-  entrada           text,
-  salida            text,
-  estado            estado_asist not null default 'presente',
-  override_ingreso  numeric(10,2),
-  motivo_edit       text,
-  /* Multi-sede por día: si null, se usa profiles.sede_id (planta). */
-  sede_id_dia       uuid references public.sedes(id) on delete set null,
-  /* Horario esperado del día (override de profiles.turno_*). */
-  turno_entrada     text,
-  turno_salida      text,
-  created_at        timestamptz not null default now(),
-  updated_at        timestamptz not null default now(),
-  unique (worker_id, fecha)
-);
-create index if not exists idx_asist_worker   on public.asistencia(worker_id);
-create index if not exists idx_asist_fecha    on public.asistencia(fecha);
-create index if not exists idx_asist_sede_dia on public.asistencia(sede_id_dia);
-
-/* ============================================================
-   ADELANTOS
-   ============================================================ */
-create table if not exists public.adelantos (
-  id            uuid primary key default gen_random_uuid(),
-  worker_id     uuid not null references public.profiles(id) on delete cascade,
-  monto         numeric(10,2) not null,
-  motivo        text default '',
-  estado        estado_solicitud not null default 'pendiente',
-  fecha         date not null default current_date,
-  aprobado_por  uuid references public.profiles(id) on delete set null,
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
-);
-create index if not exists idx_adel_worker on public.adelantos(worker_id);
-create index if not exists idx_adel_estado on public.adelantos(estado);
-
-/* ============================================================
-   PERMISOS
-   ============================================================ */
-create table if not exists public.permisos (
-  id            uuid primary key default gen_random_uuid(),
-  worker_id     uuid not null references public.profiles(id) on delete cascade,
-  tipo          tipo_permiso not null,
-  motivo        text default '',
-  desde         date not null,
-  hasta         date not null,
-  estado        estado_solicitud not null default 'pendiente',
-  aprobado_por  uuid references public.profiles(id) on delete set null,
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
-);
-create index if not exists idx_perm_worker on public.permisos(worker_id);
-create index if not exists idx_perm_estado on public.permisos(estado);
-
-/* ============================================================
-   EVENTOS (cumpleaños, feriados empresa, otros)
-   ============================================================ */
-create table if not exists public.eventos (
-  id          uuid primary key default gen_random_uuid(),
-  nombre      text not null,
-  tipo        tipo_evento not null default 'otro',
-  fecha       date not null,
-  descripcion text default '',
-  worker_id   uuid references public.profiles(id) on delete set null,
-  sede_id     uuid references public.sedes(id) on delete set null,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
-);
-create index if not exists idx_eventos_fecha on public.eventos(fecha);
-create index if not exists idx_eventos_tipo  on public.eventos(tipo);
-
-/* ============================================================
-   JALADORES + INGRESOS (comisiones)
-   ============================================================ */
-create table if not exists public.jaladores (
-  id                   uuid primary key default gen_random_uuid(),
-  nombre               text not null,
-  apodo                text default '',
-  telefono             text default '',
-  porcentaje_comision  numeric(5,2) not null default 10,
-  sede_id              uuid references public.sedes(id) on delete set null,
-  activo               boolean not null default true,
-  fecha_ingreso        date not null default current_date,
-  avatar_base64        text,
-  created_at           timestamptz not null default now(),
-  updated_at           timestamptz not null default now()
-);
-create index if not exists idx_jal_activo on public.jaladores(activo);
-
-create table if not exists public.ingresos_jaladores (
-  id          uuid primary key default gen_random_uuid(),
-  jalador_id  uuid not null references public.jaladores(id) on delete cascade,
-  fecha       date not null default current_date,
-  monto       numeric(10,2) not null,
-  nota        text default '',
-  created_at  timestamptz not null default now()
-);
-create index if not exists idx_ij_jalador on public.ingresos_jaladores(jalador_id);
-create index if not exists idx_ij_fecha   on public.ingresos_jaladores(fecha);
-
-/* ============================================================
-   ACCESOS TEMPORALES (impersonación con caducidad)
-   ============================================================ */
-create table if not exists public.accesos_temporales (
-  id              uuid primary key default gen_random_uuid(),
-  worker_id       uuid not null references public.profiles(id) on delete cascade,
-  rol_otorgado    rol_usuario not null,
-  rol_original    rol_usuario not null,
-  motivo          text default '',
-  desde           timestamptz not null default now(),
-  hasta           timestamptz not null,
-  creado_por      uuid references public.profiles(id) on delete set null,
-  created_at      timestamptz not null default now()
-);
-create index if not exists idx_at_worker on public.accesos_temporales(worker_id);
-create index if not exists idx_at_hasta  on public.accesos_temporales(hasta);
-
-/* ============================================================
-   MOVIMIENTOS DE CAJA (line items por sede)
-   Reemplaza al agregado caja_* del modelo anterior. Permite
-   distinguir ingresos, gasto-personal (sueldos extra al cálculo
-   automático de planilla), gasto-fijo (luz/agua/internet/local…)
-   y gasto-manual.
-   ============================================================ */
-do $$ begin
-  create type tipo_movimiento as enum ('ingreso','gasto-personal','gasto-fijo','gasto-manual');
-exception when duplicate_object then null; end $$;
-
-do $$ begin
-  create type categoria_fijo as enum ('luz','agua','internet','local','otro');
-exception when duplicate_object then null; end $$;
-
-create table if not exists public.movimientos_caja (
-  id              uuid primary key default gen_random_uuid(),
-  sede_id         uuid not null references public.sedes(id) on delete cascade,
-  fecha           date not null,
-  tipo            tipo_movimiento not null,
-  monto           numeric(12,2) not null check (monto >= 0),
-  /* Para `ingreso`: descomposición opcional cantidad × unitario. */
-  cantidad        numeric(10,2),
-  unitario        numeric(12,2),
-  /* Para `gasto-fijo`: subcategoría. */
-  categoria       categoria_fijo,
-  concepto        text not null default '',
-  registrado_por  uuid references public.profiles(id) on delete set null,
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
-);
-create index if not exists idx_mc_sede   on public.movimientos_caja(sede_id);
-create index if not exists idx_mc_fecha  on public.movimientos_caja(fecha);
-create index if not exists idx_mc_tipo   on public.movimientos_caja(tipo);
-
-/* ============================================================
-   AJUSTES GLOBALES (1 sola fila — singleton)
-   ============================================================ */
-create table if not exists public.ajustes (
-  id                            int primary key default 1,
-  mostrar_feriados_oficiales    boolean not null default true,
-  updated_at                    timestamptz not null default now(),
-  constraint ajustes_singleton check (id = 1)
-);
-insert into public.ajustes (id) values (1) on conflict (id) do nothing;
-```
-
-### 6.3 Triggers `updated_at`
+Después de correr el `.sql` y registrar el primer usuario por Supabase Auth:
 
 ```sql
-do $$
-declare t text;
-begin
-  foreach t in array array[
-    'sedes','profiles','asistencia','adelantos','permisos',
-    'eventos','jaladores','accesos_temporales','movimientos_caja','ajustes'
-  ] loop
-    execute format(
-      'drop trigger if exists trg_%1$s_updated on public.%1$s;
-       create trigger trg_%1$s_updated
-         before update on public.%1$s
-         for each row execute function public.set_updated_at();',
-      t
-    );
-  end loop;
-end $$;
+update public.profiles set rol = 'owner' where id = '<uuid-del-user>';
 ```
 
-### 6.4 Auto-creación de `profiles` al registrar un usuario en `auth.users`
-
-```sql
-create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer as $$
-begin
-  insert into public.profiles (id, email, nombre)
-  values (new.id, new.email, coalesce(new.raw_user_meta_data->>'nombre', ''))
-  on conflict (id) do nothing;
-  return new;
-end $$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
-```
-
-### 6.5 Helpers de RLS (rol del usuario actual)
-
-```sql
-create or replace function public.current_rol()
-returns rol_usuario language sql stable as $$
-  select rol from public.profiles where id = auth.uid();
-$$;
-
-create or replace function public.is_owner()
-returns boolean language sql stable as $$
-  select coalesce(public.current_rol() = 'owner', false);
-$$;
-
-create or replace function public.is_encargado()
-returns boolean language sql stable as $$
-  select coalesce(public.current_rol() = 'encargado', false);
-$$;
-
-create or replace function public.current_sede()
-returns uuid language sql stable as $$
-  select sede_id from public.profiles where id = auth.uid();
-$$;
-```
-
-### 6.6 RLS — habilitar y crear políticas
-
-```sql
-/* Habilitar RLS en todas las tablas */
-alter table public.sedes               enable row level security;
-alter table public.profiles            enable row level security;
-alter table public.asistencia          enable row level security;
-alter table public.adelantos           enable row level security;
-alter table public.permisos            enable row level security;
-alter table public.eventos             enable row level security;
-alter table public.jaladores           enable row level security;
-alter table public.ingresos_jaladores  enable row level security;
-alter table public.accesos_temporales  enable row level security;
-alter table public.ajustes             enable row level security;
-
-/* ====== SEDES ====== */
-drop policy if exists sedes_read     on public.sedes;
-drop policy if exists sedes_write    on public.sedes;
-create policy sedes_read  on public.sedes for select using (auth.uid() is not null);
-create policy sedes_write on public.sedes for all
-  using (public.is_owner()) with check (public.is_owner());
-
-/* ====== PROFILES ====== */
-drop policy if exists profiles_self        on public.profiles;
-drop policy if exists profiles_read_team   on public.profiles;
-drop policy if exists profiles_owner_all   on public.profiles;
-drop policy if exists profiles_self_update on public.profiles;
-create policy profiles_self        on public.profiles for select using (id = auth.uid());
-create policy profiles_read_team   on public.profiles for select using (
-  public.is_owner()
-  or (public.is_encargado() and sede_id = public.current_sede())
-);
-create policy profiles_self_update on public.profiles for update
-  using (id = auth.uid()) with check (id = auth.uid());
-create policy profiles_owner_all   on public.profiles for all
-  using (public.is_owner()) with check (public.is_owner());
-
-/* ====== ASISTENCIA ====== */
-drop policy if exists asist_self      on public.asistencia;
-drop policy if exists asist_team_read on public.asistencia;
-drop policy if exists asist_admin     on public.asistencia;
-create policy asist_self      on public.asistencia for all
-  using (worker_id = auth.uid()) with check (worker_id = auth.uid());
-create policy asist_team_read on public.asistencia for select using (
-  public.is_owner()
-  or (public.is_encargado() and exists (
-        select 1 from public.profiles p
-        where p.id = asistencia.worker_id and p.sede_id = public.current_sede()))
-);
-create policy asist_admin     on public.asistencia for all
-  using (public.is_owner() or public.is_encargado())
-  with check (public.is_owner() or public.is_encargado());
-
-/* ====== ADELANTOS ====== */
-drop policy if exists adel_self  on public.adelantos;
-drop policy if exists adel_admin on public.adelantos;
-create policy adel_self  on public.adelantos for select using (worker_id = auth.uid());
-create policy adel_self_insert on public.adelantos for insert
-  with check (worker_id = auth.uid());
-create policy adel_admin on public.adelantos for all
-  using (public.is_owner() or public.is_encargado())
-  with check (public.is_owner() or public.is_encargado());
-
-/* ====== PERMISOS ====== */
-drop policy if exists perm_self  on public.permisos;
-drop policy if exists perm_admin on public.permisos;
-create policy perm_self  on public.permisos for select using (worker_id = auth.uid());
-create policy perm_self_insert on public.permisos for insert
-  with check (worker_id = auth.uid());
-create policy perm_admin on public.permisos for all
-  using (public.is_owner() or public.is_encargado())
-  with check (public.is_owner() or public.is_encargado());
-
-/* ====== EVENTOS ====== */
-drop policy if exists ev_read  on public.eventos;
-drop policy if exists ev_write on public.eventos;
-create policy ev_read  on public.eventos for select using (auth.uid() is not null);
-create policy ev_write on public.eventos for all
-  using (public.is_owner() or public.is_encargado())
-  with check (public.is_owner() or public.is_encargado());
-
-/* ====== JALADORES + INGRESOS ====== */
-drop policy if exists jal_read   on public.jaladores;
-drop policy if exists jal_write  on public.jaladores;
-drop policy if exists ij_read    on public.ingresos_jaladores;
-drop policy if exists ij_write   on public.ingresos_jaladores;
-create policy jal_read  on public.jaladores for select using (auth.uid() is not null);
-create policy jal_write on public.jaladores for all
-  using (public.is_owner() or public.is_encargado())
-  with check (public.is_owner() or public.is_encargado());
-create policy ij_read   on public.ingresos_jaladores for select using (auth.uid() is not null);
-create policy ij_write  on public.ingresos_jaladores for all
-  using (public.is_owner() or public.is_encargado())
-  with check (public.is_owner() or public.is_encargado());
-
-/* ====== ACCESOS TEMPORALES ====== */
-drop policy if exists at_read  on public.accesos_temporales;
-drop policy if exists at_write on public.accesos_temporales;
-create policy at_read  on public.accesos_temporales for select using (
-  public.is_owner() or public.is_encargado() or worker_id = auth.uid()
-);
-create policy at_write on public.accesos_temporales for all
-  using (public.is_owner()) with check (public.is_owner());
-
-/* ====== MOVIMIENTOS DE CAJA ======
-   Owner: todo. Encargado: solo movimientos de SU sede. Trabajador: nada. */
-alter table public.movimientos_caja enable row level security;
-drop policy if exists mc_owner_all      on public.movimientos_caja;
-drop policy if exists mc_enc_read       on public.movimientos_caja;
-drop policy if exists mc_enc_insert     on public.movimientos_caja;
-drop policy if exists mc_enc_update     on public.movimientos_caja;
-drop policy if exists mc_enc_delete     on public.movimientos_caja;
-create policy mc_owner_all on public.movimientos_caja for all
-  using (public.is_owner()) with check (public.is_owner());
-create policy mc_enc_read on public.movimientos_caja for select
-  using (public.is_encargado() and sede_id = public.current_sede());
-create policy mc_enc_insert on public.movimientos_caja for insert
-  with check (public.is_encargado() and sede_id = public.current_sede());
-create policy mc_enc_update on public.movimientos_caja for update
-  using (public.is_encargado() and sede_id = public.current_sede())
-  with check (public.is_encargado() and sede_id = public.current_sede());
-create policy mc_enc_delete on public.movimientos_caja for delete
-  using (public.is_encargado() and sede_id = public.current_sede());
-
-/* ====== AJUSTES (solo owner edita; todos leen) ====== */
-drop policy if exists aj_read  on public.ajustes;
-drop policy if exists aj_write on public.ajustes;
-create policy aj_read  on public.ajustes for select using (auth.uid() is not null);
-create policy aj_write on public.ajustes for all
-  using (public.is_owner()) with check (public.is_owner());
-```
-
-### 6.7 Storage para fotos (opcional — el modo demo usa base64)
-
-```sql
-/* Bucket público "avatars". Si prefieres mantener base64 en profiles.avatar_base64,
-   puedes omitir esta sección entera. */
-insert into storage.buckets (id, name, public)
-values ('avatars', 'avatars', true)
-on conflict (id) do nothing;
-
-drop policy if exists "avatars_read"   on storage.objects;
-drop policy if exists "avatars_upload" on storage.objects;
-drop policy if exists "avatars_update" on storage.objects;
-drop policy if exists "avatars_delete" on storage.objects;
-create policy "avatars_read"   on storage.objects for select  using (bucket_id = 'avatars');
-create policy "avatars_upload" on storage.objects for insert  with check (
-  bucket_id = 'avatars' and auth.role() = 'authenticated'
-);
-create policy "avatars_update" on storage.objects for update  using (
-  bucket_id = 'avatars' and auth.uid() = (storage.foldername(name))[1]::uuid
-);
-create policy "avatars_delete" on storage.objects for delete  using (
-  bucket_id = 'avatars' and auth.uid() = (storage.foldername(name))[1]::uuid
-);
-```
-
-### 6.8 Seed mínimo para empezar (opcional)
-
-```sql
-/* Inserta 2 sedes de ejemplo. Ajusta IDs/nombres según tu negocio. */
-insert into public.sedes (nombre, color, direccion, telefono, horario)
-values
-  ('Santa Anita', '#C41A3A', 'Av. Los Eucaliptos 123', '+51 999 111 222', 'L-D 8:00-22:00'),
-  ('Lima',        '#6366f1', 'Jr. de la Unión 456',    '+51 999 333 444', 'L-S 9:00-21:00')
-on conflict do nothing;
-```
-
-### 6.9 Notas de aplicación
-
-- **Crear el primer owner manualmente:** registra un usuario por Auth → ejecuta `update public.profiles set rol = 'owner' where id = '<uuid>';`.
-- Las **tarifas viven en `profiles`** (no hay sueldo base): `tarifa_normal`, `tarifa_tardanza`, `tarifa_finsem`, `tarifa_feriado`.
-- **Caja por sede:** los antiguos campos `caja_dia/semana/mes` de `sedes` ya no existen. La caja se calcula como agregado de `movimientos_caja` filtrando por `sede_id` y rango de `fecha`. El owner ve y registra movimientos en cualquier sede; el encargado solo en la suya (`sede_id = current_sede()` por RLS). Tipos: `ingreso` · `gasto-personal` (extras al sueldo automático) · `gasto-fijo` (categoría `luz`/`agua`/`internet`/`local`/`otro`) · `gasto-manual`.
-- `accesos_temporales`: el cliente debe escribir `rol_original` con el rol vigente del worker, aplicar `rol_otorgado` en `profiles.rol`, y al expirar (cron / acción manual) restaurar `rol_original`. La vista `Accesos` ya implementa este flujo en localStorage; al migrar a Supabase, replicar la misma lógica con un `update profiles set rol = at.rol_original ...`.
-- Si decides **no usar el bucket `avatars`**, deja `profiles.avatar_base64` y guarda la imagen en base64 (igual que el modo demo actual).
-
-### 6.10 Caducidad de accesos temporales en backend (pg_cron)
-
-```sql
-/* Requiere la extensión pg_cron habilitada en el proyecto Supabase
-   (Database → Extensions → pg_cron). */
-create extension if not exists pg_cron;
-
-create or replace function public.expirar_accesos_temporales()
-returns void language plpgsql security definer as $$
-begin
-  /* Restaura el rol original a todos los workers cuyo acceso ya venció */
-  update public.profiles p
-     set rol          = at.rol_original,
-         rol_original = null
-    from public.accesos_temporales at
-   where at.worker_id = p.id
-     and at.hasta    <= now();
-
-  /* Elimina los accesos vencidos */
-  delete from public.accesos_temporales where hasta <= now();
-end $$;
-
-/* Programa la ejecución cada minuto */
-select cron.schedule(
-  'tramys_expirar_accesos',
-  '* * * * *',
-  $$ select public.expirar_accesos_temporales(); $$
-);
-```
-
-### 6.11 Toggle de backend en la app
+### 6.5 Toggle de backend (env vars)
 
 ```bash
 # .env.local
@@ -738,8 +240,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
 NEXT_PUBLIC_USE_SUPABASE=true   # activa providers Supabase + Realtime
 ```
 
-- Sin la flag (o `false`), la app funciona en modo demo con `localStorage` (los providers locales originales).
-- Con `true`, se activan `DataProviderSupabase` + `SessionProviderSupabase`, suscripciones Realtime y sincronización de email/contraseña/avatar contra Supabase Auth + Storage.
+- Sin la flag (o `false`), la app funciona en modo demo contra `localStorage` (providers locales originales).
+- Con `true`, se activan `DataProviderSupabase` + `SessionProviderSupabase`, suscripciones Realtime en todo `public` y sync con Supabase Auth + Storage.
 
 ---
 

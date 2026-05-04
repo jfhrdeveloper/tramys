@@ -7,10 +7,10 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { MultiverseCalendar } from "@/components/ui/MultiverseCalendar";
 import { HideableAmount } from "@/components/ui/HideableAmount";
-import { money } from "@/lib/utils/formatters";
+import { money, formatFecha } from "@/lib/utils/formatters";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
 import {
-  useData, ingresoDia, isWeekendISO, sedeDelDia, turnoDelDia,
+  useData, ingresoDia, isWeekendISO, sedeDelDia, turnoDelDia, pagoQueCubre,
   type AsistenciaRec,
 } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
@@ -34,34 +34,55 @@ export default function MiAsistenciaPage() {
   function isoFor(day: number) {
     return `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
   }
-  function getDayData(day: number) {
+
+  /* ===== Tab "Cuadrar días" — sandbox personal del trabajador =====
+     Lee y escribe SOLO en `d.cuadresPersonales`. No toca la asistencia oficial.
+     El indicador de comparación (coincide / ≠ / sin oficial) se renderiza en el
+     componente del calendario via getDayData → pintamos colores extras. */
+  function getCuadreDayData(day: number) {
     if (!worker) return { worked: false, late: false };
     const iso = isoFor(day);
-    const rec = d.getAsistencia(worker.id, iso);
+    const cp  = d.getCuadrePersonal(worker.id, iso);
     return {
-      worked: rec ? (rec.estado === "presente" || rec.estado === "tardanza") : false,
-      late: rec?.estado === "tardanza",
-      override: rec?.overrideIngreso ?? null,
-      vacaciones: esVacaciones(rec ?? undefined),
+      worked: !!cp?.worked,
+      late: !!cp?.late,
+      override: null,
+      vacaciones: false,
+      /* `pagado` no aplica en sandbox personal. */
     };
   }
-  function toggleWorked(day: number) {
+  function toggleWorkedSandbox(day: number) {
     if (!worker) return;
     const iso = isoFor(day);
-    const rec = d.getAsistencia(worker.id, iso);
-    const workedNow = rec ? (rec.estado === "presente" || rec.estado === "tardanza") : false;
-    if (workedNow) {
-      d.setAsistencia(worker.id, iso, { estado:"ausente", entrada:null, salida:null });
-    } else {
-      d.setAsistencia(worker.id, iso, { estado:"presente", entrada: worker.turno.entrada, salida: worker.turno.salida });
-    }
+    const cp  = d.getCuadrePersonal(worker.id, iso);
+    const next = !cp?.worked;
+    /* Si destildamos worked, also reset late. */
+    d.setCuadrePersonal(worker.id, iso, { worked: next, late: next ? !!cp?.late : false });
   }
-  function toggleLate(day: number) {
+  function toggleLateSandbox(day: number) {
     if (!worker) return;
     const iso = isoFor(day);
+    const cp  = d.getCuadrePersonal(worker.id, iso);
+    if (!cp?.worked) return;
+    d.setCuadrePersonal(worker.id, iso, { late: !cp.late });
+  }
+
+  /* ===== Diferencias cuadre vs oficial ===== */
+  type DiffKind = "coincide" | "difiere" | "soloMia" | "soloOficial" | "vacio";
+  function diffDia(day: number): DiffKind {
+    if (!worker) return "vacio";
+    const iso = isoFor(day);
+    const cp  = d.getCuadrePersonal(worker.id, iso);
     const rec = d.getAsistencia(worker.id, iso);
-    if (!rec) return;
-    d.setAsistencia(worker.id, iso, { estado: rec.estado === "tardanza" ? "presente" : "tardanza" });
+    const oficialWorked = rec ? (rec.estado === "presente" || rec.estado === "tardanza") : false;
+    const oficialLate   = rec?.estado === "tardanza";
+    const miaTouched    = !!cp;
+    const oficialTouched = !!rec;
+    if (!miaTouched && !oficialTouched) return "vacio";
+    if (miaTouched && !oficialTouched)  return "soloMia";
+    if (!miaTouched && oficialTouched)  return "soloOficial";
+    /* ambos tienen registro: comparar */
+    return (cp!.worked === oficialWorked && cp!.late === oficialLate) ? "coincide" : "difiere";
   }
   function cambiarMes(dir: -1 | 1) {
     setMonth(m => {
@@ -95,6 +116,26 @@ export default function MiAsistenciaPage() {
     return { resumen: { normal, tardanza, finSem, feriado, total }, historial: hist };
   }, [d.asistencia, worker, year, month]);
 
+  /* Resumen "posible ganancia" basado en el cuadre personal del trabajador.
+     A diferencia de `resumen` (oficial), este recorre `cuadresPersonales`. */
+  const cuadreResumen = useMemo(() => {
+    const base = { normal: 0, tardanza: 0, finSem: 0, feriado: 0, total: 0 };
+    if (!worker) return base;
+    const daysInMonth = new Date(year, month+1, 0).getDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      const iso = isoFor(day);
+      const cp  = d.cuadresPersonales.find(c => c.workerId === worker.id && c.fecha === iso);
+      if (!cp?.worked) continue;
+      const esFer = esFeriadoOficial(iso).es;
+      const esFds = isWeekendISO(iso);
+      if (esFer)        { base.feriado++;  base.total += worker.tarifas.feriado; }
+      else if (esFds)   { base.finSem++;   base.total += worker.tarifas.finSemana; }
+      else if (cp.late) { base.tardanza++; base.total += worker.tarifas.tardanza; }
+      else              { base.normal++;   base.total += worker.tarifas.diaNormal; }
+    }
+    return base;
+  }, [d.cuadresPersonales, worker, year, month]);
+
   const pagHist = usePagination(historial);
 
   if (!worker) {
@@ -115,7 +156,7 @@ export default function MiAsistenciaPage() {
         <div style={{ display:"flex", gap: 4, background:"var(--card)", border:"1px solid var(--border)", borderRadius: 10, padding: 3, marginBottom: 14, width:"fit-content" }}>
           {([
             { id:"multiverse" as Panel,  label:"Cuadrar días", icon:"check" },
-            { id:"calendario" as Panel,  label:"Calendario",   icon:"calendar" },
+            { id:"calendario" as Panel,  label:"Calendario oficial", icon:"calendar" },
             { id:"general" as Panel,     label:"Historial",    icon:"asistencia" },
           ]).map(t => (
             <button key={t.id} onClick={()=>setPanel(t.id)}
@@ -163,14 +204,37 @@ export default function MiAsistenciaPage() {
         {panel === "multiverse" && (
           <div className="grid-2-lg" style={{ alignItems:"start" }}>
             <div className="card">
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
-                Marca tus días
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+                Mi cuadre personal
               </div>
+              <div style={{ fontSize: 11, color:"var(--text-muted)", marginBottom: 10 }}>
+                Tu hoja personal — solo tú la ves. Compárala con la pestaña <strong>Calendario</strong> (lo oficial). Si difiere, habla con tu encargado.
+              </div>
+
+              {/* Leyenda de comparación */}
+              <div style={{ display:"flex", gap: 10, flexWrap:"wrap", marginBottom: 10 }}>
+                {[
+                  { label:"✓ coincide", bg:"rgba(34,197,94,0.16)", fg:"#16a34a" },
+                  { label:"≠ oficial",  bg:"rgba(196,26,58,0.14)", fg:"var(--brand)" },
+                  { label:"sin oficial",bg:"rgba(156,163,175,0.18)", fg:"var(--text-muted)" },
+                ].map(l => (
+                  <span key={l.label} style={{
+                    fontSize: 9.5, fontWeight: 700, fontFamily:"'DM Mono',monospace",
+                    padding:"3px 8px", borderRadius: 99,
+                    background: l.bg, color: l.fg, letterSpacing: .3,
+                  }}>{l.label}</span>
+                ))}
+              </div>
+
               <MultiverseCalendar
                 year={year} month={month}
-                getDayData={getDayData}
-                onToggleWorked={toggleWorked}
-                onToggleLate={toggleLate}
+                getDayData={(day) => {
+                  const k = diffDia(day);
+                  const compare = k === "vacio" ? undefined : k;
+                  return { ...getCuadreDayData(day), compare };
+                }}
+                onToggleWorked={toggleWorkedSandbox}
+                onToggleLate={toggleLateSandbox}
                 isHoliday={(day) => esFeriadoOficial(isoFor(day)).es}
               />
             </div>
@@ -194,13 +258,16 @@ export default function MiAsistenciaPage() {
               </div>
 
               <div className="card">
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Resumen del mes</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Mi cuadre estimado</div>
+                <div style={{ fontSize: 11, color:"var(--text-muted)", marginBottom: 10 }}>
+                  Estimación basada en lo que marcaste en tu cuadre personal — no es lo oficial.
+                </div>
                 <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
                   {[
-                    { k:"Día normal",   n: resumen.normal,   t: worker.tarifas.diaNormal, color:"#16a34a" },
-                    { k:"Tardanza",     n: resumen.tardanza, t: worker.tarifas.tardanza,   color:"#f59e0b" },
-                    { k:"Fin de semana",n: resumen.finSem,   t: worker.tarifas.finSemana,  color:"#6366f1" },
-                    { k:"Feriado",      n: resumen.feriado,  t: worker.tarifas.feriado,    color:"var(--brand)" },
+                    { k:"Día normal",   n: cuadreResumen.normal,   t: worker.tarifas.diaNormal, color:"#16a34a" },
+                    { k:"Tardanza",     n: cuadreResumen.tardanza, t: worker.tarifas.tardanza,   color:"#f59e0b" },
+                    { k:"Fin de semana",n: cuadreResumen.finSem,   t: worker.tarifas.finSemana,  color:"#6366f1" },
+                    { k:"Feriado",      n: cuadreResumen.feriado,  t: worker.tarifas.feriado,    color:"var(--brand)" },
                   ].map(r => (
                     <div key={r.k} style={{ display:"flex", justifyContent:"space-between", padding:"8px 10px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 8 }}>
                       <span style={{ fontSize: 12 }}>{r.k}</span>
@@ -212,8 +279,8 @@ export default function MiAsistenciaPage() {
                   ))}
                 </div>
                 <div style={{ marginTop: 12, padding: 14, background:"rgba(34,197,94,0.08)", border:"1px solid rgba(34,197,94,0.3)", borderRadius: 10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <span style={{ fontWeight: 700, color:"#16a34a" }}>Total estimado</span>
-                  <HideableAmount value={money(resumen.total)} size={20} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
+                  <span style={{ fontWeight: 700, color:"#16a34a" }}>Posible ganancia</span>
+                  <HideableAmount value={money(cuadreResumen.total)} size={20} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
                 </div>
               </div>
             </div>
@@ -221,10 +288,48 @@ export default function MiAsistenciaPage() {
         )}
 
         {panel === "calendario" && (
+          <div className="grid-2-lg" style={{ alignItems:"start" }}>
           <div className="card" style={{ padding: "14px 18px" }}>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
               Lo que se ha registrado
             </div>
+            <div style={{ fontSize: 11, color:"var(--text-muted)", marginBottom: 10 }}>
+              Vista oficial. Esto es lo que el owner/encargado ha registrado en tu asistencia.
+            </div>
+
+            {/* Cintillo: pagos que tocan el mes visible */}
+            {(() => {
+              const desdeMes = `${year}-${String(month+1).padStart(2,"0")}-01`;
+              const finMes   = `${year}-${String(month+1).padStart(2,"0")}-${String(new Date(year, month+1, 0).getDate()).padStart(2,"0")}`;
+              const pagosMes = d.pagosPlanilla.filter(p =>
+                p.workerId === worker.id && !(p.hastaISO < desdeMes || p.desdeISO > finMes),
+              );
+              if (pagosMes.length === 0) return null;
+              return (
+                <div style={{
+                  display:"flex", alignItems:"flex-start", gap: 10,
+                  padding:"10px 12px", marginBottom: 12,
+                  background:"rgba(34,197,94,0.08)",
+                  border:"1px solid rgba(34,197,94,0.3)",
+                  borderRadius: 9,
+                  flexWrap:"wrap",
+                }}>
+                  <Icon name="check_circle" size={15} color="#16a34a" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, color:"#16a34a", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6 }}>
+                      Pagos recibidos en este mes
+                    </div>
+                    <div style={{ fontSize: 11.5, color:"var(--text)", marginTop: 3, display:"flex", flexDirection:"column", gap: 2 }}>
+                      {pagosMes.map(p => (
+                        <span key={p.id} style={{ fontFamily:"'DM Mono',monospace" }}>
+                          {formatFecha(p.desdeISO)} → {formatFecha(p.hastaISO)} · {money(p.montoNeto)} · {p.metodoPago}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="cal-grid" style={{ marginBottom: 6 }}>
               {WEEKDAYS.map(w => (
                 <div key={w} style={{ textAlign:"center", fontSize: 10, fontWeight: 700, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .8, padding:"4px 0" }}>{w}</div>
@@ -313,6 +418,54 @@ export default function MiAsistenciaPage() {
                 <span style={{ fontWeight: 800 }}>⇄</span> Visita a otra sede
               </span>
             </div>
+          </div>
+
+          {/* Panel derecho: Mis tarifas + Resumen oficial del mes */}
+          <div style={{ display:"flex", flexDirection:"column", gap: 12 }}>
+            <div className="card">
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Mis tarifas</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 8 }}>
+                {[
+                  { k:"Día normal", v: worker.tarifas.diaNormal, color:"#16a34a" },
+                  { k:"Tardanza",   v: worker.tarifas.tardanza,   color:"#f59e0b" },
+                  { k:"Fin semana", v: worker.tarifas.finSemana,  color:"#6366f1" },
+                  { k:"Feriado",    v: worker.tarifas.feriado,    color:"var(--brand)" },
+                ].map(r => (
+                  <div key={r.k} style={{ padding: 10, background:"var(--bg)", border:"1px solid var(--border)", borderLeft: `4px solid ${r.color}`, borderRadius: 8 }}>
+                    <div style={{ fontSize: 10, color:"var(--text-muted)", textTransform:"uppercase" }}>{r.k}</div>
+                    <HideableAmount value={money(r.v)} size={14} color={r.color} weight={800} fontFamily="'DM Mono',monospace" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="card">
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Resumen oficial del mes</div>
+              <div style={{ fontSize: 11, color:"var(--text-muted)", marginBottom: 10 }}>
+                Calculado desde lo que el owner/encargado registró en tu asistencia.
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap: 8 }}>
+                {[
+                  { k:"Día normal",   n: resumen.normal,   t: worker.tarifas.diaNormal, color:"#16a34a" },
+                  { k:"Tardanza",     n: resumen.tardanza, t: worker.tarifas.tardanza,   color:"#f59e0b" },
+                  { k:"Fin de semana",n: resumen.finSem,   t: worker.tarifas.finSemana,  color:"#6366f1" },
+                  { k:"Feriado",      n: resumen.feriado,  t: worker.tarifas.feriado,    color:"var(--brand)" },
+                ].map(r => (
+                  <div key={r.k} style={{ display:"flex", justifyContent:"space-between", padding:"8px 10px", background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 8 }}>
+                    <span style={{ fontSize: 12 }}>{r.k}</span>
+                    <span style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>
+                      <span style={{ fontWeight: 700, color: r.color }}>{r.n}</span>
+                      <span style={{ color:"var(--text-muted)" }}> × {money(r.t)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 12, padding: 14, background:"rgba(34,197,94,0.08)", border:"1px solid rgba(34,197,94,0.3)", borderRadius: 10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <span style={{ fontWeight: 700, color:"#16a34a" }}>Total oficial</span>
+                <HideableAmount value={money(resumen.total)} size={20} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
+              </div>
+            </div>
+          </div>
           </div>
         )}
 

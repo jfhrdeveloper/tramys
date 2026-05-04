@@ -16,6 +16,7 @@ import { useSession } from "@/components/providers/SessionProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { esVacaciones, estiloEstado } from "@/lib/constants/estados";
+import { formatFecha } from "@/lib/utils/formatters";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WEEKDAYS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -187,6 +188,10 @@ export default function AsistenciaPage() {
   const [modalAdd, setModalAdd]   = useState<{ iso: string } | null>(null);
   const [addTipo, setAddTipo]     = useState<"trabajador" | "jalador">("trabajador");
   const [addPersonId, setAddPersonId] = useState<string>("");
+  /* Sub-panel de verificación (Opción B). */
+  const [verifOpen, setVerifOpen]       = useState(true);
+  const [verifSoloPend, setVerifSoloPend] = useState(true);
+  const [verifDias, setVerifDias]       = useState<7 | 14 | 30>(7);
 
   /* Encargado: scope reducido a su sede. Acepta workers de planta de su sede
      O cualquier worker que tenga al menos un registro con sedeIdDia = su sede
@@ -258,6 +263,165 @@ export default function AsistenciaPage() {
     <>
       <Topbar title="Asistencia" subtitle={`${MESES[month]} ${year}`} />
       <main className="page-main animate-fade-in">
+
+        {/* ====== Sub-panel: marcaciones del trabajador (verificación laxa) ====== */}
+        {(() => {
+          /* Universo: registros donde marcadoPor === "trabajador", dentro del
+             scope del actor (encargado = su sede; owner = todas) y dentro de
+             la ventana de N días configurada. */
+          const hoy = new Date(); hoy.setHours(0,0,0,0);
+          const desde = new Date(hoy); desde.setDate(hoy.getDate() - verifDias + 1);
+          const desdeISO = desde.toISOString().slice(0,10);
+          const recs = d.asistencia
+            .filter(a => a.marcadoPor === "trabajador")
+            .filter(a => a.fecha >= desdeISO)
+            .filter(a => {
+              if (!isEnc) return true;
+              const w = d.workers.find(x => x.id === a.workerId);
+              if (!w) return false;
+              return w.sedeId === sedeActor?.id || a.sedeIdDia === sedeActor?.id;
+            })
+            .filter(a => filtroSede === "todas" || (() => {
+              const w = d.workers.find(x => x.id === a.workerId);
+              return w?.sedeId === filtroSede || a.sedeIdDia === filtroSede;
+            })());
+          const pendientes = recs.filter(a => !a.verificadoPor);
+          const visible = (verifSoloPend ? pendientes : recs).slice().sort((a,b) => b.fecha.localeCompare(a.fecha));
+
+          return (
+            <div className="card" style={{ padding: 0, marginBottom: 14, overflow:"hidden", borderColor: pendientes.length > 0 ? "rgba(245,158,11,0.4)" : undefined }}>
+              <button
+                onClick={()=>setVerifOpen(v => !v)}
+                style={{
+                  width:"100%", display:"flex", alignItems:"center", gap: 10,
+                  padding:"12px 16px", background: pendientes.length > 0 ? "rgba(245,158,11,0.08)" : "var(--bg)",
+                  border:"none", borderBottom: verifOpen ? "1px solid var(--border)" : "none",
+                  cursor:"pointer", textAlign:"left",
+                }}
+              >
+                <Icon name={pendientes.length > 0 ? "alert_circle" : "check_circle"} size={18} color={pendientes.length > 0 ? "#d97706" : "#16a34a"} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>
+                    Marcaciones del trabajador
+                  </div>
+                  <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
+                    {pendientes.length} pendiente{pendientes.length === 1 ? "" : "s"} de verificar · {recs.length - pendientes.length} verificadas (últimos {verifDias} días)
+                  </div>
+                </div>
+                <span style={{ display:"inline-flex", transition:"transform 0.2s", transform: verifOpen ? "rotate(0deg)" : "rotate(-90deg)" }}>
+                  <Icon name="chevron_down" size={14} />
+                </span>
+              </button>
+
+              {verifOpen && (
+                <div style={{ padding: 14 }}>
+                  {/* Filtros del sub-panel */}
+                  <div style={{ display:"flex", gap: 8, alignItems:"center", marginBottom: 12, flexWrap:"wrap" }}>
+                    <button onClick={()=>setVerifSoloPend(true)}
+                      style={{
+                        padding:"5px 11px", borderRadius: 99, cursor:"pointer", fontSize: 11,
+                        border: `1px solid ${verifSoloPend ? "#d97706" : "var(--border)"}`,
+                        background: verifSoloPend ? "rgba(245,158,11,0.10)" : "var(--bg)",
+                        color: verifSoloPend ? "#d97706" : "var(--text-muted)",
+                        fontWeight: verifSoloPend ? 700 : 500,
+                      }}>Solo pendientes</button>
+                    <button onClick={()=>setVerifSoloPend(false)}
+                      style={{
+                        padding:"5px 11px", borderRadius: 99, cursor:"pointer", fontSize: 11,
+                        border: `1px solid ${!verifSoloPend ? "var(--brand)" : "var(--border)"}`,
+                        background: !verifSoloPend ? "rgba(196,26,58,0.08)" : "var(--bg)",
+                        color: !verifSoloPend ? "var(--brand)" : "var(--text-muted)",
+                        fontWeight: !verifSoloPend ? 700 : 500,
+                      }}>Todas</button>
+                    <div style={{ marginLeft: "auto", display:"inline-flex", gap: 4 }}>
+                      {([7, 14, 30] as const).map(n => (
+                        <button key={n} onClick={()=>setVerifDias(n)}
+                          style={{
+                            padding:"5px 10px", borderRadius: 6, cursor:"pointer", fontSize: 11,
+                            border: "1px solid var(--border)",
+                            background: verifDias === n ? "var(--brand)" : "var(--bg)",
+                            color: verifDias === n ? "#fff" : "var(--text-muted)",
+                            fontWeight: verifDias === n ? 700 : 500, fontFamily:"'DM Mono',monospace",
+                          }}>{n}d</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {visible.length === 0 ? (
+                    <div style={{ padding: 24, textAlign:"center", color:"var(--text-muted)", fontSize: 12 }}>
+                      {verifSoloPend
+                        ? "Todo está verificado en este rango."
+                        : "Sin marcaciones del trabajador en este rango."}
+                    </div>
+                  ) : (
+                    <div style={{ display:"flex", flexDirection:"column", gap: 6, maxHeight: 360, overflowY:"auto" }}>
+                      {visible.map(rec => {
+                        const w = d.workers.find(x => x.id === rec.workerId);
+                        if (!w) return null;
+                        const sede = d.sedes.find(s => s.id === (rec.sedeIdDia ?? w.sedeId));
+                        const ok = !!rec.verificadoPor;
+                        const verificador = ok ? d.workers.find(x => x.id === rec.verificadoPor) : null;
+                        const est = estiloEstado(rec);
+                        return (
+                          <div key={rec.id} style={{
+                            display:"flex", alignItems:"center", gap: 10,
+                            padding:"8px 12px", borderRadius: 9,
+                            background: ok ? "rgba(34,197,94,0.04)" : "rgba(245,158,11,0.06)",
+                            border: `1px solid ${ok ? "rgba(34,197,94,0.25)" : "rgba(245,158,11,0.30)"}`,
+                          }}>
+                            <PhotoAvatar src={w.avatarBase64} initials={(w.apodo||w.nombre)[0]} size={28} color={sede?.color ?? "#C41A3A"} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                {w.nombre} · <span style={{ color: sede?.color, fontWeight: 600 }}>{sede?.nombre}</span>
+                              </div>
+                              <div style={{ fontSize: 10.5, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", display:"flex", gap: 8, flexWrap:"wrap", alignItems:"center" }}>
+                                <span>{formatFecha(rec.fecha)}</span>
+                                {rec.entrada && <span>entrada {rec.entrada}</span>}
+                                {rec.salida  && <span>salida {rec.salida}</span>}
+                                <span style={{ color: est.dot, fontWeight: 700, textTransform:"capitalize" }}>{est.label}</span>
+                                {ok && verificador && (
+                                  <span style={{ color:"#16a34a" }}>· ✓ {verificador.apodo || verificador.nombre} {rec.verificadoAt ? `(${formatFecha(rec.verificadoAt.slice(0,10))})` : ""}</span>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ display:"inline-flex", gap: 4 }}>
+                              <button
+                                className="btn-outline"
+                                style={{ fontSize: 10.5, padding:"4px 10px" }}
+                                onClick={()=>setModalEdit({ rec, worker: w, iso: rec.fecha })}
+                              >Editar</button>
+                              {ok ? (
+                                <button
+                                  onClick={()=>d.desverificarAsistencia(rec.id)}
+                                  title="Quitar verificación"
+                                  style={{
+                                    fontSize: 10.5, padding:"4px 10px",
+                                    border: "1px solid rgba(34,197,94,0.4)",
+                                    background: "rgba(34,197,94,0.10)", color: "#16a34a",
+                                    borderRadius: 6, cursor:"pointer", fontWeight: 600,
+                                  }}>✓ Verificada</button>
+                              ) : (
+                                <button
+                                  onClick={()=>actor && d.verificarAsistencia(rec.id, actor.id)}
+                                  disabled={!actor}
+                                  style={{
+                                    fontSize: 10.5, padding:"4px 10px",
+                                    border:"1px solid #16a34a",
+                                    background:"#16a34a", color:"#fff",
+                                    borderRadius: 6, cursor:"pointer", fontWeight: 700,
+                                  }}>Verificar</button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ====== Filtro tipo de personal ====== */}
         <div className="card" style={{ padding: "10px 14px", marginBottom: 10, display:"flex", gap: 8, alignItems:"center", flexWrap:"wrap" }}>

@@ -104,7 +104,9 @@ function ModalJalador({
   );
 }
 
-/* ================= MODAL REGISTRAR INGRESO ================= */
+/* ================= MODAL REGISTRAR ASISTENCIA / INGRESO ================= */
+/* El registro del jalador es ante todo asistencia: ¿vino o no?            */
+/* El monto vendido es opcional — la comisión es lo que finalmente gana.   */
 function ModalIngreso({
   open, onClose, jalador, ingreso, fechaInicial,
 }: {
@@ -115,44 +117,89 @@ function ModalIngreso({
   fechaInicial?: string;
 }) {
   const d = useData();
-  const [fecha, setFecha] = useState(ingreso?.fecha ?? fechaInicial ?? isoToday());
-  const [monto, setMonto] = useState(ingreso?.monto ?? 0);
-  const [nota, setNota]   = useState(ingreso?.nota ?? "");
+  const [fecha, setFecha]     = useState(ingreso?.fecha ?? fechaInicial ?? isoToday());
+  const [asistio, setAsistio] = useState<boolean>(true);
+  const [monto, setMonto]     = useState(ingreso?.monto ?? 0);
+  const [nota, setNota]       = useState(ingreso?.nota ?? "");
 
   useMemo(() => {
     setFecha(ingreso?.fecha ?? fechaInicial ?? isoToday());
+    setAsistio(true);
     setMonto(ingreso?.monto ?? 0);
     setNota(ingreso?.nota ?? "");
   }, [ingreso?.id, fechaInicial, open]); // eslint-disable-line
 
   function guardar() {
-    if (!monto || monto <= 0) return;
-    if (ingreso) d.updateIngreso(ingreso.id, { monto, fecha, nota });
-    else d.addIngreso({ jaladorId: jalador.id, monto, fecha, nota });
+    if (!asistio) {
+      /* No asistió: si era una edición de un registro existente, lo eliminamos. */
+      if (ingreso) d.deleteIngreso(ingreso.id);
+      onClose();
+      return;
+    }
+    /* Asistió: registramos con monto (puede ser 0 si aún no se conoce). */
+    const m = Math.max(0, monto || 0);
+    if (ingreso) d.updateIngreso(ingreso.id, { monto: m, fecha, nota });
+    else d.addIngreso({ jaladorId: jalador.id, monto: m, fecha, nota });
     onClose();
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={ingreso ? "Editar ingreso" : "Registrar ingreso"} width={400}>
+    <Modal open={open} onClose={onClose} title={ingreso ? "Editar asistencia" : "Registrar asistencia"} width={400}>
       <div style={{ fontSize: 12, color:"var(--text-muted)", marginBottom: 14 }}>
-        Para <strong>{jalador.apodo || jalador.nombre}</strong>. Comisión automática: {jalador.porcentajeComision}%
+        Para <strong>{jalador.apodo || jalador.nombre}</strong>. Gana por comisión: {jalador.porcentajeComision}% del monto vendido.
       </div>
       <div style={{ display:"flex", flexDirection:"column", gap: 12, marginBottom: 18 }}>
         <div><div className="section-label">Fecha</div><input type="date" className="input-base" value={fecha} onChange={e=>setFecha(e.target.value)} /></div>
+
+        {/* Toggle Asistió: sí / no */}
         <div>
-          <div className="section-label">Monto ingresado (S/)</div>
-          <input type="number" className="input-base input-mono" value={monto || ""} onChange={e=>setMonto(Number(e.target.value))} placeholder="0.00" />
-          <div style={{ fontSize: 11, color:"#16a34a", marginTop: 4, fontFamily:"'DM Mono',monospace" }}>
-            Comisión: {money((monto || 0) * jalador.porcentajeComision / 100)}
+          <div className="section-label">¿Asistió?</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 8 }}>
+            <button type="button" onClick={()=>setAsistio(true)}
+              style={{
+                padding:"10px 8px", borderRadius: 8, cursor:"pointer",
+                border: `2px solid ${asistio ? "#16a34a" : "var(--border)"}`,
+                background: asistio ? "rgba(34,197,94,0.10)" : "var(--bg)",
+                color: asistio ? "#16a34a" : "var(--text-muted)",
+                fontWeight: asistio ? 700 : 500, fontSize: 12,
+                display:"inline-flex", alignItems:"center", justifyContent:"center", gap: 6,
+              }}>
+              <Icon name="check" size={13} color={asistio ? "#16a34a" : "var(--text-muted)"} /> Sí asistió
+            </button>
+            <button type="button" onClick={()=>setAsistio(false)}
+              style={{
+                padding:"10px 8px", borderRadius: 8, cursor:"pointer",
+                border: `2px solid ${!asistio ? "var(--brand)" : "var(--border)"}`,
+                background: !asistio ? "rgba(196,26,58,0.10)" : "var(--bg)",
+                color: !asistio ? "var(--brand)" : "var(--text-muted)",
+                fontWeight: !asistio ? 700 : 500, fontSize: 12,
+                display:"inline-flex", alignItems:"center", justifyContent:"center", gap: 6,
+              }}>
+              <Icon name="x" size={13} color={!asistio ? "var(--brand)" : "var(--text-muted)"} /> No asistió
+            </button>
           </div>
         </div>
-        <div><div className="section-label">Nota (opcional)</div><textarea className="input-base" rows={2} value={nota} onChange={e=>setNota(e.target.value)} /></div>
+
+        {/* Monto vendido (opcional, solo si asistió) */}
+        {asistio && (
+          <div>
+            <div className="section-label">Monto vendido (S/) · opcional</div>
+            <input type="number" className="input-base input-mono" value={monto || ""} onChange={e=>setMonto(Number(e.target.value))} placeholder="0.00" />
+            <div style={{ fontSize: 11, color: monto > 0 ? "#16a34a" : "var(--text-muted)", marginTop: 4, fontFamily:"'DM Mono',monospace" }}>
+              {monto > 0
+                ? `Comisión del jalador: ${money((monto || 0) * jalador.porcentajeComision / 100)}`
+                : "Puedes dejarlo en 0 y completarlo después"}
+            </div>
+          </div>
+        )}
+
+        {asistio && <div><div className="section-label">Nota (opcional)</div><textarea className="input-base" rows={2} value={nota} onChange={e=>setNota(e.target.value)} /></div>}
       </div>
       <div style={{ display:"flex", gap: 10 }}>
         {ingreso && <button className="btn-ghost" style={{ color:"var(--brand)", border:"1px solid rgba(196,26,58,0.25)" }} onClick={()=>{ d.deleteIngreso(ingreso.id); onClose(); }}>Eliminar</button>}
         <div style={{ flex: 1 }} />
         <button className="btn-outline" onClick={onClose}>Cancelar</button>
-        <button className="btn-primary" onClick={guardar} disabled={!monto || monto <= 0}>Guardar</button>
+        <button className="btn-primary" onClick={guardar}>Guardar</button>
       </div>
     </Modal>
   );
@@ -227,8 +274,6 @@ function PerfilJalador({
   const ingMes = ingresos.filter(i => new Date(i.fecha) >= mes).reduce((a,i)=>a+i.monto, 0);
   const ingHoy = ingresos.filter(i => i.fecha === isoToday()).reduce((a,i)=>a+i.monto, 0);
   const comMes = ingMes * jalador.porcentajeComision / 100;
-  const promedioDiario = ingresos.length ? ingMes / Math.max(1, new Set(ingresos.filter(i => new Date(i.fecha) >= mes).map(i=>i.fecha)).size) : 0;
-  const mejorDia = ingresos.slice().sort((a,b)=>b.monto-a.monto)[0];
 
   /* Historial de días con actividad (uno por fecha) — alimenta tabla del tab asistencia */
   const historialDias = useMemo(() => {
@@ -339,15 +384,6 @@ function PerfilJalador({
                 <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>Ingreso mes</div>
                 <HideableAmount value={money(ingMes)} size={18} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
               </div>
-              <div style={{ padding: 12, background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 9 }}>
-                <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>Promedio diario</div>
-                <HideableAmount value={money(promedioDiario)} size={18} color="var(--text)" weight={800} fontFamily="'DM Mono',monospace" />
-                {mejorDia && (
-                  <div style={{ fontSize: 9.5, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 4 }}>
-                    Mejor: {money(mejorDia.monto)} ({mejorDia.fecha})
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Header mes + botón añadir ingreso */}
@@ -383,8 +419,8 @@ function PerfilJalador({
               </div>
             </div>
 
-            {/* Calendario read-only: jaladores no tienen marca diaria, sólo
-                "tuvo ingreso ese día" (worked = sí, late = no). Click registra. */}
+            {/* Calendario sin botones internos: el click sobre el día abre
+                el modal de registro de asistencia/ingreso. */}
             <MultiverseCalendar
               year={year}
               month={month}
@@ -392,7 +428,7 @@ function PerfilJalador({
               onToggleWorked={() => {}}
               onToggleLate={() => {}}
               onDayClick={abrirIngresoDia}
-              readonly
+              hideButtons
             />
 
             {/* Historial reciente de días con actividad */}
@@ -461,7 +497,7 @@ function PerfilJalador({
                   ))}
                 </div>
                 <button className="btn-primary" onClick={()=>{ setNuevoFecha(isoToday()); setModalNuevo(true); }} style={{ display:"inline-flex", alignItems:"center", gap: 6 }}>
-                  <Icon name="plus" size={13} color="#fff" /> Registrar ingreso
+                  <Icon name="plus" size={13} color="#fff" /> Registrar asistencia
                 </button>
               </div>
             </div>
@@ -472,12 +508,12 @@ function PerfilJalador({
                 <HideableAmount value={money(totIngPer)} size={19} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
               </div>
               <div style={{ background:"rgba(196,26,58,0.08)", border:"1px solid rgba(196,26,58,0.25)", borderRadius: 10, padding:"12px 14px" }}>
-                <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6, marginBottom: 6 }}>Comisión</div>
-                <HideableAmount value={money(totComPer)} size={19} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
+                <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6, marginBottom: 6 }}>Comisión local</div>
+                <HideableAmount value={money(balancePer)} size={19} color="var(--brand)" weight={800} fontFamily="'DM Mono',monospace" />
               </div>
-              <div style={{ background: balancePer>=0 ? "rgba(99,102,241,0.08)" : "rgba(245,158,11,0.08)", border: `1px solid ${balancePer>=0 ? "rgba(99,102,241,0.25)" : "rgba(245,158,11,0.25)"}`, borderRadius: 10, padding:"12px 14px" }}>
-                <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6, marginBottom: 6 }}>Balance</div>
-                <HideableAmount value={money(balancePer)} size={19} color={balancePer>=0?"#6366f1":"#d97706"} weight={800} fontFamily="'DM Mono',monospace" />
+              <div style={{ background:"rgba(99,102,241,0.08)", border:"1px solid rgba(99,102,241,0.25)", borderRadius: 10, padding:"12px 14px" }}>
+                <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6, marginBottom: 6 }}>Comisión del jalador</div>
+                <HideableAmount value={money(totComPer)} size={19} color="#6366f1" weight={800} fontFamily="'DM Mono',monospace" />
               </div>
             </div>
 

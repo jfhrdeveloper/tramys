@@ -3,37 +3,56 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useSession } from "@/components/providers/SessionProvider";
+import { useData } from "@/components/providers/DataProvider";
 import { Icon } from "@/components/ui/Icons";
 import { MiPerfilModal } from "@/components/ui/MiPerfilModal";
 
+/* Primary del worker: Inicio + lo más usado en el día (asistencia, sueldo) +
+   Alertas (que es el único con badge dinámico). Adelantos / Permisos / Eventos
+   van al drawer de "Más" — siguen accesibles pero no ocupan slot fijo. */
 const PRIMARY = [
   { href:"/mi-panel",      icon:"home",      label:"Inicio"     },
   { href:"/mi-asistencia", icon:"clock",     label:"Asistencia" },
   { href:"/mi-sueldo",     icon:"money_bill", label:"Sueldo"    },
-  { href:"/mis-adelantos", icon:"adelantos", label:"Adelantos"  },
+  { href:"/mis-alertas",   icon:"bell",      label:"Alertas"    },
 ];
 const MORE = [
-  { href:"/mis-permisos", icon:"file_check", label:"Permisos" },
-  { href:"/mis-eventos",  icon:"calendar",   label:"Eventos"  },
-  { href:"/mis-alertas",  icon:"bell",       label:"Alertas"  },
+  { href:"/mis-adelantos", icon:"adelantos",  label:"Adelantos" },
+  { href:"/mis-permisos",  icon:"file_check", label:"Permisos"  },
+  { href:"/mis-eventos",   icon:"calendar",   label:"Eventos"   },
 ];
 
 export function BottomNavWorker() {
   const pathname = usePathname();
-  const { signOut } = useSession();
+  const { worker, signOut } = useSession();
+  const d = useData();
   const [open, setOpen] = useState(false);
   const [perfilOpen, setPerfilOpen] = useState(false);
   const moreActive = MORE.some(i => pathname===i.href);
+
+  /* Badge dinámico de alertas (mismo cómputo que el sidebar). */
+  const alertasCount = worker
+    ? d.adelantos.filter(a => a.workerId === worker.id && a.estado === "pendiente").length
+      + d.permisos.filter(p => p.workerId === worker.id && p.estado === "pendiente").length
+    : 0;
 
   return (
     <>
       <div className="bottom-nav" style={{ justifyContent:"space-around" }}>
         {PRIMARY.map(item=>{
           const isActive = pathname===item.href;
+          const badge = item.href === "/mis-alertas" && alertasCount > 0 ? alertasCount : undefined;
           return (
             <Link key={item.href} href={item.href} style={{ textDecoration:"none",flex:1 }}>
-              <div style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"4px 0",color:isActive?"var(--brand)":"var(--text-muted)" }}>
+              <div style={{ position:"relative", display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"4px 0",color:isActive?"var(--brand)":"var(--text-muted)" }}>
                 <Icon name={item.icon} size={20} color={isActive?"var(--brand)":"var(--text-muted)"} />
+                {badge && (
+                  <span style={{
+                    position:"absolute", top: 0, right: "calc(50% - 18px)",
+                    background:"var(--brand)", color:"#fff", borderRadius: 99,
+                    fontSize: 8, fontWeight: 800, padding:"1px 5px",
+                  }}>{badge}</span>
+                )}
                 <span style={{ fontSize:9,fontWeight:isActive?700:500 }}>{item.label}</span>
               </div>
             </Link>

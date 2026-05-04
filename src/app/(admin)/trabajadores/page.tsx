@@ -13,12 +13,12 @@ import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { useConfirm } from "@/components/ui/Feedback";
 import { money, formatFecha } from "@/lib/utils/formatters";
 import {
-  useData, ingresoDia, isWeekendISO,
+  useData, ingresoDia, isWeekendISO, pagoQueCubre,
   type Worker, type TarifasWorker, type Turno,
   type AsistenciaRec, type EstadoAsist, type TipoPerm,
 } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
-import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
+import { esFeriadoOficial, FERIADOS_PE_FIJOS } from "@/lib/utils/peruHolidays";
 import { esVacaciones } from "@/lib/constants/estados";
 
 type TabPerfil = "asistencia" | "sueldo" | "adelantos" | "permisos" | "perfil";
@@ -300,7 +300,10 @@ function ModalWorker({
   const [dni, setDni]       = useState(worker?.dni ?? "");
   const [tel, setTel]       = useState(worker?.telefono ?? "");
   const [turno, setTurno]   = useState<Turno>(worker?.turno ?? { entrada:"08:00", salida:"18:00" });
-  const [tarifas, setTarifas] = useState<TarifasWorker>(worker?.tarifas ?? { diaNormal: 60, tardanza: 45, finSemana: 75, feriado: 90 });
+  const [tarifas, setTarifas] = useState<TarifasWorker>(worker?.tarifas ?? { diaNormal: 60, tardanza: 45, finSemana: 75, feriado: 60 });
+  const [feriadoEstandar, setFeriadoEstandar] = useState<boolean>(
+    worker ? worker.tarifas.feriado === worker.tarifas.diaNormal : true,
+  );
   const [activo, setActivo] = useState(worker?.activo ?? true);
 
   useMemo(() => {
@@ -315,19 +318,25 @@ function ModalWorker({
       setTel(worker.telefono ?? "");
       setTurno(worker.turno);
       setTarifas(worker.tarifas);
+      setFeriadoEstandar(worker.tarifas.feriado === worker.tarifas.diaNormal);
       setActivo(worker.activo);
     } else {
       setNombre(""); setApodo(""); setFoto(null);
       setSedeId(d.sedes[0]?.id ?? "sa"); setCargo("Asistente");
       setEmail(""); setDni(""); setTel("");
       setTurno({ entrada:"08:00", salida:"18:00" });
-      setTarifas({ diaNormal: 60, tardanza: 45, finSemana: 75, feriado: 90 });
+      setTarifas({ diaNormal: 60, tardanza: 45, finSemana: 75, feriado: 60 });
+      setFeriadoEstandar(true);
       setActivo(true);
     }
   }, [worker?.id]); // eslint-disable-line
 
   function guardar() {
     if (!nombre.trim()) return;
+    /* Si "tarifa estándar de feriado" está activo, feriado = diaNormal. */
+    const tarifasFinal: TarifasWorker = feriadoEstandar
+      ? { ...tarifas, feriado: tarifas.diaNormal }
+      : tarifas;
     const data = {
       nombre: nombre.trim(),
       apodo: apodo.trim() || nombre.trim().split(" ")[0],
@@ -338,7 +347,7 @@ function ModalWorker({
       dni: dni.trim() || undefined,
       telefono: tel.trim() || undefined,
       turno,
-      tarifas,
+      tarifas: tarifasFinal,
       activo,
       rol: (worker?.rol ?? "trabajador") as Worker["rol"],
       fechaIngreso: worker?.fechaIngreso ?? new Date().toISOString().slice(0,10),
@@ -410,12 +419,11 @@ function ModalWorker({
       {/* Tarifas */}
       <div style={{ marginBottom: 14 }}>
         <div className="section-label">Tarifas por día (S/)</div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap: 10 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap: 10 }}>
           {([
             ["diaNormal", "Día normal", "#16a34a"],
             ["tardanza",  "Tardanza",   "#f59e0b"],
             ["finSemana", "Fin semana", "#6366f1"],
-            ["feriado",   "Feriado",    "var(--brand)"],
           ] as const).map(([key, label]) => (
             <div key={key}>
               <div style={{ fontSize: 10, color:"var(--text-muted)", marginBottom: 4 }}>{label}</div>
@@ -428,6 +436,36 @@ function ModalWorker({
               />
             </div>
           ))}
+        </div>
+
+        {/* Tarifa de feriado: por defecto = día normal; toggle para personalizar */}
+        <div style={{ marginTop: 12, padding: 10, background:"rgba(99,102,241,0.06)", border:"1px solid rgba(99,102,241,0.25)", borderRadius: 8 }}>
+          <label style={{ display:"flex", alignItems:"center", gap: 8, cursor:"pointer", marginBottom: feriadoEstandar ? 0 : 8 }}>
+            <input
+              type="checkbox"
+              checked={feriadoEstandar}
+              onChange={e => {
+                const v = e.target.checked;
+                setFeriadoEstandar(v);
+                if (v) setTarifas(t => ({ ...t, feriado: t.diaNormal }));
+              }}
+            />
+            <span style={{ fontSize: 12, fontWeight: 600 }}>
+              Feriado paga igual que día normal (S/ {tarifas.diaNormal})
+            </span>
+          </label>
+          {!feriadoEstandar && (
+            <div>
+              <div style={{ fontSize: 10, color:"var(--text-muted)", marginBottom: 4 }}>Tarifa especial feriado</div>
+              <input
+                type="number"
+                className="input-base input-mono"
+                value={tarifas.feriado}
+                onChange={e=>setTarifas({ ...tarifas, feriado: Number(e.target.value) })}
+                style={{ padding: "7px 10px", fontSize: 13 }}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -483,6 +521,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
   const [editAsistFecha, setEditAsistFecha] = useState<string | null>(null);
   const [modalAdel, setModalAdel] = useState(false);
   const [modalPerm, setModalPerm] = useState(false);
+  const [modalEditWorker, setModalEditWorker] = useState(false);
 
   /* Asistencia del mes */
   function getDayData(day: number) {
@@ -493,6 +532,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
       late: rec?.estado === "tardanza",
       override: rec?.overrideIngreso ?? null,
       vacaciones: esVacaciones(rec ?? undefined),
+      pagado: !!pagoQueCubre(d.pagosPlanilla, worker.id, iso),
     };
   }
   function toggleWorked(day: number) {
@@ -616,6 +656,39 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
         {/* ==== Tab: Asistencia ==== */}
         {tab === "asistencia" && (
           <div style={{ padding: 18 }}>
+            {/* Pagos de planilla que tocan el mes visible — cintillo informativo */}
+            {(() => {
+              const desdeMes = `${year}-${String(month+1).padStart(2,"0")}-01`;
+              const finMes   = `${year}-${String(month+1).padStart(2,"0")}-${String(new Date(year, month+1, 0).getDate()).padStart(2,"0")}`;
+              const pagosMes = d.pagosPlanilla.filter(p =>
+                p.workerId === worker.id && !(p.hastaISO < desdeMes || p.desdeISO > finMes),
+              );
+              if (pagosMes.length === 0) return null;
+              return (
+                <div style={{
+                  display:"flex", alignItems:"center", gap: 10,
+                  padding:"10px 14px", marginBottom: 14,
+                  background:"rgba(34,197,94,0.08)",
+                  border:"1px solid rgba(34,197,94,0.3)",
+                  borderRadius: 9,
+                  flexWrap:"wrap",
+                }}>
+                  <Icon name="check_circle" size={16} color="#16a34a" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color:"#16a34a", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6 }}>
+                      Pagos registrados que tocan este mes
+                    </div>
+                    <div style={{ fontSize: 12, color:"var(--text)", marginTop: 2 }}>
+                      {pagosMes.map(p => (
+                        <span key={p.id} style={{ display:"inline-block", marginRight: 12, fontFamily:"'DM Mono',monospace" }}>
+                          {formatFecha(p.desdeISO)} → {formatFecha(p.hastaISO)} · S/ {p.montoNeto} · pagado el {formatFecha(p.fechaPago)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ display:"flex", justifyContent:"flex-end", alignItems:"center", marginBottom: 14, flexWrap:"wrap", gap: 8 }}>
               <div style={{ display:"flex", gap: 6, alignItems:"center" }}>
                 <div style={{ display:"inline-flex", gap: 4 }}>
@@ -660,7 +733,7 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
               <div className="table-wrap">
                 <table className="tramys-table">
                   <thead>
-                    <tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Estado</th><th>Ingreso</th><th>Editar</th></tr>
+                    <tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Estado</th><th>Ingreso</th><th>Pago</th><th>Editar</th></tr>
                   </thead>
                   <tbody>
                     {pagHist.pageItems.map((h, i) => {
@@ -668,9 +741,28 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
                       const fds = isWeekendISO(h.fecha);
                       const ing = ingresoDia(h, worker.tarifas, fds, fer);
                       const tieneOverride = h.overrideIngreso !== null && h.overrideIngreso !== undefined;
+                      const pago = pagoQueCubre(d.pagosPlanilla, worker.id, h.fecha);
+                      /* Indicador de verificación: solo aplica si lo marcó el trabajador. */
+                      const sinVerificar = h.marcadoPor === "trabajador" && !h.verificadoPor;
+                      const verificado   = h.marcadoPor === "trabajador" && !!h.verificadoPor;
                       return (
-                        <tr key={i} title={tieneOverride && h.motivoEdit ? `Nota: ${h.motivoEdit}` : undefined}>
-                          <td style={{ fontFamily:"'DM Mono',monospace" }}>{formatFecha(h.fecha)}</td>
+                        <tr key={i}
+                          title={tieneOverride && h.motivoEdit ? `Nota: ${h.motivoEdit}` : undefined}
+                          style={pago ? { background:"rgba(34,197,94,0.04)" } : undefined}
+                        >
+                          <td style={{ fontFamily:"'DM Mono',monospace" }}>
+                            <span style={{ display:"inline-flex", alignItems:"center", gap: 5 }}>
+                              {formatFecha(h.fecha)}
+                              {sinVerificar && (
+                                <span title="Marcado por el trabajador, pendiente de verificar"
+                                  style={{ width: 6, height: 6, borderRadius:"50%", background:"#d97706", display:"inline-block" }} />
+                              )}
+                              {verificado && (
+                                <span title="Marcado por el trabajador, verificado"
+                                  style={{ width: 6, height: 6, borderRadius:"50%", background:"#16a34a", display:"inline-block" }} />
+                              )}
+                            </span>
+                          </td>
                           <td style={{ fontFamily:"'DM Mono',monospace" }}>{h.entrada ?? "—"}</td>
                           <td style={{ fontFamily:"'DM Mono',monospace", color:"var(--text-muted)" }}>{h.salida ?? "—"}</td>
                           <td>
@@ -694,6 +786,18 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
                                 </span>
                               )}
                             </span>
+                          </td>
+                          <td>
+                            {pago ? (
+                              <span title={`Pagado el ${formatFecha(pago.fechaPago)} (${formatFecha(pago.desdeISO)} → ${formatFecha(pago.hastaISO)})`}
+                                style={{ fontSize: 9.5, fontWeight: 800, padding:"2px 7px", borderRadius: 99,
+                                  background:"rgba(34,197,94,0.14)", color:"#16a34a",
+                                  fontFamily:"'DM Mono',monospace", letterSpacing: .4 }}>
+                                PAGADO
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 10, color:"var(--text-muted)" }}>—</span>
+                            )}
                           </td>
                           <td>
                             <button className="btn-outline" style={{ fontSize: 11, padding: "3px 8px", display:"inline-flex", alignItems:"center", gap: 4 }}
@@ -895,7 +999,87 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
         {/* ==== Tab: Perfil ==== */}
         {tab === "perfil" && (
           <div style={{ padding: 18 }}>
-            <PerfilEditor worker={worker} />
+            {/* Cabecera con foto y datos resumen */}
+            <div style={{ display:"flex", gap: 18, alignItems:"center", marginBottom: 18, flexWrap:"wrap" }}>
+              <PhotoAvatar
+                src={worker.avatarBase64}
+                initials={(worker.apodo || worker.nombre)[0]}
+                size={72}
+                color={sede?.color ?? "#C41A3A"}
+              />
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={{ fontWeight: 800, fontSize: 18 }}>{worker.nombre}</div>
+                <div style={{ fontSize: 12, color: sede?.color, fontWeight: 700, marginTop: 2 }}>“{worker.apodo}”</div>
+                <div style={{ fontSize: 11, color:"var(--text-muted)", marginTop: 4 }}>
+                  {worker.cargo} · <span style={{ color: sede?.color, fontWeight: 600 }}>{sede?.nombre}</span>
+                </div>
+              </div>
+              <Badge variant={worker.activo ? "activo" : "inactivo"} small />
+            </div>
+
+            {/* Ficha de datos */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 18 }}>
+              <div>
+                <div className="section-label">Email</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{worker.email || "—"}</div>
+              </div>
+              <div>
+                <div className="section-label">Teléfono</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{worker.telefono || "—"}</div>
+              </div>
+              <div>
+                <div className="section-label">DNI</div>
+                <div style={{ fontSize: 13, fontWeight: 600, fontFamily:"'DM Mono',monospace" }}>{worker.dni || "—"}</div>
+              </div>
+              <div>
+                <div className="section-label">Rol</div>
+                <div style={{ fontSize: 13, fontWeight: 600, textTransform:"capitalize" }}>{worker.rol}</div>
+              </div>
+              <div>
+                <div className="section-label">Turno</div>
+                <div style={{ fontSize: 13, fontWeight: 600, fontFamily:"'DM Mono',monospace" }}>
+                  {worker.turno.entrada} – {worker.turno.salida}
+                </div>
+              </div>
+              <div>
+                <div className="section-label">Fecha de ingreso</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{worker.fechaIngreso ? formatFecha(worker.fechaIngreso) : "—"}</div>
+              </div>
+            </div>
+
+            {/* Tarifas por día */}
+            <div style={{ marginBottom: 18 }}>
+              <div className="section-label">Tarifas por día (S/)</div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+                {([
+                  ["diaNormal", "Día normal", "#16a34a"],
+                  ["tardanza",  "Tardanza",   "#f59e0b"],
+                  ["finSemana", "Fin semana", "#6366f1"],
+                  ["feriado",   "Feriado",    "var(--brand)"],
+                ] as const).map(([key, label, col]) => {
+                  const valor = worker.tarifas[key];
+                  /* Feriado heredado: si coincide con día normal, mostramos un sutil "estándar". */
+                  const heredado = key === "feriado" && valor === worker.tarifas.diaNormal;
+                  return (
+                    <div key={key} style={{ background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 8, padding:"10px 12px" }}>
+                      <div style={{ fontSize: 10, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing: .6 }}>{label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, fontFamily:"'DM Mono',monospace", color: col }}>
+                        S/ {valor}
+                      </div>
+                      {heredado && (
+                        <div style={{ fontSize: 9.5, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace", marginTop: 2 }}>
+                          igual al día normal
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <button className="btn-primary" onClick={()=>setModalEditWorker(true)} style={{ display:"inline-flex", alignItems:"center", gap: 6 }}>
+              <Icon name="edit" size={13} color="#fff" /> Editar trabajador
+            </button>
           </div>
         )}
       </div>
@@ -911,75 +1095,133 @@ function PerfilTrabajador({ worker, onBack }: { worker: Worker; onBack: () => vo
       )}
       <ModalAdelanto open={modalAdel} onClose={() => setModalAdel(false)} workerId={worker.id} />
       <ModalPermiso  open={modalPerm} onClose={() => setModalPerm(false)} workerId={worker.id} />
+      <ModalWorker open={modalEditWorker} onClose={() => setModalEditWorker(false)} worker={worker} />
     </div>
   );
 }
 
-/* ================= EDITOR DE PERFIL ================= */
-function PerfilEditor({ worker }: { worker: Worker }) {
+/* ================= MODAL: VISTA DE FERIADOS ================= */
+/* Sub-vista accesible desde /trabajadores que muestra:                */
+/*   1. Feriados oficiales de Perú del año actual                      */
+/*   2. Tabla de trabajadores con su tarifa de feriado (estándar/plus) */
+/*      con edición rápida del plus por trabajador.                    */
+function ModalFeriados({
+  open, onClose, workers,
+}: { open: boolean; onClose: () => void; workers: Worker[] }) {
   const d = useData();
-  const [local, setLocal] = useState<Worker>(worker);
+  const anio = new Date().getFullYear();
+  const feriados = useMemo(() => {
+    const arr = FERIADOS_PE_FIJOS.map(f => ({
+      date: `${anio}-${String(f.month).padStart(2,"0")}-${String(f.day).padStart(2,"0")}`,
+      nombre: f.nombre,
+    }));
+    arr.sort((a,b) => a.date.localeCompare(b.date));
+    return arr;
+  }, [anio]);
 
-  function save(patch: Partial<Worker>) {
-    const nuevo = { ...local, ...patch };
-    setLocal(nuevo);
-    d.updateWorker(worker.id, patch);
+  function setFeriadoTarifa(w: Worker, valor: number) {
+    d.updateWorker(w.id, { tarifas: { ...w.tarifas, feriado: valor } });
+  }
+  function resetEstandar(w: Worker) {
+    d.updateWorker(w.id, { tarifas: { ...w.tarifas, feriado: w.tarifas.diaNormal } });
   }
 
   return (
-    <div style={{ display:"flex", gap: 20, flexWrap:"wrap" }}>
-      <PhotoUpload
-        value={local.avatarBase64}
-        onChange={v => save({ avatarBase64: v })}
-        size={110}
-        initials={(local.apodo || local.nombre)[0]}
-        color={d.sedes.find(s=>s.id===local.sedeId)?.color ?? "#C41A3A"}
-      />
-      <div style={{ flex: 1, minWidth: 260, display:"flex", flexDirection:"column", gap: 12 }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
-          <div><div className="section-label">Nombre</div><input className="input-base" value={local.nombre} onChange={e=>save({ nombre: e.target.value })} /></div>
-          <div><div className="section-label">Apodo</div><input className="input-base" value={local.apodo} onChange={e=>save({ apodo: e.target.value })} /></div>
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
-          <div>
-            <div className="section-label">Sede</div>
-            <select className="select-base" style={{ width:"100%" }} value={local.sedeId} onChange={e=>save({ sedeId: e.target.value })}>
-              {d.sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-            </select>
-          </div>
-          <div><div className="section-label">Cargo</div><input className="input-base" value={local.cargo} onChange={e=>save({ cargo: e.target.value })} /></div>
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
-          <div><div className="section-label">Email</div><input className="input-base" value={local.email} onChange={e=>save({ email: e.target.value })} /></div>
-          <div><div className="section-label">Teléfono</div><input className="input-base" value={local.telefono ?? ""} onChange={e=>save({ telefono: e.target.value })} /></div>
-        </div>
-
-        <div>
-          <div className="section-label">Turno</div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap: 10 }}>
-            <input type="time" className="input-base input-mono" value={local.turno.entrada} onChange={e=>save({ turno: { ...local.turno, entrada: e.target.value } })} />
-            <input type="time" className="input-base input-mono" value={local.turno.salida}  onChange={e=>save({ turno: { ...local.turno, salida:  e.target.value } })} />
-          </div>
-        </div>
-
-        <div>
-          <div className="section-label">Tarifas por día (S/)</div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap: 10 }}>
-            {(["diaNormal","tardanza","finSemana","feriado"] as const).map(k => (
-              <div key={k}>
-                <div style={{ fontSize: 10, color:"var(--text-muted)", marginBottom: 4, textTransform:"capitalize" }}>{k}</div>
-                <input type="number" className="input-base input-mono" value={local.tarifas[k]} onChange={e=>save({ tarifas: { ...local.tarifas, [k]: Number(e.target.value) } })} />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <label style={{ display:"flex", alignItems:"center", gap: 8, cursor:"pointer" }}>
-          <input type="checkbox" checked={local.activo} onChange={e=>save({ activo: e.target.checked })} />
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Activo</span>
-        </label>
+    <Modal open={open} onClose={onClose} title="Feriados — tarifas por trabajador" width={720}>
+      <div style={{ fontSize: 12, color:"var(--text-muted)", marginBottom: 14 }}>
+        En un día feriado, cada trabajador gana lo mismo que un día normal,
+        salvo que se le asigne un plus.
       </div>
-    </div>
+
+      {/* Feriados oficiales del año */}
+      <div style={{ marginBottom: 18 }}>
+        <div className="section-label">Feriados oficiales {anio}</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+          {feriados.map(f => (
+            <div key={f.date} style={{ background:"rgba(99,102,241,0.06)", border:"1px solid rgba(99,102,241,0.25)", borderRadius: 8, padding:"8px 10px" }}>
+              <div style={{ fontSize: 10, color:"#6366f1", fontFamily:"'DM Mono',monospace", fontWeight: 700 }}>
+                {formatFecha(f.date)}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600 }}>{f.nombre}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabla de tarifas por trabajador */}
+      <div className="section-label">Tarifa de feriado por trabajador</div>
+      <div className="table-wrap" style={{ maxHeight: 360, overflowY:"auto" }}>
+        <table className="tramys-table">
+          <thead>
+            <tr>
+              <th>Trabajador</th>
+              <th>Día normal</th>
+              <th>Tarifa feriado</th>
+              <th>Plus</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {workers.length === 0 && (
+              <tr><td colSpan={5} style={{ textAlign:"center", padding: 24, color:"var(--text-muted)" }}>Sin trabajadores</td></tr>
+            )}
+            {workers.map(w => {
+              const sede = d.sedes.find(s => s.id === w.sedeId);
+              const estandar = w.tarifas.feriado === w.tarifas.diaNormal;
+              const plus = w.tarifas.feriado - w.tarifas.diaNormal;
+              return (
+                <tr key={w.id}>
+                  <td>
+                    <div style={{ display:"flex", alignItems:"center", gap: 8 }}>
+                      <PhotoAvatar src={w.avatarBase64} initials={(w.apodo || w.nombre)[0]} size={26} color={sede?.color ?? "#C41A3A"} />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 12 }}>{w.nombre}</div>
+                        <div style={{ fontSize: 10, color: sede?.color, fontWeight: 600 }}>{sede?.nombre}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>S/ {w.tarifas.diaNormal}</td>
+                  <td>
+                    <input
+                      type="number"
+                      className="input-base input-mono"
+                      value={w.tarifas.feriado}
+                      onChange={e => setFeriadoTarifa(w, Number(e.target.value))}
+                      style={{ padding:"5px 8px", fontSize: 12, width: 90 }}
+                    />
+                  </td>
+                  <td>
+                    {estandar ? (
+                      <span style={{ fontSize: 10.5, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>estándar</span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: plus > 0 ? "#16a34a" : "var(--brand)", fontFamily:"'DM Mono',monospace" }}>
+                        {plus > 0 ? `+S/ ${plus}` : `−S/ ${-plus}`}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {!estandar && (
+                      <button
+                        className="btn-outline"
+                        style={{ fontSize: 10.5, padding:"3px 8px" }}
+                        onClick={()=>resetEstandar(w)}
+                        title="Volver al estándar (igual al día normal)"
+                      >
+                        Restablecer
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display:"flex", justifyContent:"flex-end", marginTop: 14 }}>
+        <button className="btn-primary" onClick={onClose}>Cerrar</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -995,6 +1237,7 @@ export default function TrabajadoresPage() {
   const [busqueda, setBusqueda] = useState("");
   const [filtroSede, setFiltroSede] = useState(isEnc && sedeActor ? sedeActor.id : "todas");
   const [filtroEst, setFiltroEst] = useState("todos");
+  const [modalFeriados, setModalFeriados] = useState(false);
 
   /* ====== Deep-link desde Planilla u otras vistas: ?perfil=<id>&tab=asistencia ====== */
   useEffect(() => {
@@ -1052,8 +1295,16 @@ export default function TrabajadoresPage() {
               <option value="inactivo">Inactivos</option>
             </select>
             <button
-              className="btn-primary"
+              className="btn-outline"
               style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap: 6 }}
+              onClick={()=>setModalFeriados(true)}
+              title="Tarifas de feriado por trabajador"
+            >
+              <Icon name="calendar" size={13} /> Feriados
+            </button>
+            <button
+              className="btn-primary"
+              style={{ display:"flex", alignItems:"center", gap: 6 }}
               onClick={()=>{ setEditW(null); setModalOpen(true); }}
             >
               <Icon name="plus" size={13} color="#fff" /> Nuevo trabajador
@@ -1115,6 +1366,7 @@ export default function TrabajadoresPage() {
       </main>
 
       <ModalWorker open={modalOpen} onClose={()=>setModalOpen(false)} worker={editW} />
+      <ModalFeriados open={modalFeriados} onClose={()=>setModalFeriados(false)} workers={workers} />
     </>
   );
 }

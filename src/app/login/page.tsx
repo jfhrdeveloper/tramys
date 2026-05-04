@@ -5,26 +5,9 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui/Icons";
 import { Preloader } from "@/components/ui/Preloader";
 
-const REMEMBER_KEY = "tramys_remember_email";
-const SESSION_KEY  = "tramys_session_id";
-const REAL_KEY     = "tramys_session_real_id";
-const THEME_KEY    = "tramys-theme";  // misma clave que ThemeProvider — login y panel comparten preferencia
-
-/* Persiste el id de sesión según preferencia del usuario.
-   Recuérdame ON  → localStorage (sobrevive al cierre de pestaña).
-   Recuérdame OFF → sessionStorage (muere al cerrar la pestaña). */
-function persistirSesion(workerId: string, recordar: boolean) {
-  try {
-    if (recordar) {
-      localStorage.setItem(SESSION_KEY, workerId);
-      sessionStorage.removeItem(SESSION_KEY);
-    } else {
-      sessionStorage.setItem(SESSION_KEY, workerId);
-      localStorage.removeItem(SESSION_KEY);
-    }
-    localStorage.removeItem(REAL_KEY);
-  } catch {}
-}
+const REMEMBER_KEY    = "tramys_remember_email";
+const IMPERSONATE_KEY = "tramys_impersonate_id";
+const THEME_KEY       = "tramys-theme";  // misma clave que ThemeProvider — login y panel comparten preferencia
 
 /* ================= PÁGINA DE LOGIN ================= */
 export default function LoginPage() {
@@ -40,13 +23,11 @@ export default function LoginPage() {
   const [themeUserSet, setThemeUserSet] = useState(false);
   const [welcome,  setWelcome]  = useState<{ nombre:string; apodo?:string; rol:string } | null>(null);
 
-  /* ====== Al montar: limpiar sesión efectiva (siempre comenzar deslogueado en /login)
-            y autorrellenar email si el usuario marcó "recuérdame" antes. ====== */
+  /* ====== Al montar: limpiar impersonacion residual y autorrellenar email ====== */
   useEffect(() => {
     try {
-      sessionStorage.removeItem(SESSION_KEY);
-      localStorage.removeItem(SESSION_KEY);
-      localStorage.removeItem(REAL_KEY);
+      /* La sesion de Supabase se mantiene (cookies); solo limpiamos impersonacion. */
+      localStorage.removeItem(IMPERSONATE_KEY);
       const recordado = localStorage.getItem(REMEMBER_KEY);
       if (recordado) setEmail(recordado);
 
@@ -122,7 +103,6 @@ export default function LoginPage() {
       const nombre = (profile?.nombre as string | undefined) ?? "Usuario";
       const apodo  = (profile?.apodo  as string | undefined) ?? undefined;
       const rol    = (profile?.rol    as string | undefined) ?? "trabajador";
-      persistirSesion(user.id, recordar);
       setLoading(false);
       setWelcome({ nombre, apodo, rol });
       setTimeout(() => {
@@ -131,25 +111,6 @@ export default function LoginPage() {
       return;
     }
     setLoading(false);
-  }
-
-  /* ====== Demo rápido por rol ======
-     workerId mapea exactamente al seed del DataProvider (modo demo). */
-  const DEMOS: { rol: string; nombre: string; apodo: string; sede: string; email: string; color: string; avatar: string; acceso: string; workerId: string; route: string }[] = [
-    { rol:"Owner",      nombre:"Dueña del Negocio", apodo:"Owner",    sede:"Todas las sedes", email:"owner@tramys.pe",   color:"#f59e0b", avatar:"DU", acceso:"Acceso total al sistema",       workerId:"w_du", route:"/dashboard" },
-    { rol:"Encargado",  nombre:"Ricardo Palma",     apodo:"Ricky",    sede:"Santa Anita",     email:"rpalma@tramys.pe",  color:"#6366f1", avatar:"RP", acceso:"Gestión solo de su sede",       workerId:"w_rp", route:"/dashboard" },
-    { rol:"Trabajador", nombre:"Ana Torres",        apodo:"Ani",      sede:"Santa Anita",     email:"atorres@tramys.pe", color:"#16a34a", avatar:"AT", acceso:"Solo su información personal",  workerId:"w_at", route:"/mi-panel"  },
-  ];
-
-  /* En modo demo (sin Supabase) no hacemos auth real: escribimos la sesión y navegamos. */
-  function entrarComoDemo(d: typeof DEMOS[number]) {
-    persistirSesion(d.workerId, recordar);
-    try {
-      if (recordar) localStorage.setItem(REMEMBER_KEY, d.email);
-      else          localStorage.removeItem(REMEMBER_KEY);
-    } catch {}
-    setWelcome({ nombre: d.nombre, apodo: d.apodo, rol: d.rol.toLowerCase() });
-    setTimeout(() => { window.location.href = d.route; }, 1700);
   }
 
   if (welcome) return <Preloader nombre={welcome.nombre} apodo={welcome.apodo} durationMs={1800} />;
@@ -177,20 +138,6 @@ export default function LoginPage() {
               PANEL DE GESTIÓN
             </div>
           </div>
-        </div>
-
-        {/* Stats compactos en móvil */}
-        <div className="flex gap-2">
-          {[["24","Trabajadores"],["2","Sedes"]].map(([val,lbl])=>(
-            <div
-              key={lbl}
-              className="rounded-lg px-3 py-1.5 text-center"
-              style={{ background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.2)" }}
-            >
-              <div className="font-extrabold text-white text-sm leading-none">{val}</div>
-              <div className="text-white/60 text-[9px] mt-0.5">{lbl}</div>
-            </div>
-          ))}
         </div>
       </div>
 
@@ -245,24 +192,12 @@ export default function LoginPage() {
             Gestión operativa<br />en un solo lugar.
           </div>
           <div className="text-white/70 text-sm leading-relaxed" style={{ maxWidth:340 }}>
-            Controla asistencia, planilla, jaladores y adelantos de tus dos sedes desde un panel unificado.
-          </div>
-          <div className="flex gap-3 mt-9">
-            {[["24","Trabajadores"],["2","Sedes"],["5","Jaladores"]].map(([val,lbl])=>(
-              <div
-                key={lbl}
-                className="flex-1 rounded-xl"
-                style={{ background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.2)", padding:"12px 16px" }}
-              >
-                <div className="font-extrabold text-white text-[22px] leading-none">{val}</div>
-                <div className="text-white/65 text-[11px] mt-1">{lbl}</div>
-              </div>
-            ))}
+            Controla asistencia, planilla, jaladores y adelantos de tus sedes desde un panel unificado.
           </div>
         </div>
 
         <div className="relative text-[11px] text-white/45" style={{ fontFamily:"'DM Mono',monospace" }}>
-          © 2026 TRAMYS · Santa Anita &amp; Puente Piedra
+          © 2026 TRAMYS
         </div>
       </div>
 
@@ -369,7 +304,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* ==== Recuérdame ==== */}
+            {/* ==== Recuérdame el email ==== */}
             <label
               className="flex items-center gap-2.5 cursor-pointer select-none"
               style={{ fontSize: 13, color: t.text, fontFamily: "'Bricolage Grotesque',sans-serif" }}
@@ -395,7 +330,7 @@ export default function LoginPage() {
                 onChange={e => setRecordar(e.target.checked)}
                 style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
               />
-              <span>Recuérdame en este dispositivo</span>
+              <span>Recordar mi email en este dispositivo</span>
             </label>
 
             {/* ==== Mensaje de error ==== */}
@@ -435,52 +370,6 @@ export default function LoginPage() {
                 </>
               ) : "Ingresar al panel"}
             </button>
-          </div>
-
-          {/* ====== Demo roles ====== */}
-          <div className="mt-6 sm:mt-7 pt-5 sm:pt-6" style={{ borderTop:`1px solid ${t.border}` }}>
-            <div
-              className="text-[11px] text-center mb-3 tracking-wider"
-              style={{ color:t.muted, fontFamily:"'DM Mono',monospace" }}
-            >
-              ACCESO RÁPIDO — DEMO
-            </div>
-            <div className="flex flex-col gap-3">
-              {DEMOS.map(r=>(
-                <button
-                  key={r.rol}
-                  onClick={()=>entrarComoDemo(r)}
-                  className="w-full rounded-xl cursor-pointer transition-all flex items-center gap-4 text-left"
-                  style={{
-                    padding:"12px 16px",
-                    background:`${r.color}08`, border:`1px solid ${r.color}25`,
-                    fontFamily:"'Bricolage Grotesque',sans-serif",
-                  }}
-                  onMouseEnter={e=>{ (e.currentTarget as HTMLElement).style.background=`${r.color}16`; (e.currentTarget as HTMLElement).style.borderColor=`${r.color}50`; }}
-                  onMouseLeave={e=>{ (e.currentTarget as HTMLElement).style.background=`${r.color}08`; (e.currentTarget as HTMLElement).style.borderColor=`${r.color}25`; }}
-                >
-                  {/* Avatar */}
-                  <div
-                    className="rounded-full flex items-center justify-center font-extrabold text-[12px] flex-shrink-0"
-                    style={{ width:40, height:40, background:`${r.color}20`, border:`1.5px solid ${r.color}40`, color:r.color }}
-                  >
-                    {r.avatar}
-                  </div>
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-bold text-[13px]" style={{ color:r.color }}>{r.rol}</span>
-                      <span className="text-[11px]" style={{ color:t.muted }}>·</span>
-                      <span className="font-semibold text-[13px] truncate" style={{ color:t.text }}>{r.nombre}</span>
-                    </div>
-                    <div className="text-[11px] truncate" style={{ color:t.muted }}>{r.sede} · {r.acceso}</div>
-                  </div>
-                  <span className="flex-shrink-0 flex items-center" style={{ color:r.color }}>
-                    <Icon name="chevron_right" size={16} color={r.color} />
-                  </span>
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       </div>

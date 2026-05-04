@@ -5,6 +5,7 @@
 import type {
   Sede, Worker, AsistenciaRec, Adelanto, Permiso, Evento,
   Jalador, IngresoJalador, AccesoTemporal, MovimientoCaja,
+  CuadrePersonal, PagoPlanilla, MetodoPago,
   Rol, EstadoAsist, EstadoAdel, EstadoPerm, TipoPerm, TipoEvento,
   TipoMovimiento, CategoriaFijo, TarifasWorker,
 } from "@/components/providers/DataProvider";
@@ -127,6 +128,9 @@ export function rowToAsistencia(r: Record<string, unknown>): AsistenciaRec {
     sedeIdDia:       (r.sede_id_dia   as string | undefined) ?? undefined,
     turnoEntrada:    (r.turno_entrada as string | undefined) ?? undefined,
     turnoSalida:     (r.turno_salida  as string | undefined) ?? undefined,
+    marcadoPor:      (r.marcado_por   as AsistenciaRec["marcadoPor"]) ?? undefined,
+    verificadoPor:   (r.verificado_por as string | null | undefined) ?? null,
+    verificadoAt:    (r.verificado_at as string | undefined) ?? undefined,
   };
 }
 export function asistenciaToRow(a: Partial<AsistenciaRec>): Record<string, unknown> {
@@ -141,6 +145,9 @@ export function asistenciaToRow(a: Partial<AsistenciaRec>): Record<string, unkno
   if (a.sedeIdDia       !== undefined) out.sede_id_dia      = a.sedeIdDia ?? null;
   if (a.turnoEntrada    !== undefined) out.turno_entrada    = a.turnoEntrada ?? null;
   if (a.turnoSalida     !== undefined) out.turno_salida     = a.turnoSalida ?? null;
+  if (a.marcadoPor      !== undefined) out.marcado_por      = a.marcadoPor ?? null;
+  if (a.verificadoPor   !== undefined) out.verificado_por   = a.verificadoPor;
+  if (a.verificadoAt    !== undefined) out.verificado_at    = a.verificadoAt;
   return out;
 }
 
@@ -278,5 +285,51 @@ export function accesoTempToRow(a: Partial<AccesoTemporal>): Record<string, unkn
   if (a.desde       !== undefined) out.desde        = a.desde;
   if (a.hasta       !== undefined) out.hasta        = a.hasta;
   if (a.motivo      !== undefined) out.motivo       = a.motivo ?? "";
+  return out;
+}
+
+/* ====== Cuadres personales (sandbox del trabajador, RLS solo dueño) ====== */
+export function rowToCuadrePersonal(r: Record<string, unknown>): CuadrePersonal {
+  return {
+    id:       String(r.id),
+    workerId: String(r.worker_id),
+    fecha:    String(r.fecha),
+    worked:   Boolean(r.worked ?? false),
+    late:     Boolean(r.late ?? false),
+  };
+}
+export function cuadrePersonalToRow(c: Partial<CuadrePersonal>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (c.workerId !== undefined) out.worker_id = c.workerId;
+  if (c.fecha    !== undefined) out.fecha     = c.fecha;
+  if (c.worked   !== undefined) out.worked    = c.worked;
+  if (c.late     !== undefined) out.late      = c.late;
+  return out;
+}
+
+/* ====== Pagos de planilla ====== */
+export function rowToPagoPlanilla(r: Record<string, unknown>): PagoPlanilla {
+  return {
+    id:         String(r.id),
+    workerId:   String(r.worker_id),
+    desdeISO:   String(r.desde_iso),
+    hastaISO:   String(r.hasta_iso),
+    fechaPago:  String(r.fecha_pago),
+    montoNeto:  Number(r.monto_neto ?? 0),
+    metodoPago: (r.metodo_pago as MetodoPago) ?? "efectivo",
+    periodo:    (r.periodo as PagoPlanilla["periodo"] | undefined) ?? undefined,
+    nota:       (r.nota as string | undefined) ?? undefined,
+  };
+}
+export function pagoPlanillaToRow(p: Partial<PagoPlanilla>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (p.workerId   !== undefined) out.worker_id   = p.workerId;
+  if (p.desdeISO   !== undefined) out.desde_iso   = p.desdeISO;
+  if (p.hastaISO   !== undefined) out.hasta_iso   = p.hastaISO;
+  if (p.fechaPago  !== undefined) out.fecha_pago  = p.fechaPago;
+  if (p.montoNeto  !== undefined) out.monto_neto  = p.montoNeto;
+  if (p.metodoPago !== undefined) out.metodo_pago = p.metodoPago;
+  if (p.periodo    !== undefined) out.periodo     = p.periodo ?? null;
+  if (p.nota       !== undefined) out.nota        = p.nota ?? null;
   return out;
 }

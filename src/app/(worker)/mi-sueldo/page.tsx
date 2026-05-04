@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/Badge";
 import { HideableAmount } from "@/components/ui/HideableAmount";
 import { money, formatFecha } from "@/lib/utils/formatters";
 import { useWorkerSession } from "@/hooks/useWorkerSession";
-import { useData, ingresoDia, isWeekendISO } from "@/components/providers/DataProvider";
+import { useData, ingresoDia, isWeekendISO, pagoQueCubre } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 
@@ -55,6 +55,24 @@ export default function MiSueldoPage() {
     base.registros.sort((a,b) => b.fecha.localeCompare(a.fecha));
     return base;
   }, [worker, d.asistencia, year, month]);
+
+  /* ====== Pagos de planilla recibidos en este mes ====== */
+  const misPagos = useMemo(() => {
+    if (!worker) return [];
+    const desdeMes = `${year}-${String(month+1).padStart(2,"0")}-01`;
+    const finMes   = `${year}-${String(month+1).padStart(2,"0")}-${String(new Date(year, month+1, 0).getDate()).padStart(2,"0")}`;
+    /* Un pago "del mes" es aquel cuyo periodo (desde/hasta) toca el mes actual,
+       O cuya fecha de pago real cae en el mes (puede haberse pagado en este mes
+       un periodo de un mes anterior). */
+    return d.pagosPlanilla
+      .filter(p => p.workerId === worker.id)
+      .filter(p => {
+        const tocaPeriodo = !(p.hastaISO < desdeMes || p.desdeISO > finMes);
+        const pagadoMes   = p.fechaPago >= desdeMes && p.fechaPago <= finMes;
+        return tocaPeriodo || pagadoMes;
+      })
+      .sort((a,b) => b.fechaPago.localeCompare(a.fechaPago));
+  }, [worker, d.pagosPlanilla, year, month]);
 
   /* ====== Adelantos aprobados del mes ====== */
   const misAdelantos = useMemo(() => {
@@ -303,6 +321,102 @@ export default function MiSueldoPage() {
           </div>
         </div>
 
+        {/* ====== Pagos recibidos ====== */}
+        <div className="card" style={{ marginTop: 14, padding: 0, overflow:"hidden" }}>
+          <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap: 8 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Pagos recibidos</div>
+              <div style={{ fontSize: 11, color:"var(--text-muted)" }}>
+                Pagos que el administrador ha registrado para ti en este mes.
+              </div>
+            </div>
+            <span style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
+              {misPagos.length} pago{misPagos.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="table-wrap">
+            <table className="tramys-table">
+              <thead>
+                <tr>
+                  <th>Periodo pagado</th>
+                  <th>Fecha de pago</th>
+                  <th>Monto</th>
+                  <th>Método</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {misPagos.length === 0 && (
+                  <tr><td colSpan={5} style={{ textAlign:"center", padding: 30, color:"var(--text-muted)" }}>
+                    Aún no hay pagos registrados para este mes
+                  </td></tr>
+                )}
+                {misPagos.map(p => {
+                  /* "Fuera de fecha" si la fechaPago es posterior a hastaISO. */
+                  const fuera = p.fechaPago > p.hastaISO;
+                  const diasFuera = fuera
+                    ? Math.ceil((new Date(p.fechaPago).getTime() - new Date(p.hastaISO).getTime()) / (1000*60*60*24))
+                    : 0;
+                  const metodoColor: Record<string, string> = {
+                    efectivo: "#16a34a", yape: "#7c3aed", transferencia: "#0891b2",
+                  };
+                  const col = metodoColor[p.metodoPago] ?? "var(--text)";
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>
+                        {formatFecha(p.desdeISO)} → {formatFecha(p.hastaISO)}
+                      </td>
+                      <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>
+                        {formatFecha(p.fechaPago)}
+                      </td>
+                      <td>
+                        <HideableAmount value={money(p.montoNeto)} size={13} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" />
+                      </td>
+                      <td>
+                        <span style={{
+                          display:"inline-block",
+                          fontSize: 10.5, fontWeight: 700, padding:"3px 8px",
+                          borderRadius: 99, color: col,
+                          background: `${col}1a`,
+                          border: `1px solid ${col}55`,
+                          fontFamily:"'DM Mono',monospace", textTransform:"capitalize",
+                        }}>
+                          {p.metodoPago}
+                        </span>
+                      </td>
+                      <td>
+                        {fuera ? (
+                          <span title={`Pagado ${diasFuera} día${diasFuera === 1 ? "" : "s"} después del cierre del periodo`}
+                            style={{
+                              display:"inline-flex", alignItems:"center", gap: 4,
+                              fontSize: 10.5, fontWeight: 700, padding:"3px 8px",
+                              borderRadius: 99, color:"#d97706",
+                              background:"rgba(245,158,11,0.14)",
+                              fontFamily:"'DM Mono',monospace",
+                            }}>
+                            <Icon name="alert_circle" size={11} color="#d97706" />
+                            +{diasFuera}d
+                          </span>
+                        ) : (
+                          <span style={{
+                            display:"inline-block",
+                            fontSize: 10.5, fontWeight: 700, padding:"3px 8px",
+                            borderRadius: 99, color:"#16a34a",
+                            background:"rgba(34,197,94,0.14)",
+                            fontFamily:"'DM Mono',monospace",
+                          }}>
+                            A tiempo
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         {/* ====== Detalle por día (solo registros del mes) ====== */}
         <div className="card" style={{ marginTop: 14, padding: 0, overflow:"hidden" }}>
           <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -315,18 +429,19 @@ export default function MiSueldoPage() {
             <table className="tramys-table">
               <thead>
                 <tr>
-                  <th>Fecha</th><th>Estado</th><th>Entrada</th><th>Salida</th><th>Tipo</th><th>Ingreso</th>
+                  <th>Fecha</th><th>Estado</th><th>Entrada</th><th>Salida</th><th>Tipo</th><th>Ingreso</th><th>Pago</th>
                 </tr>
               </thead>
               <tbody>
                 {desglose.registros.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign:"center", padding: 30, color:"var(--text-muted)" }}>Sin registros</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign:"center", padding: 30, color:"var(--text-muted)" }}>Sin registros</td></tr>
                 )}
                 {pagDias.pageItems.map(r => {
                   const esFer = esFeriadoOficial(r.fecha).es;
                   const esFds = isWeekendISO(r.fecha);
                   const ing   = ingresoDia(r, worker.tarifas, esFds, esFer);
                   const tieneOverride = r.overrideIngreso !== null && r.overrideIngreso !== undefined;
+                  const pago = pagoQueCubre(d.pagosPlanilla, worker.id, r.fecha);
                   let tipo = "Normal", color = "#16a34a";
                   if (tieneOverride) { tipo = "Ajustado"; color = "var(--brand)"; }
                   else if (r.estado === "feriado" || esFer) { tipo = "Feriado"; color = "var(--brand)"; }
@@ -334,7 +449,10 @@ export default function MiSueldoPage() {
                   else if (r.estado === "tardanza") { tipo = "Tardanza"; color = "#f59e0b"; }
                   else if (r.estado === "ausente" || r.estado === "permiso") { tipo = "—"; color = "#8b8fa8"; }
                   return (
-                    <tr key={r.id} title={tieneOverride && r.motivoEdit ? `Nota: ${r.motivoEdit}` : undefined}>
+                    <tr key={r.id}
+                      title={tieneOverride && r.motivoEdit ? `Nota: ${r.motivoEdit}` : undefined}
+                      style={pago ? { background:"rgba(34,197,94,0.04)" } : undefined}
+                    >
                       <td style={{ fontFamily:"'DM Mono',monospace", fontSize: 12 }}>{formatFecha(r.fecha)}</td>
                       <td><Badge variant={r.estado as "presente"|"tardanza"|"ausente"|"permiso"|"feriado"} small /></td>
                       <td style={{ fontFamily:"'DM Mono',monospace" }}>{r.entrada ?? "—"}</td>
@@ -354,6 +472,18 @@ export default function MiSueldoPage() {
                             </span>
                           )}
                         </span>
+                      </td>
+                      <td>
+                        {pago ? (
+                          <span title={`Pagado el ${formatFecha(pago.fechaPago)} · ${pago.metodoPago}`}
+                            style={{ fontSize: 9.5, fontWeight: 800, padding:"2px 7px", borderRadius: 99,
+                              background:"rgba(34,197,94,0.14)", color:"#16a34a",
+                              fontFamily:"'DM Mono',monospace", letterSpacing: .4 }}>
+                            PAGADO
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 10, color:"var(--text-muted)" }}>—</span>
+                        )}
                       </td>
                     </tr>
                   );

@@ -1,32 +1,25 @@
 "use client";
 
 /* ================= PROVIDERS WRAPPER ================= */
-/* Selecciona Data/Session backend según variable de entorno.  */
-/* `NEXT_PUBLIC_USE_SUPABASE=true` activa el modo conectado;   */
-/* cualquier otro valor (o ausencia) mantiene el demo local.   */
+/* Backend unico: Supabase. La app no soporta modo demo desde el       */
+/* lanzamiento — todos los datos viven en Supabase + Realtime.         */
 
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { PrivacyProvider } from "@/components/providers/PrivacyProvider";
 import { DataProvider } from "@/components/providers/DataProvider";
-import { DataProviderSupabase } from "@/components/providers/DataProviderSupabase";
 import { SessionProvider } from "@/components/providers/SessionProvider";
-import { SessionProviderSupabase } from "@/components/providers/SessionProviderSupabase";
 import { FeedbackProvider } from "@/components/ui/Feedback";
 
-const USE_SUPABASE = process.env.NEXT_PUBLIC_USE_SUPABASE === "true";
-
 export function Providers({ children }: { children: React.ReactNode }) {
-  const Data    = USE_SUPABASE ? DataProviderSupabase    : DataProvider;
-  const Session = USE_SUPABASE ? SessionProviderSupabase : SessionProvider;
   return (
     <ThemeProvider>
       <PrivacyProvider>
         <FeedbackProvider>
-          <Data>
-            <Session>
+          <DataProvider>
+            <SessionProvider>
               {children}
-            </Session>
-          </Data>
+            </SessionProvider>
+          </DataProvider>
         </FeedbackProvider>
       </PrivacyProvider>
     </ThemeProvider>

@@ -15,8 +15,6 @@ import { useData } from "@/components/providers/DataProvider";
 import { createClient } from "@/lib/supabase/client";
 import { subirAvatar } from "@/lib/storage/avatars";
 
-const USE_SUPABASE = process.env.NEXT_PUBLIC_USE_SUPABASE === "true";
-
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -72,25 +70,23 @@ export function MiPerfilModal({ open, onClose }: Props) {
       return;
     }
 
-    /* En modo Supabase: subir avatar al bucket y sincronizar Auth */
+    /* Avatar al bucket Storage + sync con Supabase Auth (email / password) */
     let avatarFinal: string | null = avatar;
-    if (USE_SUPABASE) {
-      try {
-        if (avatar && avatar.startsWith("data:")) {
-          avatarFinal = await subirAvatar(worker!.id, avatar);
-        }
-        const supabase = createClient();
-        const updates: { email?: string; password?: string } = {};
-        if (email.trim() && email.trim() !== worker!.email) updates.email = email.trim();
-        if (mostrarPwd && password) updates.password = password;
-        if (Object.keys(updates).length > 0) {
-          const { error } = await supabase.auth.updateUser(updates);
-          if (error) { setErrorFlash(error.message); return; }
-        }
-      } catch (err) {
-        setErrorFlash(err instanceof Error ? err.message : "Error al guardar en Supabase");
-        return;
+    try {
+      if (avatar && avatar.startsWith("data:")) {
+        avatarFinal = await subirAvatar(worker!.id, avatar);
       }
+      const supabase = createClient();
+      const updates: { email?: string; password?: string } = {};
+      if (email.trim() && email.trim() !== worker!.email) updates.email = email.trim();
+      if (mostrarPwd && password) updates.password = password;
+      if (Object.keys(updates).length > 0) {
+        const { error } = await supabase.auth.updateUser(updates);
+        if (error) { setErrorFlash(error.message); return; }
+      }
+    } catch (err) {
+      setErrorFlash(err instanceof Error ? err.message : "Error al guardar en Supabase");
+      return;
     }
 
     d.updateWorker(worker!.id, {

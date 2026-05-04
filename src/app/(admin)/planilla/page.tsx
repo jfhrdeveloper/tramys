@@ -8,11 +8,22 @@ import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icons";
 import { HideableAmount, StatCardHidden } from "@/components/ui/HideableAmount";
 import { money, formatFecha } from "@/lib/utils/formatters";
-import { useData, ingresoDia, isWeekendISO, agregadoCaja } from "@/components/providers/DataProvider";
+import { useData, ingresoDia, isWeekendISO, agregadoCaja, estaPagado, isoToday, type MetodoPago } from "@/components/providers/DataProvider";
 import { esFeriadoOficial } from "@/lib/utils/peruHolidays";
 import Link from "next/link";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
-import { rangoPeriodo, PERIODOS, PERIODO_LABEL, type Periodo } from "@/lib/utils/periodos";
+import { rangoPeriodo, PERIODO_LABEL, type Periodo } from "@/lib/utils/periodos";
+import { useConfirm } from "@/components/ui/Feedback";
+
+/* Pago de planilla solo aplica a quincena/mes — diario y semanal son cuadres
+   internos y no representan un ciclo real de pago. */
+const PERIODOS_PLANILLA: Periodo[] = ["quincenal", "mensual"];
+
+const METODOS: { id: MetodoPago; label: string; icon: string; color: string }[] = [
+  { id: "efectivo",      label: "Efectivo",      icon: "money_bill",   color: "#16a34a" },
+  { id: "yape",          label: "Yape",          icon: "smartphone",   color: "#7c3aed" },
+  { id: "transferencia", label: "Transferencia", icon: "credit_card",  color: "#0891b2" },
+];
 
 interface Row {
   workerId: string;
@@ -28,14 +39,19 @@ interface Row {
   totalBruto: number;
   adelantos: number;
   neto: number;
+  /* Verificación: del total de marcaciones del trabajador en el periodo,
+     cuántas ya fueron auditadas. Se muestra como columna "verif." compacta. */
+  marcadasTrab: number;
+  verificadas:  number;
 }
 
 export default function PlanillaPage() {
   const d = useData();
+  const confirm = useConfirm();
   const [periodo, setPeriodo] = useState<Periodo>("quincenal");
   const [filtroSede, setFiltroSede] = useState("todas");
-  const [pagados, setPagados] = useState<string[]>([]);
   const [modalW, setModalW] = useState<Row | null>(null);
+  const [modalPago, setModalPago] = useState<Row | null>(null);
 
   /* Rango activo. Centralizado en `periodos.ts` — quincenal y mensual coinciden
      con el cuadre que usa /sedes y /caja, así "Sueldos por pagar" cuadra. */
@@ -48,12 +64,17 @@ export default function PlanillaPage() {
       .map(w => {
         const sede = d.sedes.find(s => s.id === w.sedeId);
         let normal = 0, tardanza = 0, finSem = 0, feriado = 0, bruto = 0;
+        let marcadasTrab = 0, verificadas = 0;
         for (const a of d.asistencia) {
           if (a.workerId !== w.id) continue;
           if (a.fecha < rango.desdeISO || a.fecha > rango.hastaISO) continue;
           const esFer = esFeriadoOficial(a.fecha).es;
           const esFds = isWeekendISO(a.fecha);
           bruto += ingresoDia(a, w.tarifas, esFds, esFer);
+          if (a.marcadoPor === "trabajador") {
+            marcadasTrab += 1;
+            if (a.verificadoPor) verificadas += 1;
+          }
           if (a.overrideIngreso !== null) { normal += 1; continue; }
           if (a.estado === "ausente" || a.estado === "permiso") continue;
           if (a.estado === "feriado" || esFer) feriado += 1;
@@ -71,6 +92,7 @@ export default function PlanillaPage() {
           sedeNombre: sede?.nombre ?? "—", sedeColor: sede?.color ?? "#C41A3A",
           diasNormal: normal, diasTardanza: tardanza, diasFinSem: finSem, diasFeriado: feriado,
           totalBruto: bruto, adelantos, neto: Math.max(0, bruto - adelantos),
+          marcadasTrab, verificadas,
         };
       });
   }, [d.workers, d.sedes, d.asistencia, d.adelantos, rango.desdeISO, rango.hastaISO, filtroSede]);
@@ -91,7 +113,25 @@ export default function PlanillaPage() {
   }, [d.sedes, d.movimientosCaja, rango.desdeISO, rango.hastaISO, filtroSede]);
   const gananciaEmpresa = ingresosRangoSedes - totalNeto;
 
-  const togglePagado = (id: string) => setPagados(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  /* ====== Estado real de pago por trabajador en el rango activo ====== */
+  function pagoDe(workerId: string) {
+    return estaPagado(d.pagosPlanilla, workerId, rango.desdeISO, rango.hastaISO);
+  }
+
+  async function togglePagado(r: Row) {
+    const yaPagado = pagoDe(r.workerId);
+    if (yaPagado) {
+      const ok = await confirm({
+        title: "Anular pago",
+        message: `¿Anular el pago de ${r.nombre} del ${formatFecha(yaPagado.desdeISO)} al ${formatFecha(yaPagado.hastaISO)}? El registro se eliminará.`,
+        confirmLabel: "Anular pago",
+        tone: "danger",
+      });
+      if (ok) d.deletePagoPlanilla(yaPagado.id);
+      return;
+    }
+    setModalPago(r);
+  }
 
   const pag = usePagination(rows);
 
@@ -109,7 +149,7 @@ export default function PlanillaPage() {
             display: "flex", background: "var(--bg)", border: "1px solid var(--border)",
             borderRadius: 8, padding: 3, flexWrap: "wrap",
           }}>
-            {PERIODOS.map(p => {
+            {PERIODOS_PLANILLA.map(p => {
               const active = periodo === p;
               return (
                 <button key={p} onClick={() => setPeriodo(p)}
@@ -156,13 +196,15 @@ export default function PlanillaPage() {
                   <th>Bruto</th>
                   <th>Adelantos</th>
                   <th>Neto</th>
+                  <th>Verif.</th>
                   <th>Estado</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {pag.pageItems.map(r => {
-                  const pagado = pagados.includes(r.workerId);
+                  const pago = pagoDe(r.workerId);
+                  const pagado = !!pago;
                   return (
                     <tr key={r.workerId} style={{ opacity: pagado ? 0.7 : 1 }}>
                       <td>
@@ -186,13 +228,37 @@ export default function PlanillaPage() {
                           : <span style={{ color:"var(--text-muted)" }}>—</span>}
                       </td>
                       <td><HideableAmount value={money(r.neto)} size={14} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" /></td>
-                      <td><Badge variant={pagado ? "pagado" : "pendiente"} small /></td>
+                      <td>
+                        {r.marcadasTrab === 0 ? (
+                          <span style={{ fontSize: 10, color:"var(--text-muted)" }}>—</span>
+                        ) : (
+                          <span title={`${r.verificadas} de ${r.marcadasTrab} marcaciones del trabajador verificadas`}
+                            style={{
+                              fontSize: 10.5, fontWeight: 700, padding:"3px 7px", borderRadius: 99,
+                              fontFamily:"'DM Mono',monospace",
+                              background: r.verificadas === r.marcadasTrab ? "rgba(34,197,94,0.14)" : "rgba(245,158,11,0.14)",
+                              color:      r.verificadas === r.marcadasTrab ? "#16a34a" : "#d97706",
+                            }}>
+                            {r.verificadas}/{r.marcadasTrab}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display:"flex", flexDirection:"column", gap: 2 }}>
+                          <Badge variant={pagado ? "pagado" : "pendiente"} small />
+                          {pago && (
+                            <span style={{ fontSize: 9, color:"#16a34a", fontFamily:"'DM Mono',monospace", fontWeight: 600 }}>
+                              {formatFecha(pago.fechaPago)}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td>
                         <div style={{ display:"flex", gap: 4 }}>
                           <button className="btn-outline" style={{ fontSize: 11, padding:"3px 10px" }} onClick={()=>setModalW(r)}>Desglose</button>
-                          <button onClick={()=>togglePagado(r.workerId)}
-                            title={pagado
-                              ? `Pagado del ${formatFecha(rango.desdeISO)} al ${formatFecha(rango.hastaISO)}`
+                          <button onClick={()=>togglePagado(r)}
+                            title={pago
+                              ? `Pagado el ${formatFecha(pago.fechaPago)} (${formatFecha(pago.desdeISO)} → ${formatFecha(pago.hastaISO)}). Click para anular.`
                               : `Marcar como pagado del ${formatFecha(rango.desdeISO)} al ${formatFecha(rango.hastaISO)}`}
                             style={{
                               background: pagado ? "rgba(34,197,94,0.1)" : "transparent",
@@ -208,7 +274,7 @@ export default function PlanillaPage() {
                     </tr>
                   );
                 })}
-                {rows.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", padding: 36, color:"var(--text-muted)" }}>Sin registros</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={12} style={{ textAlign:"center", padding: 36, color:"var(--text-muted)" }}>Sin registros</td></tr>}
               </tbody>
               <tfoot>
                 <tr style={{ background:"var(--bg)" }}>
@@ -216,7 +282,7 @@ export default function PlanillaPage() {
                   <td style={{ borderTop:"2px solid var(--border)" }}><HideableAmount value={money(totalBruto)} size={14} color="var(--text)" weight={800} fontFamily="'DM Mono',monospace" /></td>
                   <td style={{ borderTop:"2px solid var(--border)" }}><HideableAmount value={`−${money(totalAdel)}`} size={14} color="#f59e0b" weight={800} fontFamily="'DM Mono',monospace" /></td>
                   <td style={{ borderTop:"2px solid var(--border)" }}><HideableAmount value={money(totalNeto)} size={14} color="#16a34a" weight={800} fontFamily="'DM Mono',monospace" /></td>
-                  <td colSpan={2} style={{ borderTop:"2px solid var(--border)" }} />
+                  <td colSpan={3} style={{ borderTop:"2px solid var(--border)" }} />
                 </tr>
               </tfoot>
             </table>
@@ -314,6 +380,144 @@ export default function PlanillaPage() {
           </div>
         )}
       </Modal>
+
+      {/* Modal registrar pago — pide fecha real, método y monto */}
+      <ModalRegistrarPago
+        row={modalPago}
+        rango={rango}
+        periodo={periodo}
+        onClose={()=>setModalPago(null)}
+      />
     </>
+  );
+}
+
+/* ================= MODAL: REGISTRAR PAGO ================= */
+function ModalRegistrarPago({
+  row, rango, periodo, onClose,
+}: {
+  row: Row | null;
+  rango: { desdeISO: string; hastaISO: string };
+  periodo: Periodo;
+  onClose: () => void;
+}) {
+  const d = useData();
+  const [fechaPago, setFechaPago] = useState(isoToday());
+  const [metodo,    setMetodo]    = useState<MetodoPago>("efectivo");
+  const [monto,     setMonto]     = useState(0);
+  const [nota,      setNota]      = useState("");
+
+  /* Reset cada vez que cambia la fila objetivo. */
+  useMemo(() => {
+    if (row) {
+      setFechaPago(isoToday());
+      setMetodo("efectivo");
+      setMonto(row.neto);
+      setNota("");
+    }
+  }, [row?.workerId]); // eslint-disable-line
+
+  if (!row) return null;
+
+  /* Aviso de "fuera de fecha" cuando el pago se hace después del fin del periodo. */
+  const fueraDeFecha = fechaPago > rango.hastaISO;
+  const diasFuera = fueraDeFecha
+    ? Math.ceil((new Date(fechaPago).getTime() - new Date(rango.hastaISO).getTime()) / (1000*60*60*24))
+    : 0;
+
+  function guardar() {
+    if (!monto || monto <= 0) return;
+    d.addPagoPlanilla({
+      workerId:  row!.workerId,
+      desdeISO:  rango.desdeISO,
+      hastaISO:  rango.hastaISO,
+      fechaPago,
+      montoNeto: monto,
+      metodoPago: metodo,
+      periodo: periodo === "quincenal" || periodo === "mensual" ? periodo : undefined,
+      nota: nota.trim() || undefined,
+    });
+    onClose();
+  }
+
+  return (
+    <Modal open={!!row} onClose={onClose} title="Registrar pago de planilla" width={460}>
+      {/* Cabecera con info del trabajador y rango */}
+      <div style={{ display:"flex", alignItems:"center", gap: 12, padding: 12, background:"var(--bg)", border:"1px solid var(--border)", borderRadius: 10, marginBottom: 14 }}>
+        <PhotoAvatar src={row.avatar} initials={(row.apodo || row.nombre)[0]} size={40} color={row.sedeColor} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700 }}>{row.nombre}</div>
+          <div style={{ fontSize: 11, color:"var(--text-muted)", fontFamily:"'DM Mono',monospace" }}>
+            {formatFecha(rango.desdeISO)} → {formatFecha(rango.hastaISO)} · {PERIODO_LABEL[periodo]}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display:"flex", flexDirection:"column", gap: 12, marginBottom: 16 }}>
+        <div>
+          <div className="section-label">Fecha de pago</div>
+          <input
+            type="date"
+            className="input-base input-mono"
+            value={fechaPago}
+            onChange={e=>setFechaPago(e.target.value)}
+          />
+          {fueraDeFecha && (
+            <div style={{ fontSize: 11, color:"#d97706", marginTop: 5, fontFamily:"'DM Mono',monospace", display:"flex", alignItems:"center", gap: 5 }}>
+              <Icon name="alert_circle" size={12} color="#d97706" />
+              Pago fuera de fecha — {diasFuera} día{diasFuera === 1 ? "" : "s"} después del cierre del periodo
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="section-label">Método de pago</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap: 6 }}>
+            {METODOS.map(m => (
+              <button key={m.id} type="button" onClick={()=>setMetodo(m.id)}
+                style={{
+                  padding:"10px 6px", borderRadius: 8, cursor:"pointer",
+                  border: `2px solid ${metodo===m.id ? m.color : "var(--border)"}`,
+                  background: metodo===m.id ? `${m.color}14` : "var(--bg)",
+                  color:      metodo===m.id ? m.color : "var(--text-muted)",
+                  fontWeight: metodo===m.id ? 700 : 500, fontSize: 12,
+                  display:"inline-flex", flexDirection:"column", alignItems:"center", gap: 4,
+                }}>
+                <Icon name={m.icon} size={16} color={metodo===m.id ? m.color : "var(--text-muted)"} />
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="section-label">Monto pagado (S/)</div>
+          <input
+            type="number"
+            className="input-base input-mono"
+            value={monto || ""}
+            onChange={e=>setMonto(Number(e.target.value))}
+            placeholder="0.00"
+          />
+          {monto !== row.neto && monto > 0 && (
+            <div style={{ fontSize: 10.5, color:"var(--text-muted)", marginTop: 4, fontFamily:"'DM Mono',monospace" }}>
+              Neto calculado: {money(row.neto)} · Diferencia: {money(monto - row.neto)}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="section-label">Nota (opcional)</div>
+          <textarea className="input-base" rows={2} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: pago retrasado por viaje, parcial, etc." />
+        </div>
+      </div>
+
+      <div style={{ display:"flex", gap: 10, justifyContent:"flex-end" }}>
+        <button className="btn-outline" onClick={onClose}>Cancelar</button>
+        <button className="btn-primary" onClick={guardar} disabled={!monto || monto <= 0}>
+          Registrar pago
+        </button>
+      </div>
+    </Modal>
   );
 }

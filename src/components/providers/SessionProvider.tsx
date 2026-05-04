@@ -1,12 +1,13 @@
 "use client";
 
 /* ================= SESSION PROVIDER ================= */
-/* Sesión activa basada en el DataProvider (modo demo).      */
-/* Reemplaza temporalmente al perfil de Supabase para que el */
-/* usuario pueda probar las vistas de owner / encargado /    */
-/* trabajador desde el mismo navegador.                      */
+/* Sesion basada en auth.uid() de Supabase. El worker activo se     */
+/* busca dentro del store por el id del usuario autenticado.        */
+/* La impersonacion ("ver como" desde Accesos) se resuelve con      */
+/* override en localStorage que prevalece sobre auth.uid().         */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { useData, type Worker, type Sede } from "@/components/providers/DataProvider";
 
 /* ================= TIPOS ================= */
@@ -15,126 +16,80 @@ export interface SessionCtx {
   sede:             Sede | null;
   signOut:          () => void;
   switchTo:         (workerId: string) => void;
-  /* Restaura la sesión real cuando el owner está "viendo como" otro usuario */
+  /* Restaura la sesion real cuando el owner esta "viendo como" otro usuario */
   restoreSession:   () => void;
-  /* True cuando el id activo difiere del id real (impersonación en curso) */
+  /* True cuando el id activo difiere del id real (impersonacion en curso) */
   isImpersonating:  boolean;
   ready:            boolean;
 }
 
-const STORAGE_KEY      = "tramys_session_id";       /* sesión efectiva (la que decide el rol activo) */
-const REAL_KEY         = "tramys_session_real_id";  /* sesión real del owner cuando está impersonando */
-
-/* Lee la sesión efectiva. sessionStorage tiene prioridad (modo "no recordarme":
-   muere al cerrar la pestaña) y cae a localStorage para sesiones persistentes. */
-function leerSesion(): string | null {
-  try {
-    return sessionStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(STORAGE_KEY);
-  } catch { return null; }
-}
-function escribirSesion(workerId: string) {
-  try {
-    /* Mantenemos el storage donde ya estaba; si no existía, por defecto a localStorage. */
-    if (sessionStorage.getItem(STORAGE_KEY) !== null) {
-      sessionStorage.setItem(STORAGE_KEY, workerId);
-    } else {
-      localStorage.setItem(STORAGE_KEY, workerId);
-    }
-  } catch {}
-}
-function borrarSesion() {
-  try {
-    sessionStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(REAL_KEY);
-  } catch {}
-}
+const IMPERSONATE_KEY = "tramys_impersonate_id";
 
 const Ctx = createContext<SessionCtx | null>(null);
-/* Context compartido — el SessionProviderSupabase publica el mismo shape aquí */
+/* Context exportado por si algun componente quiere consumirlo crudo */
 export const SessionContext = Ctx;
 export type SessionCtxValue = SessionCtx;
 
 /* ================= PROVIDER ================= */
 export function SessionProvider({ children }: { children: React.ReactNode }) {
+  const supabase = useMemo(() => createClient(), []);
   const d = useData();
-  const [selId,  setSelId]  = useState<string | null>(null);
-  const [realId, setRealId] = useState<string | null>(null);
-  const [ready,  setReady]  = useState(false);
+  const [authId, setAuthId]           = useState<string | null>(null);
+  const [impersonate, setImpersonate] = useState<string | null>(null);
+  const [ready, setReady]             = useState(false);
 
-  /* Hidratar desde sessionStorage > localStorage. Si no hay sesión, redirigir a /login */
+  /* ====== Carga sesion + suscripcion a auth state ====== */
   useEffect(() => {
-    const storedSel = leerSesion();
-    let storedReal: string | null = null;
-    try { storedReal = localStorage.getItem(REAL_KEY); } catch {}
-    setSelId(storedSel);
-    setRealId(storedReal);
-    setReady(true);
-
-    /* Sin sesión y dentro de un panel privado → al login */
-    if (!storedSel && typeof window !== "undefined") {
-      const path = window.location.pathname;
-      const inPanel = path.startsWith("/dashboard") || path.startsWith("/mi-")
-        || path.startsWith("/trabajadores") || path.startsWith("/asistencia")
-        || path.startsWith("/sedes") || path.startsWith("/jaladores")
-        || path.startsWith("/planilla") || path.startsWith("/eventos")
-        || path.startsWith("/reportes") || path.startsWith("/accesos")
-        || path.startsWith("/adelantos") || path.startsWith("/cumpleanos")
-        || path.startsWith("/feriados") || path.startsWith("/mis-")
-        || path === "/icons";
-      if (inPanel) window.location.href = "/login";
+    let active = true;
+    async function bootstrap() {
+      const { data } = await supabase.auth.getUser();
+      if (!active) return;
+      setAuthId(data.user?.id ?? null);
+      try { setImpersonate(localStorage.getItem(IMPERSONATE_KEY)); } catch {}
+      setReady(true);
     }
-  }, []);
+    void bootstrap();
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => {
+      setAuthId(sess?.user?.id ?? null);
+    });
+    return () => { active = false; sub.subscription.unsubscribe(); };
+  }, [supabase]);
 
-  /* Cambiar a otro worker (impersonar). Si todavía no hay sesión real
-     registrada, guarda la actual como "real" (origen de la impersonación). */
-  const switchTo = useCallback((workerId: string) => {
-    try {
-      const realActual = localStorage.getItem(REAL_KEY);
-      const sesionActual = leerSesion();
-      if (!realActual && sesionActual && sesionActual !== workerId) {
-        localStorage.setItem(REAL_KEY, sesionActual);
-        setRealId(sesionActual);
-      }
-      escribirSesion(workerId);
-    } catch {}
-    setSelId(workerId);
-  }, []);
-
-  /* Vuelve a la sesión original del owner */
-  const restoreSession = useCallback(() => {
-    try {
-      const real = localStorage.getItem(REAL_KEY);
-      if (real) {
-        escribirSesion(real);
-        localStorage.removeItem(REAL_KEY);
-        setSelId(real);
-        setRealId(null);
-        if (typeof window !== "undefined") window.location.href = "/dashboard";
-      }
-    } catch {}
-  }, []);
-
-  const signOut = useCallback(() => {
-    borrarSesion();
-    if (typeof window !== "undefined") window.location.href = "/login";
-  }, []);
-
+  /* ====== Worker activo: si hay impersonacion, prevalece ====== */
+  const activeId = impersonate ?? authId;
   const worker = useMemo(
-    () => selId ? d.workers.find(w => w.id === selId) ?? null : null,
-    [selId, d.workers]
+    () => activeId ? d.workers.find(w => w.id === activeId) ?? null : null,
+    [activeId, d.workers],
   );
   const sede = useMemo(
     () => worker ? d.sedes.find(s => s.id === worker.sedeId) ?? null : null,
-    [worker, d.sedes]
+    [worker, d.sedes],
   );
-  const isImpersonating = !!realId && realId !== selId;
 
-  return (
-    <Ctx.Provider value={{ worker, sede, signOut, switchTo, restoreSession, isImpersonating, ready }}>
-      {children}
-    </Ctx.Provider>
-  );
+  const switchTo = useCallback((workerId: string) => {
+    try { localStorage.setItem(IMPERSONATE_KEY, workerId); } catch {}
+    setImpersonate(workerId);
+  }, []);
+
+  const restoreSession = useCallback(() => {
+    try { localStorage.removeItem(IMPERSONATE_KEY); } catch {}
+    setImpersonate(null);
+    if (typeof window !== "undefined") window.location.href = "/dashboard";
+  }, []);
+
+  const signOut = useCallback(async () => {
+    try { localStorage.removeItem(IMPERSONATE_KEY); } catch {}
+    await supabase.auth.signOut();
+    if (typeof window !== "undefined") window.location.href = "/login";
+  }, [supabase]);
+
+  const isImpersonating = !!impersonate && impersonate !== authId;
+
+  const value: SessionCtx = {
+    worker, sede, signOut, switchTo, restoreSession, isImpersonating, ready,
+  };
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 /* ================= HOOK ================= */

@@ -128,11 +128,14 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ====== Confirm modal ====== */}
+      {/* zIndex 500 garantiza que el confirm quede sobre cualquier otro modal
+          de la app (ModalAsistencia usa 400). */}
       <Modal
         open={confirmOpts !== null}
         onClose={() => closeConfirm(false)}
         title={confirmOpts?.title ?? "Confirmar"}
         width={420}
+        zIndex={500}
       >
         <div style={{ fontSize: 13.5, color: "var(--text)", lineHeight: 1.5, marginBottom: 18 }}>
           {confirmOpts?.message}

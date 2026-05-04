@@ -19,7 +19,11 @@
       "Bash(findstr /i \"node next\")",
       "Bash(tasklist /FI \"IMAGENAME eq node.exe\")",
       "PowerShell(Get-Process *)",
-      "Bash(awk 'NR==23,NR==282' src/app/\\\\\\(admin\\\\\\)/sedes/page.tsx)"
+      "Bash(awk 'NR==23,NR==282' src/app/\\\\\\(admin\\\\\\)/sedes/page.tsx)",
+      "Read(//c/Users/usuario/.claude/projects/C--Users-usuario-Desktop-FER-Proyectos-tramys-rrhh/memory//**)",
+      "Read(//c/Users/usuario/.claude/projects/C--Users-usuario-Desktop-FER-Proyectos-tramys-rrhh/memory/**)",
+      "Bash(mv supabase-schema.sql docs/supabase-schema.sql)",
+      "Read(//c/c/Users/usuario/Desktop/FER/Proyectos/tramys-rrhh/**)"
     ]
   },
   "hooks": {

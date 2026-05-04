@@ -2,13 +2,10 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /* ================= MIDDLEWARE — PROTECCIÓN DE RUTAS ================= */
+/* Backend unico: Supabase. Si las env vars no estan configuradas el      */
+/* middleware deja pasar (la pagina mostrara error de Supabase client).   */
 export async function middleware(request: NextRequest) {
-  /* En modo demo (sin Supabase activo) el middleware es passthrough.
-     La protección de rutas la hace el SessionProvider del cliente leyendo
-     localStorage/sessionStorage. Activar Supabase con NEXT_PUBLIC_USE_SUPABASE=true. */
-  if (process.env.NEXT_PUBLIC_USE_SUPABASE !== "true"
-      || !process.env.NEXT_PUBLIC_SUPABASE_URL
-      || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return NextResponse.next({ request });
   }
 
