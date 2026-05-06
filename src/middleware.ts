@@ -75,13 +75,14 @@ export async function middleware(request: NextRequest) {
   const rutasAdmin = [
     "/dashboard", "/sedes", "/trabajadores", "/jaladores",
     "/asistencia", "/planilla", "/adelantos", "/feriados",
-    "/cumpleanos", "/reportes", "/accesos", "/caja",
+    "/cumpleanos", "/eventos", "/reportes", "/accesos", "/caja",
   ];
 
   /* ==== Rutas solo Trabajador ==== */
   const rutasWorker = [
     "/mi-panel", "/mi-asistencia", "/mi-sueldo",
     "/mis-adelantos", "/mis-permisos", "/mis-alertas",
+    "/mis-eventos",
   ];
 
   /* ==== Rutas solo Owner ==== */

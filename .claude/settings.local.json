@@ -23,7 +23,8 @@
       "Read(//c/Users/usuario/.claude/projects/C--Users-usuario-Desktop-FER-Proyectos-tramys-rrhh/memory//**)",
       "Read(//c/Users/usuario/.claude/projects/C--Users-usuario-Desktop-FER-Proyectos-tramys-rrhh/memory/**)",
       "Bash(mv supabase-schema.sql docs/supabase-schema.sql)",
-      "Read(//c/c/Users/usuario/Desktop/FER/Proyectos/tramys-rrhh/**)"
+      "Read(//c/c/Users/usuario/Desktop/FER/Proyectos/tramys-rrhh/**)",
+      "Bash(npm uninstall *)"
     ]
   },
   "hooks": {

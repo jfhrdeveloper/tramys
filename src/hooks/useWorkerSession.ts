@@ -1,16 +1,15 @@
 "use client";
 
 /* ================= WORKER SESSION ================= */
-/* Devuelve el worker activo según SessionProvider. Si la  */
-/* sesión activa no es trabajador, cae en el primer        */
-/* trabajador activo del store (modo demo).                */
+/* Devuelve el worker activo según SessionProvider (auth.uid de        */
+/* Supabase, con override de impersonación). Retorna null si no hay     */
+/* sesión válida — no caer a "primer trabajador del store" porque       */
+/* eso filtraría datos de otro usuario.                                 */
 
-import { useData, type Worker } from "@/components/providers/DataProvider";
+import { type Worker } from "@/components/providers/DataProvider";
 import { useSession } from "@/components/providers/SessionProvider";
 
 export function useWorkerSession(): Worker | null {
   const { worker } = useSession();
-  const d = useData();
-  if (worker && worker.activo) return worker;
-  return d.workers.find(w => w.rol === "trabajador" && w.activo) ?? null;
+  return worker && worker.activo ? worker : null;
 }
